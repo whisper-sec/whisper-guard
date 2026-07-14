@@ -38,6 +38,12 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 - No remote code, no analytics, no external scripts. All assets are bundled.
 - `<all_urls>` is optional and runtime-requested (Active Shield); the
   default install has no broad host access.
+- The brand corpus is bundled and works offline from first install. The
+  daily update channel to `get.whisper.online` activates only once the
+  corpus signing key is published; until then no request is made to that
+  host, and an unsigned corpus payload is always rejected. So the declared
+  `get.whisper.online` host permission may show no traffic during review;
+  that is expected.
 
 ## Screenshots
 

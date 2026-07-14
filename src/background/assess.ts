@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// whisper.assess over the graph client: the exact contract the Whisper
-// resolver uses in production. One host or a batch of hosts; a present,
+// whisper.assess over the graph client: the same public contract the
+// Whisper platform exposes. One host or a batch of hosts; a present,
 // host-matched row with a blank band is a no-data row and normalizes to
 // UNKNOWN (a success, not an error). We never act on a verdict for a host
 // we did not ask about.

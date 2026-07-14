@@ -13,7 +13,7 @@ export const CONSOLE_URL = "https://console.whisper.security";
 export const CORPUS_URL = "https://get.whisper.online/guard/corpus.v1.json";
 export const CONSOLE_KEYS_URL = "https://console.whisper.security/settings";
 
-// The exact assess contract the Whisper resolver itself uses in production.
+// The public assess contract, the same one the Whisper platform exposes.
 export const ASSESS_QUERY =
   "CALL whisper.assess($hs) YIELD host,label,band,coverage RETURN host,label,band,coverage";
 
