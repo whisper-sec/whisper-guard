@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Whisper Guard: screenshot gallery</title>
+  <style>
+    :root { --bg:#0b1220; --panel:#111827; --line:#1f2937; --text:#e5e7eb; --muted:#9ca3af; --accent:#38bdf8; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    main { max-width: 1080px; margin: 0 auto; padding: 40px 20px 80px; }
+    h1 { font-size: 26px; margin: 0 0 6px; }
+    .sub { color: var(--muted); margin: 0 0 30px; }
+    h2 { font-size: 17px; margin: 40px 0 14px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+    figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    figure.wide { grid-column: 1 / -1; }
+    img { width: 100%; height: auto; border-radius: 8px; display: block; background: #000; }
+    figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; }
+    figcaption strong { color: var(--text); }
+    .note { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Whisper Guard</h1>
+  <p class="sub">Every screenshot below is captured by the e2e suite from the real built
+  extension (<code>e2e/screenshots.spec.ts</code>) against a hermetic mock network.
+  No key appears anywhere; regenerate any time with
+  <code>npx playwright test e2e/screenshots.spec.ts</code>.</p>
+
+  <h2>The toolbar mark</h2>
+  <div class="grid">
+    <figure class="wide">
+      <img src="toolbar-states.png" alt="All six toolbar icon states">
+      <figcaption><strong>Six states, three redundant channels.</strong> Band is encoded in ring
+      color, badge shape, and ring style, so hue is never the only signal. The filled red
+      plate is reserved for evidenced-malicious. UNKNOWN is the honest common state.</figcaption>
+    </figure>
+  </div>
+
+  <h2>The popup panel</h2>
+  <div class="grid">
+    <figure>
+      <img src="popup-keyless-lookalike.png" alt="Keyless popup with an on-device look-alike hit">
+      <figcaption><strong>Keyless, the on-device hero.</strong> A look-alike of paypal.com caught
+      entirely in the browser; one tap goes to the real site. Nothing left the device.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-malicious.png" alt="Keyed popup on an evidenced-malicious site">
+      <figcaption><strong>Keyed, evidenced-malicious.</strong> The band chip, the categorical
+      coverage chip (never a score), the impersonation row, and the per-host privacy line.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-explain.png" alt="Keyed popup with the why-this-verdict expander open">
+      <figcaption><strong>The why.</strong> whisper.explain with feed listings and dates,
+      rendered only when the graph supplies them.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-neighborhood.png" alt="Keyed popup with the look-alike neighborhood graph">
+      <figcaption><strong>Look-alike neighborhood.</strong> Candidates generated on-device,
+      each confirmed against the graph; confirmed, not guesses.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-benign.png" alt="Keyed popup on a known-clean site">
+      <figcaption><strong>No known threat.</strong> Green, with the known-clean coverage chip,
+      and still explicitly not a warranty.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-unknown.png" alt="Keyed popup on an unknown site">
+      <figcaption><strong>UNKNOWN, the honest common state.</strong> Slate, not green:
+      "not confirmed safe or unsafe" is the truth for most of the web.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Before you click, before you type</h2>
+  <div class="grid">
+    <figure>
+      <img src="precheck-keyless.png" alt="Pre-click check window, keyless">
+      <figcaption><strong>Pre-click check, keyless.</strong> Right-click any link: the destination
+      is vetted before anything loads. The truly pre-autofill surface.</figcaption>
+    </figure>
+    <figure>
+      <img src="precheck-keyed.png" alt="Pre-click check window, keyed">
+      <figcaption><strong>Pre-click check, signed in.</strong> The live band joins the on-device
+      verdict on the same surface.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="warning.png" alt="Full-page warning">
+      <figcaption><strong>The full-page stop (Active Shield, evidenced-malicious only).</strong>
+      Back to safety always works; continue-anyway is one honest click, never a trap.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="amber-banner.png" alt="Amber caution banner injected on a look-alike page">
+      <figcaption><strong>The amber banner never blocks.</strong> Injected only on flagged hosts,
+      only after the Active Shield opt-in, rendered in a closed shadow root.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="field-guard.png" alt="Password-field caution on a flagged site">
+      <figcaption><strong>The password-field caution.</strong> Focusing a password field on a
+      flagged site draws one plain warning next to the field.</figcaption>
+    </figure>
+  </div>
+
+  <h2>First run and settings</h2>
+  <div class="grid">
+    <figure>
+      <img src="firstrun.png" alt="First-run page">
+      <figcaption><strong>First run.</strong> Two cards, no config, no account wall: the privacy
+      promise in plain language and the honest scope. Protection is already on.</figcaption>
+    </figure>
+    <figure>
+      <img src="settings.png" alt="Settings page">
+      <figcaption><strong>Settings.</strong> Sensible defaults, rarely touched. Sign-in is the
+      device flow; the paste-a-key fallback stays collapsed. No key on screen.</figcaption>
+    </figure>
+  </div>
+
+  <p class="note">Whisper Guard is the client of the Whisper security graph:
+  only a site's hostname is ever checked, never the page, never your history.</p>
+</main>
+</body>
+</html>
