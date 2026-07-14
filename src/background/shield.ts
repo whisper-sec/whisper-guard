@@ -77,11 +77,27 @@ export async function removeBlockRule(host: string): Promise<void> {
   }
 }
 
-/** Novel-bad path: redirect the already-committed tab to the warning page. */
+/** Novel-bad path: move the already-committed tab to the warning page. */
 export async function redirectToWarning(tabId: number, host: string, hit: DetectorHit | null): Promise<void> {
   if (await sessionAllowed(host)) return;
+  const url = warningUrl(host, hit);
   try {
-    await ext.tabs.update(tabId, { url: warningUrl(host, hit) });
+    // location.replace, not tabs.update: it REPLACES the dangerous page's
+    // history entry, so one Back from the warning returns to the last safe
+    // page instead of bouncing off the block again.
+    await ext.scripting.executeScript({
+      target: { tabId },
+      func: (u: string) => {
+        window.location.replace(u);
+      },
+      args: [url],
+    });
+    return;
+  } catch {
+    // Page not scriptable (race, browser UI): fall back to a plain move.
+  }
+  try {
+    await ext.tabs.update(tabId, { url });
   } catch {
     // tab gone; nothing to protect
   }

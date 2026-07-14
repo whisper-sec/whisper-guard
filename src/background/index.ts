@@ -23,6 +23,7 @@ import { cacheGet, cachePut } from "./cache";
 import {
   cancelDeviceFlow,
   deviceFlowState,
+  onAuthChanged,
   resumeDeviceFlow,
   saveKey,
   signOut,
@@ -41,6 +42,10 @@ import { addBlockRule, injectGuard, redirectToWarning, removeBlockRule, shieldGr
 
 const tabs = new Map<number, TabState>();
 const debounce = new Map<number, ReturnType<typeof setTimeout>>();
+// Last committed URL per tab, learned from webNavigation (the extension has
+// no "tabs" permission, so tabs.query cannot see URLs; this map is what
+// lets sign-in/sign-out repaint already-open tabs).
+const lastUrl = new Map<number, string>();
 
 function blankState(): TabState {
   return {
@@ -161,6 +166,7 @@ function scheduleEvaluate(tabId: number, url: string): void {
 
 ext.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId !== 0) return;
+  lastUrl.set(details.tabId, details.url);
   scheduleEvaluate(details.tabId, details.url);
 });
 
@@ -172,6 +178,7 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 
 ext.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
+  lastUrl.delete(tabId);
   forgetTab(tabId);
   const t = debounce.get(tabId);
   if (t) {
@@ -180,9 +187,14 @@ ext.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-ext.runtime.onInstalled.addListener(() => {
+ext.runtime.onInstalled.addListener((details) => {
   installContextMenu();
   scheduleCorpusUpdates();
+  // First install only (never on update/reload): the two-card welcome with
+  // the privacy promise and the honest scope. Protection is already on.
+  if (details.reason === "install") {
+    ext.tabs.create({ url: chrome.runtime.getURL("firstrun.html") }).catch(() => undefined);
+  }
 });
 ext.runtime.onStartup?.addListener(() => {
   installContextMenu();
@@ -190,6 +202,15 @@ ext.runtime.onStartup?.addListener(() => {
 });
 
 ext.contextMenus.onClicked.addListener((info) => onMenuClicked(info));
+
+// Sign-in / sign-out repaints every open http(s) tab right away: the band
+// goes live on the current tab the moment the console approves (and dims
+// back to the keyless state on sign-out), no re-navigation needed.
+onAuthChanged(() => {
+  for (const [tabId, url] of lastUrl) {
+    if (/^https?:/i.test(url)) scheduleEvaluate(tabId, url);
+  }
+});
 
 ext.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CORPUS_ALARM) updateCorpusNow().catch(() => undefined);

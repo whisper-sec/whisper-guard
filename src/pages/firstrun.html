@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Welcome to Whisper Guard</title>
+  <link rel="stylesheet" href="firstrun.css">
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <img src="icons/base-128.png" width="56" height="56" alt="">
+      <div>
+        <h1>Whisper Guard is on</h1>
+        <p class="tagline">Look-alike protection started the moment you installed. Nothing to set up.</p>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2>Our privacy promise, in plain language</h2>
+      <p>We only ever see a site's <strong>name</strong>, never your history, never the
+      page. The look-alike protection runs entirely in your browser and sends
+      nothing anywhere. If you later sign in, the one thing that can leave the
+      browser is a hostname, sent to exactly one endpoint to answer the live
+      safety check, and it is not retained to build a browsing profile.</p>
+      <p class="note">Your browser may say Whisper Guard can "read your browsing
+      activity". That permission is how we see the site <em>name</em> to check it.
+      We never read the page, never see what you type, and never store your
+      history. There is no telemetry and no analytics in this extension.</p>
+    </section>
+
+    <section class="card">
+      <h2>What it catches, honestly</h2>
+      <p><strong>Already active:</strong> warnings before you type a password into a
+      look-alike of a major brand's login page: homoglyph tricks, TLD swaps,
+      hyphenation squats, and brand-impersonating subdomains, across 800+
+      heavily phished brands. Right-click any link to vet it before you open it.</p>
+      <p><strong>Not magic:</strong> the on-device tier does not catch compromised
+      legitimate sites or brand-new domains it has never heard of. The Whisper
+      security graph covers far more. Sign in free to light up a live threat
+      signal on every site you visit; it still says UNKNOWN for most of the
+      web, because that is the truth.</p>
+      <div class="row gap">
+        <button id="btn-signin" class="btn primary">Sign in with Whisper</button>
+        <button id="btn-later" class="btn">Not now</button>
+      </div>
+      <div id="device-status" class="note status" hidden></div>
+    </section>
+
+    <p class="footer-note">You can revisit all of this any time in the extension's settings.</p>
+  </main>
+  <script src="firstrun.js"></script>
+</body>
+</html>

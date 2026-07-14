@@ -135,8 +135,9 @@ optional, revocable Active Shield permission, requested at runtime.
 
 - **Chromium** (Chrome, Edge, Brave, Opera, Vivaldi): the primary target,
   MV3, `dist/chromium`.
-- **Firefox** (128+): built from the same code via a manifest transform,
-  `dist/firefox`. Cross-engine verification is in progress.
+- **Firefox** (142+): built from the same code via a manifest transform,
+  `dist/firefox`; verified with web-ext (AMO lint, zero findings) and a
+  headless temporary-install load test.
 - **Safari**: planned; requires the Safari Web Extension converter and Xcode.
 
 ## Fail-open by design

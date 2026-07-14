@@ -34,6 +34,21 @@ let state: DeviceFlowState = { phase: "idle", userCode: null, verificationUri: n
 let pending: PendingFlow | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Fired whenever the signed-in state changes (sign-in approved, key pasted,
+// sign-out), so the background can light up / dim open tabs immediately
+// instead of waiting for the next navigation.
+let authChanged: (() => void) | null = null;
+export function onAuthChanged(cb: () => void): void {
+  authChanged = cb;
+}
+function notifyAuthChanged(): void {
+  try {
+    authChanged?.();
+  } catch {
+    // repainting is best-effort
+  }
+}
+
 export function deviceFlowState(): DeviceFlowState {
   return state;
 }
@@ -147,6 +162,7 @@ async function pollOnce(): Promise<void> {
     } else {
       await chrome.storage.local.set({ apiKey: key });
       state = { phase: "approved", userCode: null, verificationUri: null, message: null };
+      notifyAuthChanged();
     }
     await clearPending();
     return;
@@ -181,6 +197,7 @@ export function cancelDeviceFlow(): void {
 export async function signOut(): Promise<void> {
   cancelDeviceFlow();
   await chrome.storage.local.remove("apiKey");
+  notifyAuthChanged();
 }
 
 /** Enterprise/power-user fallback: paste a key directly (settings). */
@@ -189,4 +206,5 @@ export async function saveKey(key: string): Promise<void> {
   if (k === "") throw new Error("empty key");
   await chrome.storage.local.set({ apiKey: k });
   state = { phase: "approved", userCode: null, verificationUri: null, message: null };
+  notifyAuthChanged();
 }

@@ -24,23 +24,25 @@ const BAND_UI: Record<GraphBand, { cls: string; chip: string; glyph: string; not
   UNKNOWN: { cls: "unknown", chip: "UNKNOWN", glyph: "?", note: "New or low-coverage site. Not confirmed safe or unsafe." },
 };
 
-function h(text: string): string {
-  const d = document.createElement("div");
-  d.textContent = text;
-  return d.innerHTML;
-}
-
-function renderKV(rows: Record<string, unknown>[]): string {
-  if (rows.length === 0) return "The graph returned nothing for this host.";
-  const cells: string[] = [];
+/** Render key/value rows as a table, DOM-built (no HTML strings). */
+function renderKV(rows: Record<string, unknown>[]): Node {
+  if (rows.length === 0) return document.createTextNode("The graph returned nothing for this host.");
+  const table = document.createElement("table");
   for (const row of rows) {
     for (const [k, v] of Object.entries(row)) {
       if (v === null || v === undefined || v === "") continue;
-      const val = typeof v === "object" ? JSON.stringify(v) : String(v);
-      cells.push(`<tr><td>${h(k)}</td><td>${h(val)}</td></tr>`);
+      const tr = document.createElement("tr");
+      const key = document.createElement("td");
+      key.textContent = k;
+      const val = document.createElement("td");
+      val.textContent = typeof v === "object" ? JSON.stringify(v) : String(v);
+      tr.append(key, val);
+      table.appendChild(tr);
     }
   }
-  return cells.length ? `<table>${cells.join("")}</table>` : "No detail supplied for this host.";
+  return table.childElementCount > 0
+    ? table
+    : document.createTextNode("No detail supplied for this host.");
 }
 
 async function loadExpander(kind: "explain" | "identify", host: string, bodyId: string): Promise<void> {
@@ -51,7 +53,9 @@ async function loadExpander(kind: "explain" | "identify", host: string, bodyId: 
     body.textContent = "Could not reach Whisper.";
     return;
   }
-  body.innerHTML = res.explain.ok ? renderKV(res.explain.rows) : h(res.explain.error ?? "unavailable");
+  body.replaceChildren(
+    res.explain.ok ? renderKV(res.explain.rows) : document.createTextNode(res.explain.error ?? "unavailable"),
+  );
 }
 
 function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates: CandidateVerdict[]): void {
@@ -121,12 +125,24 @@ async function loadSession(): Promise<void> {
   if (!res.ok) return;
   const body = $("session-body");
   $("session-summary").textContent = `This session - ${res.session.length} risky`;
-  body.innerHTML =
-    res.session.length === 0
-      ? "No risky hosts seen this session."
-      : res.session
-          .map((r) => `<div class="session-item"><span class="session-host">${h(r.host)}</span><span class="session-reason">${h(r.reason)}</span></div>`)
-          .join("");
+  if (res.session.length === 0) {
+    body.textContent = "No risky hosts seen this session.";
+  } else {
+    body.replaceChildren(
+      ...res.session.map((r) => {
+        const item = document.createElement("div");
+        item.className = "session-item";
+        const host = document.createElement("span");
+        host.className = "session-host";
+        host.textContent = r.host;
+        const reason = document.createElement("span");
+        reason.className = "session-reason";
+        reason.textContent = r.reason;
+        item.append(host, reason);
+        return item;
+      }),
+    );
+  }
 }
 
 async function pollDeviceFlow(): Promise<void> {
@@ -316,8 +332,15 @@ async function init(): Promise<void> {
   $("btn-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("btn-refresh").addEventListener("click", () => window.location.reload());
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  tabId = tab?.id ?? -1;
+  // Normally the active tab; ?tab=<id> pins the panel to a specific tab
+  // (debugging and UI testing when the panel is opened as a full page).
+  const pinned = new URLSearchParams(window.location.search).get("tab");
+  if (pinned && /^\d+$/.test(pinned)) {
+    tabId = Number(pinned);
+  } else {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    tabId = tab?.id ?? -1;
+  }
   const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
   if (res.ok) {
     state = res.tabState;

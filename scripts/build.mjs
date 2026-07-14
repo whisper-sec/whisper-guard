@@ -45,6 +45,7 @@ for (const [entry, out] of [
   ["src/options/options.ts", "options.js"],
   ["src/pages/warning.ts", "warning.js"],
   ["src/pages/check-link.ts", "check-link.js"],
+  ["src/pages/firstrun.ts", "firstrun.js"],
   ["src/content/guard.ts", "content.js"],
 ]) {
   await build({
@@ -65,6 +66,8 @@ for (const [from, to] of [
   ["src/pages/warning.css", "warning.css"],
   ["src/pages/check-link.html", "check-link.html"],
   ["src/pages/check-link.css", "check-link.css"],
+  ["src/pages/firstrun.html", "firstrun.html"],
+  ["src/pages/firstrun.css", "firstrun.css"],
 ]) {
   copyFileSync(join(ROOT, from), join(OUT, to));
 }
@@ -99,7 +102,7 @@ for (const war of manifest.web_accessible_resources ?? []) {
   for (const r of war.resources ?? []) referenced.add(r);
 }
 // Files the code itself references at runtime.
-for (const extra of ["content.js", "check-link.html", "warning.html", "popup.js", "options.js", "warning.js", "check-link.js"]) {
+for (const extra of ["content.js", "check-link.html", "warning.html", "firstrun.html", "firstrun.js", "popup.js", "options.js", "warning.js", "check-link.js"]) {
   referenced.add(extra);
 }
 
