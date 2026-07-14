@@ -114,6 +114,38 @@ export function makeShieldDist(): string {
 }
 
 /**
+ * An egress-enabled build: the optional proxy permissions and <all_urls>
+ * are promoted to REQUIRED at install time, because the browser's own
+ * consent dialog for optional permissions cannot be automated. Every code
+ * path under test (register/connect, chrome.proxy.set, onAuthRequired, the
+ * WebRTC policy) is the real one; only the consent click is pre-satisfied.
+ */
+export function makeEgressDist(): string {
+  const dir = mkdtempSync(join(tmpdir(), "whisper-guard-egress-dist-"));
+  cpSync(DIST_CHROMIUM, dir, { recursive: true });
+  const mpath = join(dir, "manifest.json");
+  const manifest = JSON.parse(readFileSync(mpath, "utf8"));
+  manifest.permissions = [
+    ...manifest.permissions,
+    "proxy",
+    "webRequest",
+    "webRequestAuthProvider",
+    "privacy",
+  ];
+  manifest.host_permissions = [...manifest.host_permissions, "<all_urls>"];
+  delete manifest.optional_permissions;
+  writeFileSync(mpath, JSON.stringify(manifest, null, 2));
+  return dir;
+}
+
+/** Open the full-tab dashboard and return its page (pinned by URL hash). */
+export async function openDashboard(ext: Extension, view = ""): Promise<Page> {
+  const page = await ext.context.newPage();
+  await page.goto(`chrome-extension://${ext.id}/dashboard.html${view ? `#${view}` : ""}`);
+  return page;
+}
+
+/**
  * List current tab ids from inside the extension. Note the product
  * deliberately has NO "tabs" permission, so tab.url is invisible here;
  * tests identify tabs by id-diff around creation instead.
@@ -171,6 +203,9 @@ export async function setSettings(ext: Extension, patch: Record<string, unknown>
   await ext.sw.evaluate(async (p: Record<string, unknown>) => {
     const cur = (await chrome.storage.local.get("settings"))["settings"] ?? {};
     await chrome.storage.local.set({ settings: { ...(cur as object), ...p } });
+    // Let the background's storage.onChanged listener invalidate its settings
+    // cache before we return, so the next navigation reads the new value.
+    await new Promise((r) => setTimeout(r, 80));
   }, patch);
 }
 

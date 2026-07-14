@@ -4,41 +4,73 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <title>Whisper Guard settings</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <main>
-    <h1>Whisper Guard</h1>
+    <div class="brand">
+      <img src="logo.png" alt="Whisper" class="w-logo">
+      <span class="product">Guard</span>
+    </div>
 
     <section class="card">
       <h2>Privacy, in one paragraph</h2>
       <p>We only ever see a site's <strong>name</strong>, never your history, never the
-      page. When you are signed in, the hostname of the page you visit is sent to
-      <code>graph.whisper.security</code> to answer the live safety check, and nothing
-      else: no path, no query, no content, no identifiers beyond your own key.
-      Hostnames are used only to answer the check and are not retained to build a
-      browsing profile. The on-device look-alike protection never sends anything at
-      all. There is no telemetry and no analytics in this extension.</p>
+      page. The live safety check sends the hostname of the page you visit to
+      <code>graph.whisper.security</code>, whether or not you have an account, and nothing
+      else: no path, no query, no content. Hostnames are used only to answer the check
+      and are not retained to build a browsing profile. The on-device look-alike
+      protection sends nothing at all, and one switch below turns the live check off
+      entirely. Endpoint identity checks send only IP literals of your own endpoints
+      to <code>rdap.whisper.online</code>. There is no telemetry and no analytics in
+      this extension.</p>
+    </section>
+
+    <section class="card">
+      <h2>Live safety check</h2>
+      <label class="toggle">
+        <input type="checkbox" id="opt-cloudcheck">
+        <span>Check every site against the Whisper security graph (hostname only, to one
+        endpoint). Off means on-device look-alike protection only.</span>
+      </label>
     </section>
 
     <section class="card">
       <h2>Account</h2>
       <div id="account-signedout">
-        <p>Sign in free to light up the live threat signal on every site. You approve
-        in the Whisper console; you never handle an API key.</p>
-        <button id="btn-signin" class="btn primary">Sign in with Whisper</button>
-        <span id="device-status" class="note"></span>
+        <p>Sign in free to unlock your fleet: every device and agent on your Whisper
+        account, per-endpoint drill-downs, and the option to route this browser through
+        Whisper egress. You approve in the Whisper console; you never handle an API key.</p>
+        <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
+        <span id="device-status" class="w-note"></span>
         <details class="fallback">
           <summary>I have a key (advanced)</summary>
           <div class="row gap">
             <input id="key-input" type="password" placeholder="paste a key" autocomplete="off">
-            <button id="btn-savekey" class="btn">Save</button>
+            <button id="btn-savekey" class="w-btn">Save</button>
           </div>
         </details>
       </div>
       <div id="account-signedin" hidden>
-        <p>Signed in. The live signal is active.</p>
-        <button id="btn-signout" class="btn">Sign out</button>
+        <p>Signed in. The fleet dashboard and browser egress are unlocked.</p>
+        <div class="row gap">
+          <button id="btn-dashboard" class="w-btn">Open dashboard</button>
+          <button id="btn-signout" class="w-btn">Sign out</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Protect this browser (egress)</h2>
+      <p class="w-note">Route this browser through Whisper egress so it gets its own routable
+      IPv6 identity and joins your fleet as a device. Off by default. Turning it on asks for
+      the browser's proxy permission; the setting is profile-global and WebRTC is hardened to
+      proxied-only on Chromium so nothing leaks around the route. Manage it from the
+      dashboard's "This browser" view.</p>
+      <div class="row gap">
+        <button id="btn-egress-dash" class="w-btn small">Open in dashboard</button>
+        <span id="egress-state" class="w-note"></span>
       </div>
     </section>
 
@@ -68,21 +100,21 @@
         <span>Also flag near-miss spellings, one keystroke away (may be noisier)</span>
       </label>
       <h3>Trusted sites</h3>
-      <p class="note">One domain per line. Whisper Guard will never flag these.</p>
+      <p class="w-note">One domain per line. Whisper Guard will never flag these.</p>
       <textarea id="opt-allowlist" rows="4" spellcheck="false"></textarea>
     </section>
 
     <section class="card">
       <h2>Brand corpus</h2>
-      <p class="note" id="corpus-info"></p>
+      <p class="w-note" id="corpus-info"></p>
       <label class="toggle">
         <input type="checkbox" id="opt-corpusupdate">
         <span>Check daily for a newer signed brand corpus (only the corpus host is
         contacted; no browsing data is sent)</span>
       </label>
       <div class="row gap">
-        <button id="btn-corpusnow" class="btn small">Update now</button>
-        <span id="corpus-status" class="note"></span>
+        <button id="btn-corpusnow" class="w-btn small">Update now</button>
+        <span id="corpus-status" class="w-note"></span>
       </div>
     </section>
 

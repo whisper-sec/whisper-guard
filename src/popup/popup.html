@@ -4,11 +4,14 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <title>Whisper Guard</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <span class="wordmark">Whisper Guard</span>
+    <img src="logo.png" alt="Whisper" class="w-logo">
+    <span class="product">Guard</span>
+    <span class="spacer"></span>
     <span id="signin-dot" class="dot" title=""></span>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
   </header>
@@ -17,33 +20,46 @@
     <section id="host-row" hidden>
       <div id="band-glyph" class="glyph"></div>
       <div class="host-meta">
-        <div id="hostname" class="hostname"></div>
+        <div id="hostname" class="hostname w-host"></div>
         <div class="chips">
-          <span id="band-chip" class="chip"></span>
-          <span id="coverage-chip" class="chip chip-muted" hidden
+          <span id="band-chip" class="w-chip"></span>
+          <span id="coverage-chip" class="w-chip chip-muted" hidden
                 title="Coverage says how much data the graph has on this host. It is NOT a safety score."></span>
         </div>
-        <div id="band-note" class="note"></div>
+        <div id="band-note" class="w-note"></div>
       </div>
     </section>
 
-    <section id="lookalike" class="card warn" hidden>
+    <section id="protect-card" class="w-card" hidden>
+      <div id="protect-rows" class="protect-rows"></div>
+      <div id="why-chips" class="why-chips"></div>
+    </section>
+
+    <section id="lookalike" class="w-card warn" hidden>
       <div id="lookalike-text"></div>
       <div class="row gap">
-        <a id="btn-goto" class="btn primary" href="#">Go to the real site</a>
-        <button id="btn-report" class="btn" hidden>Report</button>
+        <a id="btn-goto" class="w-btn primary" href="#">Go to the real site</a>
+        <button id="btn-report" class="w-btn" hidden>Report</button>
       </div>
-      <div id="report-status" class="note" hidden></div>
+      <div id="report-status" class="w-note" hidden></div>
     </section>
 
-    <section id="signin-pitch" class="card" hidden>
-      <p id="pitch-text">See the live threat signal, the "why", and the look-alike
-      neighborhood on every site. Free and unlimited.</p>
-      <button id="btn-signin" class="btn primary">Sign in with Whisper</button>
-      <div id="device-status" class="note" hidden></div>
+    <section id="graph-error" class="w-card muted" hidden></section>
+
+    <section id="mini-dash" class="w-card">
+      <div class="mini-head">
+        <span class="w-label">This browser, last 24h</span>
+        <button id="btn-dashboard" class="w-btn small">Open dashboard</button>
+      </div>
+      <div id="mini-tiles" class="mini-tiles"></div>
     </section>
 
-    <section id="graph-error" class="card muted" hidden></section>
+    <section id="signin-pitch" class="w-card" hidden>
+      <p id="pitch-text">See your whole fleet of devices and agents, drill into any endpoint,
+      and put this browser on the Whisper network with its own verifiable identity. Free.</p>
+      <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
+      <div id="device-status" class="w-note" hidden></div>
+    </section>
 
     <div id="expanders" hidden>
       <details id="exp-why">
@@ -58,7 +74,7 @@
         <summary>Look-alike neighborhood</summary>
         <div class="exp-body">
           <canvas id="graph-canvas" width="340" height="180"></canvas>
-          <div id="neighborhood-note" class="note"></div>
+          <div id="neighborhood-note" class="w-note"></div>
         </div>
       </details>
       <details id="exp-session">
@@ -67,19 +83,19 @@
       </details>
     </div>
 
-    <section id="ineligible" class="card muted" hidden>
+    <section id="ineligible" class="w-card muted" hidden>
       Nothing to check on this page (browser page, local address, or file).
     </section>
   </main>
 
   <footer>
     <div class="row gap">
-      <button id="btn-console" class="btn small" hidden>Open in console</button>
-      <button id="btn-dossier" class="btn small" hidden>Copy dossier</button>
+      <button id="btn-console" class="w-btn small" hidden>Open in console</button>
+      <button id="btn-dossier" class="w-btn small" hidden>Copy dossier</button>
       <span class="spacer"></span>
       <button id="btn-refresh" class="icon-btn" title="Re-check" aria-label="Re-check">&#8635;</button>
     </div>
-    <div id="privacy-line" class="privacy"></div>
+    <div id="privacy-line" class="w-privacy"></div>
   </footer>
 
   <script src="popup.js"></script>

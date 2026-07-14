@@ -2,16 +2,13 @@
   "manifest_version": 3,
   "name": "Whisper Guard",
   "version": "0.0.0",
-  "description": "Phishing protection that works the instant it installs. On-device look-alike alerts; a live safety signal when you sign in.",
+  "description": "The Whisper security graph in your browser: a live safety verdict on every site, plus a dashboard of where your devices go.",
   "browser_specific_settings": {
     "gecko": {
       "id": "guard@whisper.security",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [
-          "none"
-        ],
-        "optional": [
           "websiteActivity"
         ]
       }
@@ -55,7 +52,11 @@
   "host_permissions": [
     "https://graph.whisper.security/*",
     "https://console.whisper.security/*",
-    "https://get.whisper.online/*"
+    "https://get.whisper.online/*",
+    "https://rdap.whisper.online/*"
+  ],
+  "optional_permissions": [
+    "proxy"
   ],
   "optional_host_permissions": [
     "<all_urls>"

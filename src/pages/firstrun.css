@@ -1,62 +1,45 @@
 /* SPDX-License-Identifier: MIT
-   Copyright (c) 2026 viaGraph B.V. (Whisper Security) */
+   Copyright (c) 2026 viaGraph B.V. (Whisper Security)
+   First-run layout on top of the shared theme tokens. */
 
-:root {
-  --bg: #0b1220;
-  --panel: #111827;
-  --line: #1f2937;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
-  --accent: #38bdf8;
-}
-
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
+body { font-size: 15px; line-height: 1.65; }
 
 main { max-width: 640px; margin: 0 auto; padding: 48px 20px 60px; }
 
 .hero { display: flex; align-items: center; gap: 18px; margin-bottom: 26px; }
-.hero img { flex: none; border-radius: 14px; }
+.hero-logo { height: 44px; width: auto; flex: none; }
 
-h1 { font-size: 26px; margin: 0; }
-.tagline { margin: 4px 0 0; color: var(--muted); }
+h1 { font-size: 26px; margin: 0; font-weight: 300; }
+.tagline { margin: 4px 0 0; color: var(--w-muted); }
 
-h2 { font-size: 16px; margin: 0 0 10px; }
+h2 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
 
 .card {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
   border-radius: 12px;
   padding: 18px 20px;
   margin-bottom: 16px;
 }
 .card p { margin: 0 0 12px; }
 
-.note { color: var(--muted); font-size: 13px; }
+code { background: var(--w-surface); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
+
+.sample {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--w-surface);
+  border: 1px solid var(--w-line);
+  border-radius: 9px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+.sample .w-host { font-size: 14px; }
+
 .status { margin-top: 10px; }
 
 .row { display: flex; align-items: center; }
-.gap { gap: 10px; }
+.gap { gap: 10px; flex-wrap: wrap; }
 
-.btn {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 16px;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.btn:hover { border-color: var(--muted); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #06202e; }
-
-.footer-note { color: var(--muted); font-size: 12px; text-align: center; }
-
-[hidden] { display: none !important; }
+.footer-note { color: var(--w-muted); font-size: 12px; text-align: center; }

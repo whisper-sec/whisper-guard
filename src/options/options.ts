@@ -31,8 +31,18 @@ async function refresh(): Promise<void> {
   check("opt-fieldguard").checked = res.settings.fieldGuard;
   check("opt-nearmiss").checked = res.settings.nearMiss;
   check("opt-corpusupdate").checked = res.settings.corpusAutoUpdate;
+  check("opt-cloudcheck").checked = res.settings.cloudCheck;
   ($("opt-allowlist") as unknown as HTMLTextAreaElement).value = res.settings.allowlist.join("\n");
   $("corpus-info").textContent = `Corpus v${res.corpusVersion} (${res.corpusUpdated === "bundled" ? "bundled with the extension" : `updated ${res.corpusUpdated.slice(0, 10)}`}).`;
+
+  const egress = await send<{ ok: true; egress: { on: boolean; address: string | null } }>({
+    kind: "egressStatus",
+  });
+  $("egress-state").textContent = egress.ok
+    ? egress.egress.on
+      ? `on, routed as ${egress.egress.address ?? "(pending)"}`
+      : "off"
+    : "";
 }
 
 function wire(): void {
@@ -53,6 +63,7 @@ function wire(): void {
     ["opt-fieldguard", "fieldGuard"],
     ["opt-nearmiss", "nearMiss"],
     ["opt-corpusupdate", "corpusAutoUpdate"],
+    ["opt-cloudcheck", "cloudCheck"],
   ] as const) {
     check(id).addEventListener("change", async (ev) => {
       await send({ kind: "setSettings", patch: { [key]: (ev.target as HTMLInputElement).checked } });
@@ -99,6 +110,13 @@ function wire(): void {
   $("btn-signout").addEventListener("click", async () => {
     await send({ kind: "signOut" });
     await refresh();
+  });
+
+  $("btn-dashboard").addEventListener("click", () => {
+    void send({ kind: "openDashboard" });
+  });
+  $("btn-egress-dash").addEventListener("click", () => {
+    void send({ kind: "openDashboard", view: "browser" });
   });
 
   $("btn-corpusnow").addEventListener("click", async () => {

@@ -1,67 +1,92 @@
 # Whisper Guard
 
-Proactive phishing and brand protection in your browser. On-device look-alike
-detection starts working the instant you install it, no account needed. Sign in
-free and the Whisper security graph lights up a live threat signal on every
-site you visit.
+The Whisper security graph, native in your browser. On-device look-alike
+detection starts the instant you install it, and a live graph verdict answers
+"is THIS site safe?" on every site you visit, with no account needed. A
+dashboard shows where this browser (and, signed in, every device on your
+account) actually goes: who answers, in which country, on which network, and
+whether anything is flagged. Sign in free to unlock your whole fleet and, if
+you want, put this browser itself on the Whisper network with its own routable
+identity.
 
 Only a site's name is ever checked. Never the page, never the path, never your
 history.
 
-## What you get
+## Two tiers, both a full product
 
-**The instant it installs (no sign-in, fully on-device):**
+**No account (fully keyless, works the instant it installs):**
 
-- Warns you before you type a password into a look-alike of a major brand's
-  login page: homoglyph tricks (`paypa1.com`, Cyrillic `pаypal.com`), TLD swaps
-  (`paypal.tk`), hyphenation squats (`face-book.com`), brand-subdomain abuse
-  (`paypal.com.evil.example`) and combosquats (`paypal-secure-login.com`),
-  across a bundled corpus of 800+ heavily phished brands.
-- One tap takes you to the real site: "Go to the real paypal.com".
-- Right-click any link and pick "Check this link with Whisper" to vet the
-  destination before you navigate. The safest path for links that arrive in
-  email, SMS, or chat: nothing has loaded yet when the verdict appears.
-- All of it runs in your browser. Nothing leaves the device.
+- **Live graph verdict on every site.** The toolbar mark answers "is THIS site
+  safe?" from the Whisper security graph: green for no known threat, amber for
+  suspicious, a filled red octagon plate reserved for evidenced-malicious, and
+  an honest dashed-slate UNKNOWN for the internet's long tail. Never a fake
+  green. Popularity feeds (Tranco and friends) are treated as good, never as a
+  threat.
+- **The composed picture.** Click the mark for who runs the site and where it
+  lives, how old the domain is, the feed-cited "why", and a look-alike
+  neighborhood confirmed against the graph.
+- **On-device look-alike detection.** Homoglyph tricks (`paypa1.com`, Cyrillic
+  `pаypal.com`), TLD swaps (`paypal.tk`), hyphenation squats (`face-book.com`),
+  brand-subdomain abuse (`paypal.com.evil.example`) and combosquats
+  (`paypal-secure-login.com`), across a bundled corpus of 800+ heavily phished
+  brands. One tap goes to the real site. This runs entirely on-device and is the
+  zero-network fallback if you switch the live check off.
+- **The "This browser" dashboard.** A full-tab, console-style view of where this
+  browser goes, built from your on-device navigation log and enriched through
+  the graph: destination / company / country / network tiles, a category donut,
+  company and country breakdowns, a concentration callout, and an activity
+  ledger that updates live per navigation. Zero extra permissions.
+- **Pre-click check.** Right-click any link and pick "Check this link with
+  Whisper" to vet the destination before anything loads.
 
 **Signed in (free, one tap, no API key to handle):**
 
-- The toolbar mark answers "is THIS site safe?" on every navigation, from the
-  3.67B-node Whisper security graph: green ring for no known threat, amber for
-  suspicious, a filled red octagon plate reserved for evidenced-malicious, and
-  an honest dashed slate UNKNOWN for the internet's long tail. Never a fake
-  green.
-- Click the mark for the "why" (the graph's explanation and label), who runs
-  the site, a look-alike neighborhood confirmed against the graph (generated
-  candidates, each assessed for real), a session log of risky hosts, one-click
-  reporting, and a copyable dossier.
+- **Your whole fleet, one view.** Every device and agent on your Whisper account,
+  their last-24h destinations merged and graph-enriched into the same panels.
+- **Per-endpoint drill-down.** Live counters, an explainable identity-health
+  score (each factor shown met / unmet / unknown, never a black box), a
+  connection constellation from the endpoint to where it went, and destination
+  receipts with co-hosting fan-in and announcing-prefix threat neighbours. Every
+  identity is anchored by an RDAP provenance link.
+- **Protect this browser (opt-in, off by default).** One toggle gives this
+  browser its own routable Whisper identity and routes its traffic through
+  Whisper egress, so it joins your fleet as a device with reverse-DNS and a
+  verifiable identity. WebRTC is hardened to proxied-only so nothing leaks around
+  the route. The new permissions are optional and requested on that click.
 - Sign-in is the RFC 8628 device flow: you approve in the Whisper console and
   the extension receives its credential. You never see or paste a key.
 
 **Active Shield (optional, off by default):**
 
 - A single toggle that asks the browser for on-page permission, used only to
-  draw warnings: a full-page stop before known credential-phishing pages, a
-  slim amber banner on look-alikes, and a caution when a password field gains
-  focus on a flagged site. Decline it and everything else still works.
+  draw warnings: a full-page stop before known credential-phishing pages (with
+  the feed-cited receipts), a slim amber banner on look-alikes, and a caution
+  when a password field gains focus on a flagged site. Decline it and everything
+  else still works.
 
 ## Honest scope
 
-The keyless tier catches look-alikes of major brands that you navigate to. It
-does not catch compromised legitimate sites, brand-new domains on shared
-hosting, or threats on links you never open. The signed-in graph signal covers
-far more, and still reports UNKNOWN for most of the web, because that is the
-truth: absence of evidence is shown as absence of evidence. Coverage is shown
-as a category (known-clean, partial, no-data), never dressed up as a score.
+The graph verdict reports UNKNOWN for most of the web, because that is the
+truth: absence of evidence is shown as absence of evidence. Coverage is shown as
+a category (known-clean, partial, no-data), never dressed up as a percentage or
+a safety score. The on-device tier catches look-alikes of major brands you
+navigate to; it does not catch compromised legitimate sites or brand-new
+domains on its own. The fleet, per-endpoint and browser-egress features need an
+account; the verdict, the composed picture, the this-browser dashboard and
+public identity verification all work with no key.
 
 ## Privacy model
 
-- The only thing that can ever leave the browser is a **hostname**, sent to
-  exactly one endpoint, `graph.whisper.security`, and only when you are signed
-  in. Extraction happens at parse time; path, query, fragment, page content,
-  and form data are discarded before any network code runs.
+- The only browsing datum that can ever leave the browser is a **hostname**,
+  sent to exactly one endpoint, `graph.whisper.security`, whether or not you are
+  signed in. Extraction happens at parse time; path, query, fragment, page
+  content, and form data are discarded before any network code runs. Your
+  on-device navigation list and session allow-list never leave the device.
 - `console.whisper.security` is contacted only during sign-in (no browsing
   data). `get.whisper.online` is contacted only for signed brand-corpus
-  updates (no browsing data).
+  updates (no browsing data). `rdap.whisper.online` is contacted only to verify
+  the identity of your own endpoints, and only receives IP literals of those
+  endpoints, never a browsing hostname.
 - Verdicts are cached locally and navigations debounced, so revisits paint
   from cache with zero network.
 - Hostnames are used to answer the live safety check, not retained to build a
@@ -116,11 +141,18 @@ hostname-only privacy invariant is asserted against that full capture, not a
 sample.
 
 ```bash
-npm run e2e              # hermetic: 19 core tests + 7 Active Shield tests
+npm run e2e              # hermetic: protection, dashboard, egress, Active Shield
 npm run e2e:firefox      # web-ext lint (zero findings) + headless load gate
-WHISPER_GUARD_E2E_KEY=... npm run e2e:live   # 6 tests against the real graph
+WHISPER_GUARD_E2E_KEY=... npm run e2e:live   # against the real production graph
 npx playwright test e2e/screenshots.spec.ts  # regenerate shots/
 ```
+
+The browser-as-endpoint feature has its own hard dual-engine e2e
+(`e2e/egress.spec.ts`): it flips the toggle, then proves the browser is actually
+routed through the Whisper egress endpoint (its own registered identity), that
+the identity appears in the account roster, and that keyless RDAP
+verify-identity of the routed address returns `is_whisper_agent: true`. It is
+never a structural pass.
 
 The live suite picks a currently-listed malicious hostname, pins its DNS to
 a local harmless page, and verifies the real verdict end to end; the key is

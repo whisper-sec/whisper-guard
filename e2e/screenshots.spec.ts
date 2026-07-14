@@ -19,6 +19,7 @@ import { E2ENetwork } from "./helpers/servers";
 import {
   launchExtension,
   makeShieldDist,
+  openDashboard,
   openPopup,
   setKey,
   setSettings,
@@ -50,6 +51,7 @@ test.beforeAll(async () => {
     {
       indicator: LOOKALIKE,
       type: "domain",
+      found: true,
       level: "CRITICAL",
       score: 17.2,
       explanation: `${LOOKALIKE} is listed in 5 threat feed(s).`,
@@ -59,6 +61,44 @@ test.beforeAll(async () => {
       ],
     },
   ]);
+  // A believable "where my devices go" spread for the dashboard gallery.
+  const dests: [string, Parameters<typeof net.setEnrich>[1], string, string][] = [
+    ["mail.workmail-vendor.com", { ip: "203.0.113.5", city: "Frankfurt am Main, DE", country: "DE", asn: "AS64500", owner: "WorkMail Cloud GmbH", asnName: "WORKMAIL - WorkMail Cloud GmbH", verdict: "NONE", prefix: "203.0.113.0/24" }, "saas", "WorkMail Cloud"],
+    ["cdn.mediastream-vendor.com", { ip: "198.51.100.7", city: "Amsterdam, NL", country: "NL", asn: "AS64510", owner: "Fastly, Inc.", asnName: "FASTLY - Fastly, Inc.", verdict: "NONE", prefix: "198.51.100.0/24" }, "cdn", "Fastly"],
+    ["ads.tracker-vendor.com", { ip: "192.0.2.9", city: "Ashburn, US", country: "US", asn: "AS64520", owner: "Tracky Ads Inc.", asnName: "TRACKY - Tracky Ads Inc.", verdict: "NONE", prefix: "192.0.2.0/24" }, "ads", "Tracky Ads"],
+    ["search-vendor.com", { ip: "203.0.113.30", city: "Dublin, IE", country: "IE", asn: "AS64530", owner: "Searchy Ltd.", asnName: "SEARCHY - Searchy Ltd.", verdict: "NONE", prefix: "203.0.113.0/24" }, "search", "Searchy"],
+    ["news.mediaco-vendor.com", { ip: "198.51.100.40", city: "London, GB", country: "GB", asn: "AS64540", owner: "MediaCo plc", asnName: "MEDIACO - MediaCo plc", verdict: "NONE", prefix: "198.51.100.0/24" }, "media", "MediaCo"],
+    [LOOKALIKE, { ip: "192.0.2.66", city: "Montreal, CA", country: "CA", asn: "AS64550", owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC", verdict: "CRITICAL", prefix: "192.0.2.0/24" }, "unresolved", "Bad Hosting"],
+  ];
+  for (const [host, enrich, cat, name] of dests) {
+    net.setEnrich(host, enrich);
+    net.setIdentify(host, [{ host, canonical_name: name, category: cat, roles: [] }]);
+    if (host !== LOOKALIKE) {
+      net.setVerdict(host, { band: "NONE", coverage: "known-clean", label: "clean" });
+    }
+  }
+
+  // A small fleet for the keyed views.
+  const now = Date.now();
+  net.addEndpoint({
+    agent: "agent-shotphone", address: "2a04:2a01:5ec5:1::a1", label: "My iPhone", device: true, created: now - 3 * 86400000,
+    counters: { dns_queries: 4821, dns_blocked: 132, dns_nxdomain: 44, connections_total: 61, bytes_up: 1_800_000, bytes_down: 24_500_000, last_seen: now - 40_000 },
+    logs: [
+      { ts: now - 5000, kind: "dns", qname: "mail.workmail-vendor.com.", qtype: "A", decision: "allow", agent: "agent-shotphone" },
+      { ts: now - 9000, kind: "dns", qname: "cdn.mediastream-vendor.com.", qtype: "AAAA", decision: "allow", agent: "agent-shotphone" },
+      { ts: now - 12000, kind: "dns", qname: "ads.tracker-vendor.com.", qtype: "A", decision: "block", agent: "agent-shotphone" },
+      { ts: now - 16000, kind: "conn", peer: LOOKALIKE, agent: "agent-shotphone" },
+    ],
+  });
+  net.addEndpoint({
+    agent: "agent-shotlaptop", address: "2a04:2a01:5ec5:2::b2", label: "Work laptop", created: now - 6 * 86400000,
+    counters: { dns_queries: 2210, dns_blocked: 18, connections_total: 30, last_seen: now - 120_000 },
+    logs: [
+      { ts: now - 7000, kind: "dns", qname: "search-vendor.com.", qtype: "A", decision: "allow", agent: "agent-shotlaptop" },
+      { ts: now - 11000, kind: "dns", qname: "news-blog-example.com.", qtype: "A", decision: "allow", agent: "agent-shotlaptop" },
+    ],
+  });
+  net.setCohost(LOOKALIKE, { ip: "192.0.2.66", cohosted: 37, prefix: "192.0.2.0/24", threatNeighbors: 9 });
   ext = await launchExtension({ proxyPort: net.proxyPort, dist: makeShieldDist() });
 });
 
@@ -97,13 +137,13 @@ test("toolbar icon states strip", async () => {
     )
     .join("");
   const html = `<!doctype html><meta charset="utf-8"><style>
-    body{background:#0b1220;color:#e5e7eb;font:14px system-ui;margin:0;padding:28px}
-    h1{font-size:18px;margin:0 0 20px}
+    body{background:#010103;color:#e8e8f2;font:14px system-ui;margin:0;padding:28px}
+    h1{font-size:18px;margin:0 0 20px;font-weight:300}
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;max-width:900px}
-    .cell{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:18px;text-align:center;position:relative}
+    .cell{background:#0d0d1a;border:1px solid #1e1e33;border-radius:12px;padding:18px;text-align:center;position:relative}
     .tiny{position:absolute;top:12px;right:12px}
     .label{font-weight:600;margin-top:10px}
-    .sub{color:#9ca3af;font-size:12px;margin-top:4px}
+    .sub{color:#9a9ab0;font-size:12px;margin-top:4px}
   </style><h1>Whisper Guard: toolbar states (128px, with the 16px form top-right)</h1><div class="grid">${rows}</div>`;
   const tmp = join(mkdtempSync(join(tmpdir(), "whisper-guard-shots-")), "toolbar.html");
   writeFileSync(tmp, html);
@@ -115,11 +155,15 @@ test("toolbar icon states strip", async () => {
 });
 
 test("popup: keyless look-alike (the on-device hero)", async () => {
+  // The pure on-device hero: live check off so the look-alike detector is
+  // the whole story (its own honest surface).
   await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: false });
   const { page, tabId } = await visit(ext, `https://${LOOKALIKE}/`);
   await waitForIcon(ext, tabId, ["suspicious"]);
   await popupShot(tabId, "popup-keyless-lookalike.png");
   await page.close();
+  await setSettings(ext, { cloudCheck: true });
 });
 
 test("popup: keyed evidenced-malicious with explain expanded", async () => {
@@ -200,6 +244,67 @@ test("settings (no key anywhere on screen)", async () => {
   const content = await page.content();
   expect(content).not.toContain(MOCK_KEY);
   await page.screenshot({ path: join(SHOTS, "settings.png"), fullPage: true });
+  await page.close();
+});
+
+test("dashboard: This browser (keyless keystone), graph-enriched destinations", async () => {
+  await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: true });
+  // Drive the browser so the on-device destination log has a real spread.
+  for (const host of [
+    "mail.workmail-vendor.com", "cdn.mediastream-vendor.com", "ads.tracker-vendor.com",
+    "search-vendor.com", "news.mediaco-vendor.com", `${LOOKALIKE}`,
+  ]) {
+    const v = await visit(ext, `https://${host}/`);
+    await waitForIcon(ext, v.tabId, ["benign", "unknown", "suspicious", "malicious", "signedout"]);
+    await v.page.close();
+  }
+  const dash = await openDashboard(ext, "browser");
+  await dash.setViewportSize({ width: 1180, height: 1500 });
+  await expect(dash.locator("#b-ledger")).toContainText("WorkMail", { timeout: 15_000 });
+  await dash.waitForTimeout(700);
+  await dash.screenshot({ path: join(SHOTS, "dashboard-this-browser.png"), fullPage: true });
+  await dash.close();
+});
+
+test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () => {
+  await setKey(ext, MOCK_KEY);
+  const fleet = await openDashboard(ext, "fleet");
+  await fleet.setViewportSize({ width: 1180, height: 1500 });
+  await expect(fleet.locator("#f-roster")).toContainText("My iPhone", { timeout: 15_000 });
+  await fleet.waitForTimeout(700);
+  await fleet.screenshot({ path: join(SHOTS, "dashboard-fleet.png"), fullPage: true });
+  await fleet.close();
+
+  const ep = await openDashboard(ext, "endpoint");
+  await ep.setViewportSize({ width: 1180, height: 1600 });
+  await expect(ep.locator("#e-address")).not.toBeEmpty({ timeout: 15_000 });
+  // Open a destination's receipts (co-hosting from the graph) for the shot.
+  await ep.locator("#e-hosts .w-ledger-row", { hasText: LOOKALIKE }).first().click().catch(() => undefined);
+  await ep.waitForTimeout(800);
+  await ep.screenshot({ path: join(SHOTS, "dashboard-endpoint.png"), fullPage: true });
+  await ep.close();
+});
+
+test("dashboard: Protect this browser (egress toggle, off by default)", async () => {
+  await setKey(ext, MOCK_KEY);
+  const dash = await openDashboard(ext, "browser");
+  await dash.setViewportSize({ width: 1180, height: 900 });
+  await expect(dash.locator("#egress-card")).toBeVisible();
+  await dash.locator("#egress-card").scrollIntoViewIfNeeded();
+  await dash.waitForTimeout(400);
+  await dash.locator("#egress-card").screenshot({ path: join(SHOTS, "dashboard-egress.png") });
+  await dash.close();
+});
+
+test("popup: mini-dashboard summary of this browser", async () => {
+  await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: true });
+  const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  await popupShot(tabId, "popup-mini-dashboard.png", async (p) => {
+    await p.setViewportSize({ width: 390, height: 720 });
+  });
   await page.close();
 });
 

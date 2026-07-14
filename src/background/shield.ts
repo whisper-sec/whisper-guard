@@ -106,7 +106,16 @@ export async function redirectToWarning(tabId: number, host: string, hit: Detect
 /** Inject the amber banner / password-field guard on a flagged host. */
 export async function injectGuard(
   tabId: number,
-  payload: { host: string; severity: "high" | "medium"; brand: string | null; brandDomain: string | null; banner: boolean; fieldGuard: boolean },
+  payload: {
+    host: string;
+    severity: "high" | "medium";
+    brand: string | null;
+    brandDomain: string | null;
+    banner: boolean;
+    fieldGuard: boolean;
+    band?: string | null;
+    graphLabel?: string | null;
+  },
 ): Promise<void> {
   if (!(await shieldGranted())) return;
   if (await sessionAllowed(payload.host)) return;

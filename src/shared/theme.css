@@ -1,0 +1,198 @@
+/* SPDX-License-Identifier: MIT
+   Copyright (c) 2026 viaGraph B.V. (Whisper Security)
+
+   The one Whisper Guard theme: the console's dark violet system, mirrored
+   natively (tokens + primitives only; each surface keeps its own layout).
+
+   Rules the tokens encode:
+   - The verdict scale (none/low/medium/high/critical + ok) is RESERVED for
+     safety meaning and disjoint from the category palette, so a category hue
+     can never impersonate a verdict.
+   - Numbers, IPs and hostnames render in mono with tabular numerals.
+   - Big stats are light-weight; labels are tiny uppercase mono.
+   - Motion is transform/opacity only and yields to prefers-reduced-motion. */
+
+:root {
+  /* Surfaces, darkest to raised. */
+  --w-bg: #010103;
+  --w-surface: #06060c;
+  --w-card: #0d0d1a;
+  --w-elev: #16162a;
+  --w-line: #1e1e33;
+  --w-line-strong: #2a2a44;
+
+  /* Ink. */
+  --w-text: #e8e8f2;
+  --w-muted: #9a9ab0;
+  --w-faint: #62627a;
+
+  /* The single accent: Whisper violet (+ the wordmark gradient). */
+  --w-accent: #8a5cc7;
+  --w-accent-soft: rgba(138, 92, 199, 0.16);
+  --w-accent-line: rgba(138, 92, 199, 0.45);
+  --w-gradient: linear-gradient(135deg, #5b67d8 0%, #9d5fd0 100%);
+
+  /* Verdict scale - RESERVED for safety meaning only. */
+  --w-ok: #10b981;
+  --w-v-none: #555566;
+  --w-v-info: #6366f1;
+  --w-v-low: #f59e0b;
+  --w-v-med: #f97316;
+  --w-v-high: #ef4444;
+  --w-v-crit: #dc2626;
+
+  /* Category palette (one hue per category, disjoint from the verdict
+     scale by construction; grey = exactly one meaning: not yet classified). */
+  --w-cat-search: #2263bd;
+  --w-cat-ads: #c026d3;
+  --w-cat-media: #9061e8;
+  --w-cat-social: #e0448c;
+  --w-cat-work: #1a7fa8;
+  --w-cat-platform: #9085e9;
+  --w-cat-cloud: #1aa0d6;
+  --w-cat-cdn: #4f97dc;
+  --w-cat-infrastructure: #a1751f;
+  --w-cat-unresolved: #9098a8;
+
+  /* Type. */
+  --w-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --w-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--w-bg);
+  color: var(--w-text);
+  font: 13px/1.55 var(--w-font);
+}
+
+/* ---------------------------------------------------------- primitives */
+
+.w-card {
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.w-label {
+  font: 600 10px/1.4 var(--w-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-faint);
+}
+
+.w-mono, .w-num, .w-host, .w-ip {
+  font-family: var(--w-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.w-stat {
+  font: 300 28px/1.1 var(--w-font);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.w-tile {
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.w-tile .w-label { margin-bottom: 6px; }
+.w-tile.flagged-hot { border-color: var(--w-v-high); }
+.w-tile.flagged-hot .w-stat { color: var(--w-v-high); }
+
+.w-chip {
+  display: inline-block;
+  font: 700 10px/1.6 var(--w-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--w-line-strong);
+  background: var(--w-elev);
+  color: var(--w-muted);
+  white-space: nowrap;
+}
+.w-chip.ok    { color: var(--w-ok); border-color: var(--w-ok); background: transparent; }
+.w-chip.none  { color: var(--w-muted); }
+.w-chip.low   { color: var(--w-v-low); border-color: var(--w-v-low); background: transparent; }
+.w-chip.med   { color: var(--w-v-med); border-color: var(--w-v-med); background: transparent; }
+.w-chip.high  { color: var(--w-v-high); border-color: var(--w-v-high); background: transparent; }
+.w-chip.crit  { color: #fff; border-color: var(--w-v-crit); background: var(--w-v-crit); }
+.w-chip.unknown { border-style: dashed; color: var(--w-faint); background: transparent; }
+.w-chip.accent { color: var(--w-accent); border-color: var(--w-accent-line); background: var(--w-accent-soft); }
+
+.w-btn {
+  display: inline-block;
+  background: var(--w-elev);
+  color: var(--w-text);
+  border: 1px solid var(--w-line-strong);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+}
+.w-btn:hover { border-color: var(--w-accent-line); }
+.w-btn.primary {
+  background: var(--w-gradient);
+  border-color: transparent;
+  color: #fff;
+}
+.w-btn.primary:hover { filter: brightness(1.08); }
+.w-btn.small { padding: 5px 10px; font-size: 12px; font-weight: 500; }
+.w-btn[disabled] { opacity: 0.5; cursor: default; }
+
+/* Horizontal tally bar (by company / country / network). */
+.w-bar-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; min-width: 0; }
+.w-bar-name { flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-bar-track { flex: 1; height: 8px; border-radius: 4px; background: var(--w-elev); overflow: hidden; }
+.w-bar-fill { height: 100%; border-radius: 4px; background: var(--w-accent); transition: width 0.4s ease; }
+.w-bar-count { flex: 0 0 3.5em; text-align: right; color: var(--w-muted); font-family: var(--w-mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+/* Ledger rows. */
+.w-ledger { display: flex; flex-direction: column; }
+.w-ledger-row {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 5px 6px; border-radius: 6px; min-width: 0;
+  border-bottom: 1px solid var(--w-surface);
+}
+.w-ledger-row:hover { background: var(--w-elev); }
+.w-ledger-row.fresh { animation: w-fresh 1.2s ease-out; }
+@keyframes w-fresh {
+  from { background: var(--w-accent-soft); }
+  to { background: transparent; }
+}
+
+.w-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+
+/* Live/polling/offline feed status. */
+.w-live { display: inline-flex; align-items: center; gap: 6px; font: 500 11px/1 var(--w-mono); color: var(--w-muted); }
+.w-live .w-dot { width: 7px; height: 7px; }
+.w-live.live .w-dot { background: var(--w-ok); animation: w-pulse 2s ease-in-out infinite; }
+.w-live.polling .w-dot { background: var(--w-v-low); }
+.w-live.offline .w-dot { background: var(--w-faint); }
+@keyframes w-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.w-note { color: var(--w-muted); font-size: 12px; }
+.w-privacy { color: var(--w-faint); font-size: 11px; }
+
+.w-logo { height: 22px; width: auto; display: block; }
+
+a { color: var(--w-accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+[hidden] { display: none !important; }

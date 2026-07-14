@@ -33,6 +33,8 @@ test.beforeAll(async () => {
   net.setVerdict("clean-site-guard-e2e.com", { band: "NONE", coverage: "known-clean", label: "clean" });
   net.setVerdict("evil-known-guard-e2e.com", { band: "CRITICAL", coverage: "malicious-evidenced", label: "malicious" });
   net.setVerdict("shady-guard-e2e.com", { band: "MEDIUM", coverage: "partial", label: "suspicious" });
+  // The first-run live sample checks github.com (clean, as it really is).
+  net.setVerdict("github.com", { band: "NONE", coverage: "known-clean", label: "clean" });
   net.setExplain("evil-known-guard-e2e.com", [
     {
       indicator: "evil-known-guard-e2e.com",
@@ -43,7 +45,20 @@ test.beforeAll(async () => {
     },
   ]);
   net.setIdentify("clean-site-guard-e2e.com", [
-    { host: "clean-site-guard-e2e.com", vendor_id: "e2e", canonical_name: "E2E Clean Site", confidence: 0.9 },
+    { host: "clean-site-guard-e2e.com", canonical_name: "E2E Clean Site", category: "saas", roles: ["ORIGIN_AS"] },
+  ]);
+  // Enrichment fixtures so the composed protection card + dashboard have real
+  // owner / geo / verdict to render (the two-tier keyless picture).
+  net.setEnrich("clean-site-guard-e2e.com", {
+    ip: "203.0.113.10", city: "Frankfurt am Main, DE", country: "DE",
+    asn: "AS64500", owner: "E2E Clean Site, Inc.", asnName: "E2ENET - E2E Clean Site, Inc.", verdict: "NONE",
+  });
+  net.setEnrich("evil-known-guard-e2e.com", {
+    ip: "198.51.100.9", city: "Montreal, CA", country: "CA",
+    asn: "AS64510", owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC", verdict: "CRITICAL",
+  });
+  net.setHistory("evil-known-guard-e2e.com", [
+    { indicator: "evil-known-guard-e2e.com", createDate: "2026-06-20", updateDate: "2026-07-01", registrar: "GoDaddy" },
   ]);
   ext = await launchExtension({ proxyPort: net.proxyPort });
 });
@@ -61,46 +76,81 @@ test.beforeEach(() => {
 
 // ---------------------------------------------------------------- keyless
 
-test("keyless: on-device look-alike fires with ZERO network egress", async () => {
+test("keyless two-tier: no key, the live graph verdict still paints the icon", async () => {
+  // The two-tier keystone: with NO account, the public assess tier answers.
   await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: true });
+
+  const clean = await visit(ext, "https://clean-site-guard-e2e.com/");
+  expect(await waitForIcon(ext, clean.tabId, ["benign"])).toBe("benign");
+  await clean.page.close();
+
+  const evil = await visit(ext, "https://evil-known-guard-e2e.com/");
+  expect(await waitForIcon(ext, evil.tabId, ["malicious"])).toBe("malicious");
+  await evil.page.close();
+});
+
+test("keyless privacy: only the bare hostname leaves, only to the graph, no key on the wire", async () => {
+  await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: true });
+  // A fresh, uncached host so this is a guaranteed graph round-trip.
+  net.setVerdict("privacy-fresh-guard-e2e.com", { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.clearLog();
+
+  const { page, tabId } = await visit(ext, "https://privacy-fresh-guard-e2e.com/very/secret?token=hunter2");
+  await waitForIcon(ext, tabId, ["benign"]);
+  await page.waitForTimeout(400);
+
+  // The full-capture set: only the visited site and the graph, nothing else.
+  expect(net.contactedHosts().sort()).toEqual(["graph.whisper.security", "privacy-fresh-guard-e2e.com"]);
+  const graphReqs = net.requestsTo("graph.whisper.security").filter((r) => r.scheme === "https");
+  expect(graphReqs.length).toBeGreaterThan(0);
+  // The only browsing datum on the wire is the bare hostname; the path/query
+  // never leave, and the visited host was assessed by name alone.
+  const assess = graphReqs.find(
+    (r) => r.body.includes("whisper.assess") && r.body.includes("privacy-fresh-guard-e2e.com"),
+  );
+  expect(assess).toBeTruthy();
+  expect(JSON.parse(assess!.body).parameters).toEqual({ hs: ["privacy-fresh-guard-e2e.com"] });
+  for (const r of graphReqs) {
+    expect(r.body).not.toContain("secret");
+    expect(r.body).not.toContain("hunter2");
+  }
+  await page.close();
+});
+
+test("keyless: on-device detector runs locally; with the live check OFF nothing leaves", async () => {
+  await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: false });
   net.clearLog();
 
   const { page, tabId } = await visit(ext, "https://paypa1-secure-login.com/");
   const state = await waitForIcon(ext, tabId, ["suspicious"]);
   expect(state).toBe("suspicious");
 
-  // The keyless hero's privacy proof: the ONLY traffic the whole browser
-  // produced is the fake site itself. No graph, no console, nothing else.
-  await page.waitForTimeout(500);
-  const hosts = net.contactedHosts();
-  expect(hosts).toEqual(["paypa1-secure-login.com"]);
+  // Live check off: the ONLY traffic is the fake site itself. The detector
+  // still fires entirely on-device.
+  await page.waitForTimeout(400);
+  expect(net.contactedHosts()).toEqual(["paypa1-secure-login.com"]);
   expect(net.requestsTo("graph.whisper.security")).toHaveLength(0);
   await page.close();
+  await setSettings(ext, { cloudCheck: true });
 });
 
-test("keyless: popup shows the on-device hit, the sign-in pitch, and the honest privacy line", async () => {
+test("keyless: popup shows the on-device look-alike hit and the honest privacy line", async () => {
   await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: true });
   const { page, tabId } = await visit(ext, "https://paypa1-secure-login.com/");
   await waitForIcon(ext, tabId, ["suspicious"]);
 
   const popup = await openPopup(ext, tabId);
   await expect(popup.locator("#hostname")).toHaveText("paypa1-secure-login.com");
-  await expect(popup.locator("#band-chip")).toHaveText("LIVE SIGNAL LOCKED");
   await expect(popup.locator("#lookalike-text")).toContainText("paypal.com");
-  await expect(popup.locator("#lookalike-text")).toContainText("nothing left your browser");
   await expect(popup.locator("#btn-goto")).toHaveText("Go to the real paypal.com");
   await expect(popup.locator("#signin-pitch")).toBeVisible();
   await expect(popup.locator("#btn-signin")).toHaveText("Sign in with Whisper");
-  await expect(popup.locator("#privacy-line")).toContainText("nothing left your browser");
+  await expect(popup.locator("#privacy-line")).toContainText("graph.whisper.security");
   await popup.close();
-  await page.close();
-});
-
-test("keyless: clean host paints the signed-out icon, never a verdict", async () => {
-  await setKey(ext, null);
-  const { page, tabId } = await visit(ext, "https://totally-ordinary-site.com/");
-  const state = await waitForIcon(ext, tabId, ["signedout"]);
-  expect(state).toBe("signedout");
   await page.close();
 });
 
@@ -268,27 +318,26 @@ test("privacy: internal pages are never assessed and read as out of scope", asyn
 
 // ------------------------------------------------------------- device flow
 
-test("device flow: one click signs in, the key lands in storage, the band goes live", async () => {
+test("device flow: one click signs in and the key lands in storage", async () => {
   await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: true });
   net.device.polls = 0;
   net.device.approveVisited = false;
 
+  // Keyless already shows the live band; sign-in unlocks the fleet, not the
+  // per-site verdict, so this asserts the sign-in itself completes.
   const { page, tabId } = await visit(ext, "https://clean-site-guard-e2e.com/");
-  await waitForIcon(ext, tabId, ["signedout"]);
+  await waitForIcon(ext, tabId, ["benign"]);
   const popup = await openPopup(ext, tabId);
   await popup.locator("#btn-signin").click();
 
   // The flow opens the console approval tab (our mock approves on visit)
-  // and the popup polls to "approved" then reloads into the signed-in view.
+  // and the popup polls to "approved".
   await expect
     .poll(async () => getStoredKey(ext), { timeout: 20_000 })
     .toBe(MOCK_KEY);
 
-  // The band goes live on the already-open tab with NO re-navigation:
-  // sign-in repaints open tabs immediately.
-  expect(await waitForIcon(ext, tabId, ["benign"], 10_000)).toBe("benign");
-
-  // And the panel now renders the keyed verdict.
+  // The keyed band remains benign; the panel renders it after the reload.
   await popup.reload();
   await expect(popup.locator("#band-chip")).toHaveText("NO KNOWN THREAT", { timeout: 15_000 });
   await popup.close();
@@ -358,8 +407,9 @@ test("checking state is shown while a slow verdict is in flight, then settles", 
 // ---------------------------------------------------------- pre-click check
 
 test("pre-click check vets a destination before navigation, keyless and keyed", async () => {
-  // Keyless: the on-device verdict, explicit zero-egress privacy line.
+  // Keyless with the live check off: the on-device verdict, zero-egress line.
   await setKey(ext, null);
+  await setSettings(ext, { cloudCheck: false });
   net.clearLog();
   const check = await ext.context.newPage();
   await check.goto(`chrome-extension://${ext.id}/check-link.html?host=paypa1-secure-login.com`);
@@ -368,6 +418,7 @@ test("pre-click check vets a destination before navigation, keyless and keyed", 
   await expect(check.locator("#privacy")).toContainText("nothing left your browser");
   expect(net.requestsTo("graph.whisper.security")).toHaveLength(0);
   await check.close();
+  await setSettings(ext, { cloudCheck: true });
 
   // Keyed: the live band joins the same surface.
   await setKey(ext, MOCK_KEY);
@@ -401,13 +452,17 @@ test("first-run page: privacy promise + honest scope, opened once on install", a
   // onInstalled fired when this context loaded the unpacked extension; the
   // welcome tab may have been auto-opened. Assert the page itself renders
   // the two cards either way.
+  await setKey(ext, MOCK_KEY);
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/firstrun.html`);
-  await expect(page.locator("h1")).toHaveText("Whisper Guard is on");
+  await expect(page.locator("h1")).toHaveText("Guard is protecting you now");
   await expect(page.locator("main")).toContainText("privacy promise");
   await expect(page.locator("main")).toContainText("never your history");
-  await expect(page.locator("main")).toContainText("What it catches, honestly");
+  await expect(page.locator("main")).toContainText("What signing in adds");
   await expect(page.locator("#btn-signin")).toHaveText("Sign in with Whisper");
   await expect(page.locator("#btn-later")).toHaveText("Not now");
+  // The live sample verdict proves the graph tier keyless-first.
+  await expect(page.locator("#sample-chip")).toHaveText("NO KNOWN THREAT", { timeout: 15_000 });
   await page.close();
+  await setKey(ext, null);
 });

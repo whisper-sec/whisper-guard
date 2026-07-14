@@ -1,80 +1,55 @@
 /* SPDX-License-Identifier: MIT
-   Copyright (c) 2026 viaGraph B.V. (Whisper Security) */
+   Copyright (c) 2026 viaGraph B.V. (Whisper Security)
+   Options layout on top of the shared theme tokens. */
 
-:root {
-  --bg: #0b1220;
-  --panel: #111827;
-  --line: #1f2937;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
-  --accent: #38bdf8;
-}
-
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
+body { font-size: 14px; line-height: 1.6; }
 
 main { max-width: 680px; margin: 0 auto; padding: 28px 20px 60px; }
 
-h1 { font-size: 22px; margin: 0 0 18px; }
-h2 { font-size: 15px; margin: 0 0 10px; }
-h3 { font-size: 13px; margin: 14px 0 4px; color: var(--muted); }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.brand .w-logo { height: 26px; }
+.brand .product {
+  font-weight: 300;
+  font-size: 18px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+h3 { font-size: 13px; margin: 14px 0 4px; color: var(--w-muted); }
 
 .card {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
   border-radius: 12px;
   padding: 16px 18px;
   margin-bottom: 14px;
 }
 .card p { margin: 0 0 10px; }
 
-code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
-
-.note { color: var(--muted); font-size: 12px; }
+code { background: var(--w-surface); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
 
 .toggle { display: flex; gap: 10px; margin: 10px 0; cursor: pointer; }
 .toggle.sub { margin-left: 26px; }
-.toggle input { margin-top: 3px; flex: none; }
+.toggle input { margin-top: 3px; flex: none; accent-color: var(--w-accent); }
 
 .row { display: flex; align-items: center; }
 .gap { gap: 8px; }
 
-.btn {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px 14px;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.btn:hover { border-color: var(--muted); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #06202e; }
-.btn.small { padding: 5px 10px; font-size: 12px; }
-
 textarea, input[type="password"] {
   width: 100%;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line);
+  background: var(--w-surface);
+  color: var(--w-text);
+  border: 1px solid var(--w-line);
   border-radius: 8px;
   padding: 8px 10px;
-  font: 13px/1.5 ui-monospace, monospace;
+  font: 13px/1.5 var(--w-mono);
 }
 input[type="password"] { width: auto; flex: 1; }
 
-.fallback { margin-top: 10px; }
-.fallback summary { color: var(--muted); cursor: pointer; font-size: 12px; }
+.fallback { margin-top: 10px; border-top: 0; }
+.fallback summary { color: var(--w-muted); cursor: pointer; font-size: 12px; }
 .fallback .row { margin-top: 8px; }
 
-.footer-note { color: var(--muted); font-size: 12px; text-align: center; }
-.footer-note a { color: var(--accent); }
-
-[hidden] { display: none !important; }
+.footer-note { color: var(--w-muted); font-size: 12px; text-align: center; }

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Whisper Guard dashboard</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <img src="logo.png" alt="Whisper" class="w-logo">
+    <span class="product">Guard</span>
+    <nav class="views" role="tablist" aria-label="Dashboard views">
+      <button id="tab-browser" class="view-tab active" role="tab" aria-selected="true">This browser</button>
+      <button id="tab-fleet" class="view-tab" role="tab" aria-selected="false">Fleet</button>
+      <button id="tab-endpoint" class="view-tab" role="tab" aria-selected="false">Endpoint</button>
+    </nav>
+    <span class="spacer"></span>
+    <span id="identity-chip" class="w-chip unknown" title="">NOT ON THE WHISPER NETWORK</span>
+    <span id="feed-status" class="w-live live"><span class="w-dot"></span><span id="feed-label">updating live</span></span>
+  </header>
+
+  <!-- ================================================== This browser -->
+  <main id="view-browser" class="view">
+    <section class="tiles" id="b-tiles"></section>
+
+    <section class="grid">
+      <div class="w-card">
+        <div class="w-label">Where it goes, by kind</div>
+        <div class="donut-wrap">
+          <canvas id="b-donut" width="180" height="180"></canvas>
+          <div id="b-donut-legend" class="legend"></div>
+        </div>
+      </div>
+      <div class="w-card">
+        <div class="w-label">By company</div>
+        <div id="b-owners" class="bars"></div>
+      </div>
+      <div class="w-card">
+        <div class="w-label">By country <span class="hint">(network jurisdiction; anycast-fuzzy)</span></div>
+        <div id="b-countries" class="bars"></div>
+      </div>
+    </section>
+
+    <section class="w-card" id="b-conc-card" hidden>
+      <div id="b-concentration" class="concentration"></div>
+    </section>
+
+    <section class="w-card">
+      <div class="card-head">
+        <div class="w-label">Activity ledger, busiest first</div>
+        <span class="w-note" id="b-count"></span>
+      </div>
+      <div id="b-ledger" class="w-ledger"></div>
+      <p id="b-empty" class="w-note" hidden>No destinations yet. Browse a little and watch this fill in live.</p>
+    </section>
+
+    <section class="w-card" id="egress-card">
+      <div class="card-head">
+        <div>
+          <div class="w-label">Protect this browser</div>
+          <p class="w-note">Give this browser its own routable Whisper identity and route its traffic
+          through Whisper egress. It joins your fleet like any other device: reverse-DNS,
+          verifiable identity, activity you can audit here. Off by default; asks for the
+          browser's proxy permission when you turn it on.</p>
+        </div>
+        <button id="egress-toggle" class="w-btn primary">Turn on</button>
+      </div>
+      <div id="egress-detail" class="egress-detail"></div>
+    </section>
+  </main>
+
+  <!-- ======================================================== Fleet -->
+  <main id="view-fleet" class="view" hidden>
+    <section id="fleet-lock" class="w-card lock" hidden>
+      <h2>Your whole fleet, one view</h2>
+      <p class="w-note">Every device and agent on your Whisper account: where they go, who answers,
+      and the few that deserve a look. Sign in to unlock.</p>
+      <button id="fleet-signin" class="w-btn primary">Sign in with Whisper</button>
+      <div id="fleet-device-status" class="w-note" hidden></div>
+    </section>
+
+    <div id="fleet-body" hidden>
+      <section class="w-card">
+        <div class="card-head">
+          <div class="w-label">Endpoints</div>
+          <span class="w-note" id="f-silent"></span>
+        </div>
+        <div id="f-roster" class="roster"></div>
+      </section>
+
+      <section class="tiles" id="f-tiles"></section>
+
+      <section class="grid">
+        <div class="w-card">
+          <div class="w-label">Where the fleet goes, by kind</div>
+          <div class="donut-wrap">
+            <canvas id="f-donut" width="180" height="180"></canvas>
+            <div id="f-donut-legend" class="legend"></div>
+          </div>
+        </div>
+        <div class="w-card">
+          <div class="w-label">By company</div>
+          <div id="f-owners" class="bars"></div>
+        </div>
+        <div class="w-card">
+          <div class="w-label">By country <span class="hint">(network jurisdiction; anycast-fuzzy)</span></div>
+          <div id="f-countries" class="bars"></div>
+        </div>
+      </section>
+
+      <section class="w-card">
+        <div class="card-head">
+          <div class="w-label">Live activity, newest first</div>
+          <span class="w-note" id="f-feed-note"></span>
+        </div>
+        <div id="f-feed" class="w-ledger"></div>
+        <p id="f-empty" class="w-note" hidden>No activity in the last 24 hours.</p>
+      </section>
+    </div>
+  </main>
+
+  <!-- ===================================================== Endpoint -->
+  <main id="view-endpoint" class="view" hidden>
+    <section id="e-lock" class="w-card lock" hidden>
+      <h2>Per-endpoint drill-down</h2>
+      <p class="w-note">Pick any device or agent on your account: live counters, an explainable
+      identity-health score, its connection constellation, and every destination with
+      receipts. Sign in to unlock.</p>
+      <button id="e-signin" class="w-btn primary">Sign in with Whisper</button>
+    </section>
+
+    <div id="e-body" hidden>
+      <section class="w-card e-head">
+        <select id="e-picker" class="picker" aria-label="Choose an endpoint"></select>
+        <div class="e-idline">
+          <span id="e-address" class="w-ip"></span>
+          <span id="e-state" class="w-chip ok">ACTIVE</span>
+          <a id="e-rdap" class="w-note" target="_blank" rel="noopener">RDAP registration</a>
+        </div>
+        <div id="e-fqdn" class="w-note w-mono"></div>
+      </section>
+
+      <section class="tiles" id="e-tiles"></section>
+
+      <section class="grid">
+        <div class="w-card">
+          <div class="w-label">Identity health</div>
+          <div class="health-wrap">
+            <canvas id="e-gauge" width="140" height="140"></canvas>
+            <div>
+              <div id="e-health-headline" class="health-headline"></div>
+              <div id="e-factors" class="factors"></div>
+              <div id="e-threat-note" class="w-note threat-note"></div>
+            </div>
+          </div>
+        </div>
+        <div class="w-card wide2">
+          <div class="w-label">Connection constellation <span class="hint">(this endpoint &rarr; where it went)</span></div>
+          <canvas id="e-constellation" class="constellation" width="640" height="280"></canvas>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="w-card wide2">
+          <div class="card-head">
+            <div class="w-label">Destinations, busiest first</div>
+            <span class="w-note">click one for the receipts</span>
+          </div>
+          <div id="e-hosts" class="w-ledger"></div>
+        </div>
+        <div class="w-card" id="e-drill">
+          <div class="w-label">Destination receipts</div>
+          <div id="e-drill-body" class="w-note">Pick a destination on the left.</div>
+        </div>
+      </section>
+
+      <section class="w-card">
+        <div class="card-head">
+          <div class="w-label">Recent activity</div>
+          <span class="w-note" id="e-feed-note"></span>
+        </div>
+        <div id="e-activity" class="w-ledger"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <span id="privacy-line" class="w-privacy">Privacy: your destination list lives on this device.
+    Only bare hostnames are sent for enrichment, only to graph.whisper.security. Endpoint identity
+    checks send only IP literals of your own endpoints to rdap.whisper.online.</span>
+  </footer>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

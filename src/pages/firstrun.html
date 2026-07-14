@@ -4,47 +4,62 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <title>Welcome to Whisper Guard</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="firstrun.css">
 </head>
 <body>
   <main>
     <div class="hero">
-      <img src="icons/base-128.png" width="56" height="56" alt="">
+      <img src="logo.png" alt="Whisper" class="hero-logo">
       <div>
-        <h1>Whisper Guard is on</h1>
-        <p class="tagline">Look-alike protection started the moment you installed. Nothing to set up.</p>
+        <h1>Guard is protecting you now</h1>
+        <p class="tagline">No account needed. Nothing to set up.</p>
       </div>
     </div>
 
     <section class="card">
+      <h2>See it work</h2>
+      <p>Every site you visit is checked live against the Whisper security graph,
+      3.6 billion nodes of internet ground truth. Here is a real verdict, fetched
+      just now:</p>
+      <div id="sample" class="sample">
+        <span id="sample-host" class="w-host">github.com</span>
+        <span id="sample-chip" class="w-chip unknown">CHECKING…</span>
+        <span id="sample-note" class="w-note"></span>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>Our privacy promise, in plain language</h2>
       <p>We only ever see a site's <strong>name</strong>, never your history, never the
-      page. The look-alike protection runs entirely in your browser and sends
-      nothing anywhere. If you later sign in, the one thing that can leave the
-      browser is a hostname, sent to exactly one endpoint to answer the live
-      safety check, and it is not retained to build a browsing profile.</p>
-      <p class="note">Your browser may say Whisper Guard can "read your browsing
+      page. The live check sends the hostname of the page you visit to exactly one
+      endpoint, <code>graph.whisper.security</code>, and nothing else: no path, no query,
+      no content. Hostnames are not retained to build a browsing profile. The on-device
+      look-alike protection sends nothing at all, and one switch in settings turns the
+      live check off entirely.</p>
+      <p class="w-note">Your browser may say Whisper Guard can "read your browsing
       activity". That permission is how we see the site <em>name</em> to check it.
       We never read the page, never see what you type, and never store your
       history. There is no telemetry and no analytics in this extension.</p>
     </section>
 
     <section class="card">
-      <h2>What it catches, honestly</h2>
-      <p><strong>Already active:</strong> warnings before you type a password into a
-      look-alike of a major brand's login page: homoglyph tricks, TLD swaps,
-      hyphenation squats, and brand-impersonating subdomains, across 800+
-      heavily phished brands. Right-click any link to vet it before you open it.</p>
-      <p><strong>Not magic:</strong> the on-device tier does not catch compromised
-      legitimate sites or brand-new domains it has never heard of. The Whisper
-      security graph covers far more. Sign in free to light up a live threat
-      signal on every site you visit; it still says UNKNOWN for most of the
-      web, because that is the truth.</p>
+      <h2>What signing in adds (free)</h2>
+      <p><strong>Already active:</strong> the live graph verdict on every site, who runs
+      it and where it lives, registered look-alike alerts, the on-device detector for
+      800+ heavily phished brands, and the "This browser" dashboard: where this browser
+      goes, by company, country and kind. Right-click any link to vet it before you
+      open it.</p>
+      <p><strong>With an account:</strong> your whole fleet in one view (every device and
+      agent on your Whisper account), per-endpoint drill-downs with verifiable identity
+      health, and the option to route this browser through Whisper egress so it becomes
+      a first-class endpoint with its own routable IPv6 identity.</p>
       <div class="row gap">
-        <button id="btn-signin" class="btn primary">Sign in with Whisper</button>
-        <button id="btn-later" class="btn">Not now</button>
+        <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
+        <button id="btn-dashboard" class="w-btn">Open the dashboard</button>
+        <button id="btn-later" class="w-btn">Not now</button>
       </div>
-      <div id="device-status" class="note status" hidden></div>
+      <div id="device-status" class="w-note status" hidden></div>
     </section>
 
     <p class="footer-note">You can revisit all of this any time in the extension's settings.</p>

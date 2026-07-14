@@ -5,11 +5,11 @@
   <meta name="color-scheme" content="dark">
   <title>Whisper Guard: screenshot gallery</title>
   <style>
-    :root { --bg:#0b1220; --panel:#111827; --line:#1f2937; --text:#e5e7eb; --muted:#9ca3af; --accent:#38bdf8; }
+    :root { --bg:#010103; --panel:#0d0d1a; --line:#1e1e33; --text:#e8e8f2; --muted:#9a9ab0; --accent:#8a5cc7; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
     main { max-width: 1080px; margin: 0 auto; padding: 40px 20px 80px; }
-    h1 { font-size: 26px; margin: 0 0 6px; }
+    h1 { font-size: 26px; margin: 0 0 6px; font-weight: 300; }
     .sub { color: var(--muted); margin: 0 0 30px; }
     h2 { font-size: 17px; margin: 40px 0 14px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
@@ -44,7 +44,8 @@
     <figure>
       <img src="popup-keyless-lookalike.png" alt="Keyless popup with an on-device look-alike hit">
       <figcaption><strong>Keyless, the on-device hero.</strong> A look-alike of paypal.com caught
-      entirely in the browser; one tap goes to the real site. Nothing left the device.</figcaption>
+      entirely in the browser; one tap goes to the real site. Shown with the live check off, so the
+      on-device detector is the whole story.</figcaption>
     </figure>
     <figure>
       <img src="popup-keyed-malicious.png" alt="Keyed popup on an evidenced-malicious site">
@@ -70,6 +71,44 @@
       <img src="popup-keyed-unknown.png" alt="Keyed popup on an unknown site">
       <figcaption><strong>UNKNOWN, the honest common state.</strong> Slate, not green:
       "not confirmed safe or unsafe" is the truth for most of the web.</figcaption>
+    </figure>
+  </div>
+
+  <h2>The dashboard: where your devices go</h2>
+  <div class="grid">
+    <figure class="wide">
+      <img src="dashboard-this-browser.png" alt="This-browser dashboard: graph-enriched destinations">
+      <figcaption><strong>This browser (keyless keystone).</strong> The destinations this browser
+      navigated to, enriched through the graph into who answers, what kind, which country and
+      network, and a reconciled verdict. Tiles, a category donut, company and country breakdowns,
+      a concentration callout, and an activity ledger that updates live per navigation. Works with
+      no account; only bare hostnames are sent, only to the graph.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="dashboard-fleet.png" alt="Fleet total dashboard across all endpoints">
+      <figcaption><strong>Fleet total (signed in).</strong> Every device and agent on your Whisper
+      account in one view: roster, merged last-24h destinations across the fleet, the same panels,
+      and an honest polling feed labelled "updated Ns ago".</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="dashboard-endpoint.png" alt="Per-endpoint drill-down with identity health and receipts">
+      <figcaption><strong>Per-endpoint drill-down (signed in).</strong> Live counters, an
+      explainable identity-health score (each factor met/unmet/unknown, never a black box), the
+      connection constellation from the endpoint to where it went, and destination receipts with
+      co-hosting fan-in and announcing-prefix threat neighbours, straight from the graph. An RDAP
+      provenance link anchors every identity.</figcaption>
+    </figure>
+    <figure>
+      <img src="dashboard-egress.png" alt="Protect this browser: the egress toggle">
+      <figcaption><strong>Protect this browser (opt-in, off by default).</strong> One toggle gives
+      this browser its own routable Whisper identity and routes its traffic through Whisper egress,
+      so it joins your fleet as a device. WebRTC hardened to proxied-only; the honest limits are
+      stated in place.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-mini-dashboard.png" alt="Popup mini-dashboard summary">
+      <figcaption><strong>The popup carries a mini-dashboard.</strong> A four-tile summary of where
+      this browser goes, one click from the full view.</figcaption>
     </figure>
   </div>
 

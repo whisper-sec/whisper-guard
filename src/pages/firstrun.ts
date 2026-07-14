@@ -1,17 +1,41 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// First run: two cards, no config, no account wall. The privacy promise and
-// the honest scope, then an optional one-tap sign-in (the same RFC 8628
-// device flow as everywhere else). "Not now" is a first-class choice:
-// on-device protection is already live either way.
+// First run: protection is already on, keyless value first. A LIVE sample
+// verdict proves the graph tier in one glance, then the privacy promise,
+// then an optional one-tap sign-in (the same RFC 8628 device flow as
+// everywhere else). "Not now" is a first-class choice.
 
-import { send } from "../shared/messages";
+import { send, type CheckHostResult } from "../shared/messages";
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
+// The live sample: one real verdict for a well-known host, fetched now.
+// (A fixed public name, never anything about the user's browsing.)
+async function loadSample(): Promise<void> {
+  const chip = $("sample-chip");
+  const note = $("sample-note");
+  const res = await send<{ ok: true; check: CheckHostResult }>({ kind: "checkHost", host: "github.com" });
+  if (!res.ok || !res.check.verdict) {
+    chip.className = "w-chip unknown";
+    chip.textContent = "UNAVAILABLE";
+    note.textContent = res.ok ? (res.check.graphError ?? "the live check is off") : "could not reach Whisper";
+    return;
+  }
+  const band = res.check.verdict.band.toUpperCase();
+  const good = band === "NONE" || band === "LOW" || band === "INFO";
+  chip.className = `w-chip ${good ? "ok" : band === "MEDIUM" ? "med" : band === "UNKNOWN" ? "unknown" : "crit"}`;
+  chip.textContent = good ? "NO KNOWN THREAT" : band;
+  note.textContent = res.check.verdict.coverage ? `coverage: ${res.check.verdict.coverage}` : "";
+}
+void loadSample();
+
 $("btn-later").addEventListener("click", () => {
   window.close();
+});
+
+$("btn-dashboard").addEventListener("click", () => {
+  void send({ kind: "openDashboard" });
 });
 
 $("btn-signin").addEventListener("click", async () => {

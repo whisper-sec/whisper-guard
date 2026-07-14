@@ -10,6 +10,8 @@
 //   banner     a slim dismissible amber bar (never blocks the page)
 //   fieldGuard a caution shown when a password field gains focus
 
+import { LOGO_DATAURI } from "../shared/brand";
+
 interface GuardConfig {
   kind: "whisper-guard-config";
   host: string;
@@ -18,6 +20,9 @@ interface GuardConfig {
   brandDomain: string | null;
   banner: boolean;
   fieldGuard: boolean;
+  /** The live graph band/label, when one flagged this host (optional). */
+  band?: string | null;
+  graphLabel?: string | null;
 }
 
 const FLAG = "__whisperGuardInjected";
@@ -61,11 +66,22 @@ if (!w[FLAG]) {
       "box-shadow:0 2px 8px rgba(0,0,0,.4)",
     ].join(";");
 
+    // The wordmark rides as a data URI: nothing becomes web-accessible.
+    const logo = document.createElement("img");
+    logo.src = LOGO_DATAURI;
+    logo.alt = "Whisper";
+    logo.style.cssText = "height:16px;width:auto;flex:none;display:block";
+    bar.appendChild(logo);
+
     const text = document.createElement("span");
     text.style.cssText = "flex:1;min-width:0";
+    const graphNote =
+      cfg.band && (cfg.band === "MEDIUM" || cfg.band === "HIGH" || cfg.band === "CRITICAL")
+        ? ` The Whisper graph rates it ${cfg.band}${cfg.graphLabel ? ` (${cfg.graphLabel})` : ""}.`
+        : "";
     text.textContent = cfg.brandDomain
-      ? `Whisper Guard: this site looks like ${cfg.brandDomain} but is not it. Be careful with passwords and payment details.`
-      : "Whisper Guard: this site is flagged as suspicious. Be careful with passwords and payment details.";
+      ? `Whisper Guard: this site looks like ${cfg.brandDomain} but is not it.${graphNote} Be careful with passwords and payment details.`
+      : `Whisper Guard: this site is flagged as suspicious.${graphNote} Be careful with passwords and payment details.`;
     bar.appendChild(text);
 
     if (cfg.brandDomain) {

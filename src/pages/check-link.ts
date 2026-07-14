@@ -59,9 +59,9 @@ async function init(): Promise<void> {
     $("band-tag").textContent = c.verdict.band;
     $("band-text").textContent = c.verdict.label ? `${ui.text} ${c.verdict.label}` : ui.text;
     copyLines.push(`graph band: ${c.verdict.band}${c.verdict.coverage ? ` (coverage: ${c.verdict.coverage}, categorical)` : ""}`);
-  } else if (!c.signedIn) {
+  } else if (!c.graphError) {
     $("keyless-note").hidden = false;
-    copyLines.push("graph band: (not signed in)");
+    copyLines.push("graph band: (live check off)");
   }
 
   if (c.graphError) {
@@ -69,9 +69,12 @@ async function init(): Promise<void> {
     $("error-note").textContent = c.graphError;
   }
 
-  $("privacy").textContent = c.signedIn
-    ? `Privacy: only "${host}" was sent, to graph.whisper.security.`
-    : `Privacy: nothing left your browser. The check ran on-device.`;
+  // The live check ran iff a verdict or a graph error came back; otherwise
+  // the check was on-device only (live check switched off).
+  $("privacy").textContent =
+    c.verdict || c.graphError
+      ? `Privacy: only "${host}" was sent, to graph.whisper.security.`
+      : `Privacy: nothing left your browser. The check ran on-device.`;
 
   $("btn-copy").addEventListener("click", async () => {
     await navigator.clipboard.writeText(copyLines.join("\n"));

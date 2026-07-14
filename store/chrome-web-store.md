@@ -6,35 +6,44 @@ Everything the CWS dashboard asks for, ready to paste. Upload
 ## Listing
 
 - **Name:** Whisper Guard
-- **Summary (132 max):** Phishing protection that works the instant it installs. On-device look-alike alerts; a live safety signal when you sign in.
+- **Summary (132 max):** The Whisper security graph in your browser: a live safety verdict on every site, plus a dashboard of where your devices go.
 - **Category:** Privacy & Security
 - **Language:** English
 
 **Description:**
 
-Whisper Guard warns you before you type a password into a fake login page.
+Whisper Guard brings the Whisper security graph into your browser: a live
+verdict on every site, and a dashboard of where your devices actually go.
 
-The moment you install it, an on-device detector starts checking every site
-you visit against 800+ heavily phished brands: homoglyph tricks (paypa1.com,
-Cyrillic lookalikes), swapped endings (paypal.tk), hyphen squats
-(face-book.com), fake subdomains (paypal.com.evil.example) and combo squats
-(paypal-secure-login.com). One tap takes you to the real site. Right-click
-any link to vet it before you open it. All of this runs in your browser, with
-no account and nothing sent anywhere.
+The moment you install it, the toolbar mark answers "is THIS site safe?" on
+every page you visit, with no account needed: green for no known threat, amber
+for suspicious, a red stop plate reserved for evidenced-malicious sites, and an
+honest UNKNOWN for the internet's long tail. Click the mark for who runs the
+site and where it lives, how old the domain is, the threat feeds it is listed
+in, and a look-alike neighborhood confirmed against the graph.
 
-Sign in free and the toolbar mark answers "is THIS site safe?" on every page,
-from the Whisper security graph: green for no known threat, amber for
-suspicious, a red stop plate reserved for evidenced-malicious sites, and an
-honest UNKNOWN for the internet's long tail. Click the mark for the why (the
-threat feeds a site is listed in), who runs it, confirmed look-alikes, and a
-session log of risky sites.
+An on-device detector also checks every site against 800+ heavily phished
+brands: homoglyph tricks (paypa1.com, Cyrillic lookalikes), swapped endings
+(paypal.tk), hyphen squats (face-book.com), fake subdomains
+(paypal.com.evil.example) and combo squats (paypal-secure-login.com). One tap
+takes you to the real site. Right-click any link to vet it before you open it.
+
+The "This browser" dashboard shows where this browser goes, enriched through the
+graph: which companies answer, in which countries, on which networks, and what
+is flagged. No account needed.
+
+Sign in free (one tap, no API key to handle) to unlock your whole fleet: every
+device and agent on your Whisper account in one view, per-endpoint drill-downs
+with an explainable identity-health score, and the option to route this browser
+itself through Whisper egress so it becomes a first-class endpoint with its own
+routable identity.
 
 Privacy is the product:
-- Only a site's NAME is ever checked. Never the page, the path, what you
-  type, or your history.
-- The keyless protection sends nothing at all. Signed in, the hostname goes
-  to exactly one endpoint to answer the safety check, and is not retained to
-  build a browsing profile.
+- Only a site's NAME is ever checked. Never the page, the path, what you type,
+  or your history. Your on-device destination list never leaves the device.
+- The bare hostname goes to exactly one endpoint to answer the safety check and
+  is not retained to build a browsing profile. One switch turns the live check
+  off, after which only the on-device detector runs and nothing leaves at all.
 - No telemetry, no analytics, no sync. Open source (MIT).
 
 Optional Active Shield adds a full-page stop before known credential-phishing
@@ -56,39 +65,52 @@ and the on-device protection keeps running.
 Use the gallery in `shots/` (regenerate with
 `npx playwright test e2e/screenshots.spec.ts`):
 
-1. `toolbar-states.png` (the six states)
-2. `popup-keyless-lookalike.png` (the keyless hero)
-3. `popup-keyed-malicious.png` (evidenced verdict)
-4. `warning.png` (the full-page stop)
-5. `firstrun.png` (the privacy promise)
+1. `dashboard-this-browser.png` (where this browser goes, keyless)
+2. `dashboard-endpoint.png` (per-endpoint drill-down, identity health + receipts)
+3. `popup-keyed-malicious.png` (evidenced verdict + composed picture)
+4. `toolbar-states.png` (the six states)
+5. `warning.png` (the full-page stop)
 
 ## Privacy practices tab (the exact answers)
 
-- **Single purpose:** Warns the user before phishing and look-alike websites,
-  using an on-device brand-impersonation detector and, when the user signs
-  in, a per-site safety verdict from the Whisper security graph.
+- **Single purpose:** Warns the user before phishing and look-alike websites
+  and shows where their devices connect, using an on-device
+  brand-impersonation detector plus per-site safety verdicts and destination
+  enrichment from the Whisper security graph.
 - **Permission justifications:**
   - `webNavigation`: to learn the hostname of the page being visited so it
-    can be checked. The URL's path, query, and content are discarded at
-    parse time.
-  - `storage`: local settings, the local verdict cache, and the sign-in
-    credential. Nothing is synced.
+    can be checked and shown in the "This browser" dashboard. The URL's path,
+    query, and content are discarded at parse time.
+  - `storage`: local settings, the local verdict cache, the on-device
+    destination log, and the sign-in credential. Nothing is synced.
   - `scripting`: used only after the optional Active Shield opt-in, to draw
     the warning banner and password-field caution on flagged sites.
   - `declarativeNetRequest`: to block navigation to known credential-phishing
     sites before the request leaves the browser (Active Shield).
   - `contextMenus`: the "Check this link with Whisper" right-click action.
-  - `alarms`: the daily signed brand-corpus update check.
+  - `alarms`: the daily signed brand-corpus update check and the fleet
+    activity poll (signed-in dashboard).
   - `activeTab`: to act on the current tab when the user clicks the toolbar
     action.
   - Host permissions (`graph.whisper.security`, `console.whisper.security`,
-    `get.whisper.online`): the safety check (hostname only), the sign-in
-    flow, and corpus updates, respectively. No other host is ever contacted.
+    `get.whisper.online`, `rdap.whisper.online`): the safety check +
+    destination enrichment (hostname only), the sign-in flow, corpus updates,
+    and public identity verification of the user's own endpoints (IP literals
+    only), respectively. No other host is ever contacted.
+  - `proxy`, `webRequest`, `webRequestAuthProvider`, `privacy` (all OPTIONAL):
+    requested at runtime only when the user turns on "Protect this browser",
+    which routes this browser through Whisper egress so it becomes an endpoint
+    on the user's account. `proxy` sets the route, `webRequest` +
+    `webRequestAuthProvider` supply the egress credential, and `privacy`
+    hardens WebRTC to proxied-only so the source address cannot leak. Off by
+    default; keyless users never grant them.
   - `<all_urls>` (optional): requested at runtime only when the user enables
-    Active Shield, used only to draw warnings, never to read page content.
+    Active Shield (warnings) or the browser-egress route. The default install
+    has no broad host access.
 - **Data usage:** Website content: NOT collected. Web history: NOT collected
   (the hostname of the current site is transmitted to answer the user's
-  safety check when signed in; it is not retained to build a profile).
+  safety check and enrich the dashboard; it is not retained to build a
+  profile, and the on-device destination list never leaves the device).
   Personally identifiable information, financial, health, authentication,
   communications, location, user activity: NOT collected.
 - **Remote code:** none (MV3, all code in the package).

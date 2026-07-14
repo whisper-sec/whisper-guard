@@ -2,7 +2,7 @@
   "name": "whisper-guard",
   "version": "1.0.0",
   "private": true,
-  "description": "Whisper Guard browser extension: proactive phishing and brand protection, on-device first, powered by the Whisper security graph when you sign in.",
+  "description": "Whisper Guard browser extension: the Whisper security graph native in your browser. Live per-site safety verdicts, a where-your-devices-go dashboard, on-device look-alike protection, and optional browser-as-endpoint egress. MIT, MV3, Chromium + Firefox.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -12,7 +12,7 @@
     "build:chromium": "npm run typecheck && node scripts/build.mjs chromium",
     "build:firefox": "npm run typecheck && node scripts/build.mjs firefox",
     "package": "npm run build && node scripts/package.mjs",
-    "e2e": "playwright test e2e/mocked.spec.ts e2e/shield.spec.ts",
+    "e2e": "playwright test e2e/mocked.spec.ts e2e/dashboard.spec.ts e2e/egress.spec.ts e2e/shield.spec.ts",
     "e2e:live": "playwright test e2e/live.spec.ts",
     "e2e:all": "playwright test",
     "e2e:firefox": "node scripts/e2e-firefox.mjs"

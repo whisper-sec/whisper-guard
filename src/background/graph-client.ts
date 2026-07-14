@@ -2,10 +2,13 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The single network client for the Whisper graph. Every request is a
-// POST { query, parameters } to graph.whisper.security/api/query with the
-// user's key as X-API-Key. The ONLY caller-controlled value on the wire is
-// a bound Cypher parameter, never string-concatenated; the only browsing
-// datum that ever appears in a parameter is a hostname.
+// POST { query, parameters } to graph.whisper.security/api/query, with the
+// user's key as X-API-Key when one exists. The public tier (assess,
+// identify, explain, variants, history, shallow enrichment) answers
+// keyless; the key unlocks the control plane and deep traversals. The ONLY
+// caller-controlled value on the wire is a bound Cypher parameter, never
+// string-concatenated; the only browsing datum that ever appears in a
+// parameter is a hostname.
 //
 // Response parsing is liberal (rows as objects keyed by column), errors are
 // typed and helpful, and the body read is size-capped.
@@ -22,7 +25,7 @@ export class GraphError extends Error {
   }
 }
 
-async function getKey(): Promise<string | null> {
+export async function getKey(): Promise<string | null> {
   const stored = await chrome.storage.local.get("apiKey");
   const key = stored["apiKey"];
   return typeof key === "string" && key.trim() !== "" ? key.trim() : null;
@@ -33,18 +36,19 @@ export async function hasKey(): Promise<boolean> {
 }
 
 /**
- * Run one graph query. Returns the rows (array of column-keyed objects).
- * Throws a typed GraphError on any fault so callers can fail open.
+ * Run one graph query, keyless or keyed (the key rides along when the user
+ * has one). Returns the rows (array of column-keyed objects). Throws a
+ * typed GraphError on any fault so callers can fail open.
  */
 export async function graphQuery(
   query: string,
   parameters: Record<string, unknown>,
+  timeoutMs = GRAPH_TIMEOUT_MS,
 ): Promise<Record<string, unknown>[]> {
   const key = await getKey();
-  if (!key) throw new GraphError("nokey", "not signed in");
 
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), GRAPH_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(GRAPH_QUERY_URL, {
@@ -52,9 +56,9 @@ export async function graphQuery(
       headers: {
         "content-type": "application/json",
         accept: "application/json",
-        "X-API-Key": key,
+        ...(key ? { "X-API-Key": key } : {}),
       },
-      body: JSON.stringify({ query, parameters, timeout: GRAPH_TIMEOUT_MS }),
+      body: JSON.stringify({ query, parameters, timeout: timeoutMs }),
       signal: ctl.signal,
     });
   } catch (e) {

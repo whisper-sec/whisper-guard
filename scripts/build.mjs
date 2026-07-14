@@ -46,6 +46,7 @@ for (const [entry, out] of [
   ["src/pages/warning.ts", "warning.js"],
   ["src/pages/check-link.ts", "check-link.js"],
   ["src/pages/firstrun.ts", "firstrun.js"],
+  ["src/pages/dashboard.ts", "dashboard.js"],
   ["src/content/guard.ts", "content.js"],
 ]) {
   await build({
@@ -56,7 +57,7 @@ for (const [entry, out] of [
   });
 }
 
-// 2) Static pages + styles.
+// 2) Static pages + styles + the brand asset.
 for (const [from, to] of [
   ["src/popup/popup.html", "popup.html"],
   ["src/popup/popup.css", "popup.css"],
@@ -68,6 +69,10 @@ for (const [from, to] of [
   ["src/pages/check-link.css", "check-link.css"],
   ["src/pages/firstrun.html", "firstrun.html"],
   ["src/pages/firstrun.css", "firstrun.css"],
+  ["src/pages/dashboard.html", "dashboard.html"],
+  ["src/pages/dashboard.css", "dashboard.css"],
+  ["src/shared/theme.css", "theme.css"],
+  ["assets/logo.png", "logo.png"],
 ]) {
   copyFileSync(join(ROOT, from), join(OUT, to));
 }
@@ -101,8 +106,13 @@ if (manifest.options_ui?.page) referenced.add(manifest.options_ui.page);
 for (const war of manifest.web_accessible_resources ?? []) {
   for (const r of war.resources ?? []) referenced.add(r);
 }
-// Files the code itself references at runtime.
-for (const extra of ["content.js", "check-link.html", "warning.html", "firstrun.html", "firstrun.js", "popup.js", "options.js", "warning.js", "check-link.js"]) {
+// Files the code itself references at runtime (the logo and the shared
+// theme are load-bearing on every page: missing means a broken ship).
+for (const extra of [
+  "content.js", "check-link.html", "warning.html", "firstrun.html", "firstrun.js",
+  "popup.js", "options.js", "warning.js", "check-link.js",
+  "dashboard.html", "dashboard.css", "dashboard.js", "theme.css", "logo.png",
+]) {
   referenced.add(extra);
 }
 

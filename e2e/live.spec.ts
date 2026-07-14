@@ -22,6 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   launchExtension,
+  openDashboard,
   openPopup,
   setKey,
   visit,
@@ -145,10 +146,10 @@ test.describe("live graph, real key", () => {
 
     const popup = await openPopup(ext, tabId);
     await expect(popup.locator("#lookalike-text")).toContainText("paypal.com");
-    await expect(popup.locator("#lookalike-text")).toContainText("nothing left your browser");
+    await expect(popup.locator("#lookalike-text")).toContainText("Caught on-device");
     await popup.close();
     await page.close();
-    evidence(`- keyless on-device hit: ${LOOKALIKE} flagged as look-alike of paypal.com, icon=suspicious, zero egress (hermetic suite proves the zero-egress invariant with a full capture)`);
+    evidence(`- keyless on-device hit: ${LOOKALIKE} flagged as look-alike of paypal.com, icon=suspicious (on-device detector)`);
   });
 
   test("keyed: a real known-clean host paints benign with the graph's own coverage", async () => {
@@ -224,5 +225,58 @@ test.describe("live graph, real key", () => {
     evidence(`- live assess-on-candidates: ${note?.trim()}`);
     await popup.close();
     await page.close();
+  });
+
+  test("keyed fleet: the account's real endpoints render with graph-enriched destinations", async () => {
+    await setKey(ext, LIVE_KEY);
+    const dash = await openDashboard(ext, "fleet");
+    // The account holds real registered endpoints (the dog-food fleet); the
+    // roster and the merged, enriched destinations come straight from
+    // op:list + op:agent + op:logs against production.
+    await expect(dash.locator("#f-roster .roster-card").first()).toBeVisible({ timeout: 30_000 });
+    const roster = await dash.locator("#f-roster").textContent();
+    const endpointCount = await dash.locator("#f-roster .roster-card").count();
+    expect(endpointCount).toBeGreaterThan(0);
+    await expect(dash.locator("#f-tiles")).toContainText("Endpoints");
+    await expect(dash.locator("#f-feed-note")).toContainText("polling");
+    evidence(`- keyed fleet: ${endpointCount} real endpoint(s) rendered; roster excerpt: ${(roster ?? "").replace(/\s+/g, " ").slice(0, 200)}`);
+    await dash.close();
+  });
+
+  test("keyed per-endpoint: a real endpoint shows counters, health and enriched destinations", async () => {
+    await setKey(ext, LIVE_KEY);
+    const dash = await openDashboard(ext, "endpoint");
+    await expect(dash.locator("#e-address")).not.toBeEmpty({ timeout: 30_000 });
+    await expect(dash.locator("#e-factors")).toContainText("Verified identity");
+    await expect(dash.locator("#e-tiles")).toContainText("DNS queries");
+    const addr = await dash.locator("#e-address").textContent();
+    const health = await dash.locator("#e-health-headline").textContent();
+    evidence(`- keyed per-endpoint: ${addr?.trim()} health=${health?.trim()} (counters + explainable identity health from op:agent + rdap)`);
+    await dash.close();
+  });
+
+  test("keyless rdap: a real Whisper endpoint /128 verifies is_whisper_agent true", async () => {
+    // The keyless identity tier: verify-identity of a known agent address.
+    await setKey(ext, LIVE_KEY);
+    const dash = await openDashboard(ext, "endpoint");
+    await expect(dash.locator("#e-address")).not.toBeEmpty({ timeout: 30_000 });
+    const addr = (await dash.locator("#e-address").textContent())?.trim() ?? "";
+    await dash.close();
+    // Ask the extension's own keyless verifier (no key needed for rdap).
+    await setKey(ext, null);
+    const probe = await ext.context.newPage();
+    await probe.goto(`chrome-extension://${ext.id}/dashboard.html`);
+    const verified = await probe.evaluate(
+      (ip) =>
+        chrome.runtime.sendMessage({ kind: "verifyIdentity", ip }) as Promise<{
+          ok: boolean;
+          verification: { isWhisperAgent: boolean; fqdn: string | null } | null;
+        }>,
+      addr,
+    );
+    expect(verified.ok).toBe(true);
+    expect(verified.verification?.isWhisperAgent).toBe(true);
+    evidence(`- keyless rdap verify-identity: ${addr} -> is_whisper_agent=true, fqdn=${verified.verification?.fqdn ?? "n/a"}`);
+    await probe.close();
   });
 });

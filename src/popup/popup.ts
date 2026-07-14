@@ -1,27 +1,31 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// The click-panel: a verdict and one action above the fold; analyst
-// affordances collapsed. UNKNOWN is the honest common state and reads as
-// "not confirmed either way", never as green. Every view carries the
-// per-host privacy line saying exactly what was sent.
+// The click-panel: a verdict and one action above the fold; the composed
+// protection picture (who runs it, where, how old, why) right under it; a
+// mini "this browser" dashboard; analyst affordances collapsed. UNKNOWN is
+// the honest common state and reads as "not confirmed either way", never
+// as green. Every view carries the per-host privacy line saying exactly
+// what was sent.
 
-import { send } from "../shared/messages";
-import type { CandidateVerdict, ExplainResult, GraphBand, TabState } from "../shared/types";
+import { send, type BrowserReport } from "../shared/messages";
+import type { CandidateVerdict, ExplainResult, GraphBand, Protection, Settings, TabState } from "../shared/types";
+import { CATEGORY_LABEL, flagEmoji, type ReportCategory } from "../shared/report";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 let tabId = -1;
 let state: TabState | null = null;
+let settings: Settings | null = null;
 
-const BAND_UI: Record<GraphBand, { cls: string; chip: string; glyph: string; note: string }> = {
-  CRITICAL: { cls: "malicious", chip: "MALICIOUS - evidenced", glyph: "⬣", note: "Known threat, listed in the graph. Do not enter credentials." },
-  HIGH: { cls: "suspicious", chip: "SUSPICIOUS - HIGH", glyph: "▲", note: "Strong risk signals. Be careful." },
-  MEDIUM: { cls: "suspicious", chip: "SUSPICIOUS", glyph: "▲", note: "Some risk signals. Be careful." },
-  LOW: { cls: "benign", chip: "NO KNOWN THREAT", glyph: "✓", note: "Low-level signals only. Not a warranty." },
-  INFO: { cls: "benign", chip: "NO KNOWN THREAT", glyph: "✓", note: "Informational signals only. Not a warranty." },
-  NONE: { cls: "benign", chip: "NO KNOWN THREAT", glyph: "✓", note: "No known threat. Not a warranty." },
-  UNKNOWN: { cls: "unknown", chip: "UNKNOWN", glyph: "?", note: "New or low-coverage site. Not confirmed safe or unsafe." },
+const BAND_UI: Record<GraphBand, { glyphCls: string; chipCls: string; chip: string; glyph: string; note: string }> = {
+  CRITICAL: { glyphCls: "malicious", chipCls: "crit", chip: "MALICIOUS - evidenced", glyph: "⬣", note: "Known threat, listed in the graph. Do not enter credentials." },
+  HIGH: { glyphCls: "malicious", chipCls: "high", chip: "HIGH RISK", glyph: "⬣", note: "Strong risk signals in the graph. Stay away." },
+  MEDIUM: { glyphCls: "suspicious", chipCls: "med", chip: "SUSPICIOUS", glyph: "▲", note: "Some risk signals. Be careful." },
+  LOW: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓", note: "Low-level signals only. Not a warranty." },
+  INFO: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓", note: "Informational signals only. Not a warranty." },
+  NONE: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓", note: "No known threat. Not a warranty." },
+  UNKNOWN: { glyphCls: "unknown", chipCls: "unknown", chip: "UNKNOWN", glyph: "?", note: "New or low-coverage site. Not confirmed safe or unsafe." },
 };
 
 /** Render key/value rows as a table, DOM-built (no HTML strings). */
@@ -64,23 +68,23 @@ function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates:
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  ctx.font = "10px system-ui";
+  ctx.font = "10px ui-monospace, monospace";
   const cx = W / 2;
   const cy = H / 2;
 
-  const colors: Record<string, string> = { CRITICAL: "#dc2626", HIGH: "#f59e0b", MEDIUM: "#f59e0b" };
+  const colors: Record<string, string> = { CRITICAL: "#dc2626", HIGH: "#ef4444", MEDIUM: "#f59e0b" };
   const n = candidates.length;
   candidates.forEach((c, i) => {
     const angle = (2 * Math.PI * i) / Math.max(n, 1) - Math.PI / 2;
     const r = Math.min(W, H) / 2 - 28;
     const x = cx + r * Math.cos(angle);
     const y = cy + r * Math.sin(angle);
-    ctx.strokeStyle = "#374151";
+    ctx.strokeStyle = "#2a2a44";
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(x, y);
     ctx.stroke();
-    ctx.fillStyle = colors[c.band] ?? "#6b7280";
+    ctx.fillStyle = colors[c.band] ?? "#62627a";
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, 2 * Math.PI);
     ctx.fill();
@@ -90,23 +94,23 @@ function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates:
       ctx.arc(x, y, 8, 0, 2 * Math.PI);
       ctx.stroke();
     }
-    ctx.fillStyle = "#9ca3af";
+    ctx.fillStyle = "#9a9ab0";
     const label = c.host.length > 22 ? c.host.slice(0, 21) + "…" : c.host;
     ctx.fillText(label, x - ctx.measureText(label).width / 2, y + 18);
   });
 
-  ctx.fillStyle = "#38bdf8";
+  ctx.fillStyle = "#8a5cc7";
   ctx.beginPath();
   ctx.arc(cx, cy, 7, 0, 2 * Math.PI);
   ctx.fill();
-  ctx.fillStyle = "#e5e7eb";
+  ctx.fillStyle = "#e8e8f2";
   const cl = center.length > 26 ? center.slice(0, 25) + "…" : center;
   ctx.fillText(cl, cx - ctx.measureText(cl).width / 2, cy - 12);
 }
 
 async function loadNeighborhood(host: string): Promise<void> {
   const note = $("neighborhood-note");
-  note.textContent = "Generating look-alike candidates and confirming each against the graph...";
+  note.textContent = "Asking the graph for registered look-alikes of this name...";
   const res = await send<{ ok: true; candidates: CandidateVerdict[] }>({ kind: "confirmLookalikes", host });
   const canvas = $<HTMLCanvasElement>("graph-canvas");
   if (!res.ok) {
@@ -145,6 +149,83 @@ async function loadSession(): Promise<void> {
   }
 }
 
+function protectKv(k: string, v: string): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "protect-kv";
+  const kEl = document.createElement("span");
+  kEl.className = "k";
+  kEl.textContent = k;
+  const vEl = document.createElement("span");
+  vEl.className = "v";
+  vEl.textContent = v;
+  row.append(kEl, vEl);
+  return row;
+}
+
+/** The composed picture: who runs it, where, how old, why flagged. */
+async function loadProtection(host: string): Promise<void> {
+  const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
+  if (!res.ok) return;
+  const p = res.protection;
+  const rows: HTMLElement[] = [];
+  if (p.who) {
+    const catLabel =
+      p.category && p.category in CATEGORY_LABEL
+        ? ` · ${CATEGORY_LABEL[p.category as ReportCategory]}`
+        : "";
+    rows.push(protectKv("Who", `${p.who}${catLabel}`));
+  }
+  if (p.where && (p.where.city || p.where.country)) {
+    const flag = flagEmoji(p.where.country ?? undefined);
+    rows.push(protectKv("Where", `${p.where.city ?? p.where.country}${flag ? ` ${flag}` : ""}`));
+  }
+  if (p.ageDays !== null) {
+    const label =
+      p.ageDays < 32 ? `${p.ageDays} days (new domains deserve suspicion)` : p.ageDays < 366 ? `${Math.round(p.ageDays / 30.4)} months` : `${Math.floor(p.ageDays / 365.25)} years`;
+    rows.push(protectKv("Age", label));
+  }
+  const card = $("protect-card");
+  const whyBox = $("why-chips");
+  whyBox.replaceChildren(
+    ...p.why.map((w, i) => {
+      const line = document.createElement("div");
+      line.className = `why-line${i === 0 ? " threat" : ""}`;
+      line.textContent = w;
+      return line;
+    }),
+  );
+  if (rows.length > 0 || p.why.length > 0) {
+    card.hidden = false;
+    $("protect-rows").replaceChildren(...rows);
+  }
+}
+
+async function loadMiniDash(): Promise<void> {
+  const res = await send<{ ok: true; report: BrowserReport }>({ kind: "getBrowserReport", limit: 200 });
+  if (!res.ok) return;
+  const t = res.report.totals;
+  const tiles: { n: number; l: string; hot?: boolean }[] = [
+    { n: t.destinations, l: "Destinations" },
+    { n: t.companies, l: "Companies" },
+    { n: t.countries, l: "Countries" },
+    { n: t.flagged, l: "Flagged", hot: t.flagged > 0 },
+  ];
+  $("mini-tiles").replaceChildren(
+    ...tiles.map((tile) => {
+      const box = document.createElement("div");
+      box.className = "mini-tile";
+      const n = document.createElement("div");
+      n.className = `n${tile.hot ? " hot" : ""}`;
+      n.textContent = String(tile.n);
+      const l = document.createElement("div");
+      l.className = "l";
+      l.textContent = tile.l;
+      box.append(n, l);
+      return box;
+    }),
+  );
+}
+
 async function pollDeviceFlow(): Promise<void> {
   const el = $("device-status");
   el.hidden = false;
@@ -171,9 +252,15 @@ async function pollDeviceFlow(): Promise<void> {
 function render(): void {
   if (!state) return;
   const s = state;
+  const cloudCheck = settings?.cloudCheck ?? true;
 
   $("signin-dot").classList.toggle("on", s.signedIn);
   $("signin-dot").title = s.signedIn ? "signed in" : "not signed in";
+
+  void loadMiniDash();
+  $("btn-dashboard").addEventListener("click", () => {
+    void send({ kind: "openDashboard" }).then(() => window.close());
+  });
 
   if (!s.eligible || !s.hostname) {
     $("ineligible").hidden = false;
@@ -192,9 +279,9 @@ function render(): void {
 
   if (band) {
     const ui = BAND_UI[band];
-    glyph.className = `glyph ${ui.cls}`;
+    glyph.className = `glyph ${ui.glyphCls}`;
     glyph.textContent = ui.glyph;
-    chip.className = `chip ${ui.cls}`;
+    chip.className = `w-chip ${ui.chipCls}`;
     chip.textContent = ui.chip;
     note.textContent = s.verdict?.label ? `${ui.note} ${s.verdict.label}` : ui.note;
     const cov = s.verdict?.coverage;
@@ -203,18 +290,20 @@ function render(): void {
       covChip.hidden = false;
       covChip.textContent = `coverage: ${cov} (not a safety score)`;
     }
-  } else if (s.signedIn) {
+    void loadProtection(host);
+  } else if (cloudCheck) {
     glyph.className = "glyph unknown";
     glyph.textContent = "?";
-    chip.className = "chip unknown";
+    chip.className = "w-chip unknown";
     chip.textContent = "UNKNOWN";
     note.textContent = "No verdict yet for this site.";
+    void loadProtection(host);
   } else {
     glyph.className = "glyph signedout";
     glyph.textContent = "⚿";
-    chip.className = "chip unknown";
-    chip.textContent = "LIVE SIGNAL LOCKED";
-    note.textContent = "On-device protection is active. Sign in free to light up the live signal.";
+    chip.className = "w-chip unknown";
+    chip.textContent = "LIVE CHECK OFF";
+    note.textContent = "On-device protection only. Turn the live check back on in settings.";
   }
 
   if (s.detector) {
@@ -227,9 +316,7 @@ function render(): void {
       "brand-subdomain": "impersonates",
       nearmiss: "is one keystroke away from",
     };
-    $("lookalike-text").textContent = s.signedIn
-      ? `This site ${kindText[d.kind] ?? "looks like"} ${d.brandDomain}.`
-      : `Heads up: this site ${kindText[d.kind] ?? "looks like"} ${d.brandDomain}. Caught on-device; nothing left your browser.`;
+    $("lookalike-text").textContent = `This site ${kindText[d.kind] ?? "looks like"} ${d.brandDomain}. Caught on-device.`;
     const go = $<HTMLAnchorElement>("btn-goto");
     go.textContent = `Go to the real ${d.brandDomain}`;
     go.addEventListener("click", (ev) => {
@@ -257,7 +344,8 @@ function render(): void {
     $("graph-error").textContent = `${s.graphError} Retry from the circular arrow below.`;
   }
 
-  if (s.signedIn) {
+  // The analyst drawers ride the public tier: available keyless and keyed.
+  if (cloudCheck) {
     $("expanders").hidden = false;
     let whyLoaded = false;
     $("exp-why").addEventListener("toggle", () => {
@@ -281,7 +369,9 @@ function render(): void {
       }
     });
     void loadSession();
+  }
 
+  if (s.signedIn) {
     $("btn-console").hidden = false;
     $("btn-console").addEventListener("click", () => {
       chrome.tabs.create({ url: "https://console.whisper.security" });
@@ -295,7 +385,7 @@ function render(): void {
       const lines = [
         `# Whisper Guard dossier: ${host}`,
         ``,
-        `- band: ${s.verdict?.band ?? "(keyless)"}`,
+        `- band: ${s.verdict?.band ?? "(no live check)"}`,
         `- coverage: ${s.verdict?.coverage ?? "n/a"} (categorical, not a safety score)`,
         `- label: ${s.verdict?.label ?? "n/a"}`,
         `- on-device look-alike: ${s.detector ? `${s.detector.kind} of ${s.detector.brandDomain}` : "none"}`,
@@ -321,11 +411,11 @@ function render(): void {
     });
   }
 
-  $("privacy-line").textContent = s.signedIn
+  $("privacy-line").textContent = cloudCheck
     ? `Privacy: only "${host}" was sent, to graph.whisper.security. Never the page, path, or your history.`
     : s.detector
       ? `Privacy: nothing left your browser. The look-alike check ran on-device.`
-      : `Privacy: nothing was sent. Sign in to run the live check (hostname only).`;
+      : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`;
 }
 
 async function init(): Promise<void> {
@@ -341,9 +431,15 @@ async function init(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     tabId = tab?.id ?? -1;
   }
-  const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
-  if (res.ok) {
-    state = res.tabState;
+  const [stateRes, settingsRes] = await Promise.all([
+    send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId }),
+    send<{ ok: true; settings: Settings; signedIn: boolean; corpusVersion: number; corpusUpdated: string }>({
+      kind: "getSettings",
+    }),
+  ]);
+  if (settingsRes.ok) settings = settingsRes.settings;
+  if (stateRes.ok) {
+    state = stateRes.tabState;
     render();
   }
 }
