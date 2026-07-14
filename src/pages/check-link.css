@@ -1,0 +1,70 @@
+/* SPDX-License-Identifier: MIT
+   Copyright (c) 2026 viaGraph B.V. (Whisper Security) */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0b1220;
+  color: #e5e7eb;
+  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main { padding: 22px 20px; }
+
+h1 { font-size: 16px; margin: 0 0 10px; }
+
+.host {
+  font: 600 15px/1.4 ui-monospace, monospace;
+  word-break: break-all;
+  margin-bottom: 14px;
+  color: #38bdf8;
+}
+
+.card {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.row { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+
+.tag {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #1f2937;
+  color: #9ca3af;
+}
+.tag.warn { color: #f59e0b; border-color: #f59e0b; }
+.tag.malicious { color: #fff; background: #dc2626; border-color: #dc2626; }
+.tag.suspicious { color: #f59e0b; border-color: #f59e0b; }
+.tag.benign { color: #10b981; border-color: #10b981; }
+.tag.unknown { color: #6b7280; border-style: dashed; }
+
+.note { color: #9ca3af; font-size: 12px; margin-top: 8px; }
+
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.btn {
+  display: inline-block;
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover { border-color: #6b7280; }
+.btn.primary { background: #38bdf8; border-color: #38bdf8; color: #06202e; }
+
+.privacy { font-size: 11px; color: #6b7280; margin-top: 20px; }
+
+[hidden] { display: none !important; }

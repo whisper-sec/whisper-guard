@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Whisper Guard</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <span class="wordmark">Whisper Guard</span>
+    <span id="signin-dot" class="dot" title=""></span>
+    <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
+  </header>
+
+  <main id="main">
+    <section id="host-row" hidden>
+      <div id="band-glyph" class="glyph"></div>
+      <div class="host-meta">
+        <div id="hostname" class="hostname"></div>
+        <div class="chips">
+          <span id="band-chip" class="chip"></span>
+          <span id="coverage-chip" class="chip chip-muted" hidden
+                title="Coverage says how much data the graph has on this host. It is NOT a safety score."></span>
+        </div>
+        <div id="band-note" class="note"></div>
+      </div>
+    </section>
+
+    <section id="lookalike" class="card warn" hidden>
+      <div id="lookalike-text"></div>
+      <div class="row gap">
+        <a id="btn-goto" class="btn primary" href="#">Go to the real site</a>
+        <button id="btn-report" class="btn" hidden>Report</button>
+      </div>
+      <div id="report-status" class="note" hidden></div>
+    </section>
+
+    <section id="signin-pitch" class="card" hidden>
+      <p id="pitch-text">See the live threat signal, the "why", and the look-alike
+      neighborhood on every site. Free and unlimited.</p>
+      <button id="btn-signin" class="btn primary">Sign in with Whisper</button>
+      <div id="device-status" class="note" hidden></div>
+    </section>
+
+    <section id="graph-error" class="card muted" hidden></section>
+
+    <div id="expanders" hidden>
+      <details id="exp-why">
+        <summary>Why this verdict</summary>
+        <div id="why-body" class="exp-body">Loading...</div>
+      </details>
+      <details id="exp-who">
+        <summary>Who runs it</summary>
+        <div id="who-body" class="exp-body">Loading...</div>
+      </details>
+      <details id="exp-neighborhood">
+        <summary>Look-alike neighborhood</summary>
+        <div class="exp-body">
+          <canvas id="graph-canvas" width="340" height="180"></canvas>
+          <div id="neighborhood-note" class="note"></div>
+        </div>
+      </details>
+      <details id="exp-session">
+        <summary id="session-summary">This session</summary>
+        <div id="session-body" class="exp-body"></div>
+      </details>
+    </div>
+
+    <section id="ineligible" class="card muted" hidden>
+      Nothing to check on this page (browser page, local address, or file).
+    </section>
+  </main>
+
+  <footer>
+    <div class="row gap">
+      <button id="btn-console" class="btn small" hidden>Open in console</button>
+      <button id="btn-dossier" class="btn small" hidden>Copy dossier</button>
+      <span class="spacer"></span>
+      <button id="btn-refresh" class="icon-btn" title="Re-check" aria-label="Re-check">&#8635;</button>
+    </div>
+    <div id="privacy-line" class="privacy"></div>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

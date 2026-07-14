@@ -1,0 +1,23 @@
+{
+  "name": "whisper-guard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Whisper Guard browser extension: proactive phishing and brand protection, on-device first, powered by the Whisper security graph when you sign in.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/gen-icons.mjs",
+    "psl": "node scripts/fetch-psl.mjs",
+    "build": "npm run typecheck && node scripts/build.mjs chromium && node scripts/build.mjs firefox",
+    "build:chromium": "npm run typecheck && node scripts/build.mjs chromium",
+    "build:firefox": "npm run typecheck && node scripts/build.mjs firefox",
+    "package": "npm run build && node scripts/package.mjs"
+  },
+  "license": "MIT",
+  "author": "Whisper Security (viaGraph B.V.)",
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Check this link with Whisper</title>
+  <link rel="stylesheet" href="check-link.css">
+</head>
+<body>
+  <main>
+    <h1>Check this link with Whisper</h1>
+    <div id="host" class="host"></div>
+
+    <section id="result" class="card" hidden>
+      <div id="detector-row" class="row" hidden>
+        <span class="tag warn">on-device</span>
+        <span id="detector-text"></span>
+      </div>
+      <div id="band-row" class="row" hidden>
+        <span id="band-tag" class="tag"></span>
+        <span id="band-text"></span>
+      </div>
+      <div id="keyless-note" class="note" hidden>
+        Sign in with Whisper (from the toolbar popup) to add the live graph verdict
+        to this check.
+      </div>
+      <div id="error-note" class="note" hidden></div>
+    </section>
+
+    <div class="actions">
+      <a id="btn-real" class="btn primary" href="#" target="_blank" rel="noopener" hidden></a>
+      <a id="btn-open" class="btn" href="#" target="_blank" rel="noopener">Open anyway</a>
+      <button id="btn-copy" class="btn">Copy result</button>
+    </div>
+
+    <p class="privacy" id="privacy"></p>
+  </main>
+  <script src="check-link.js"></script>
+</body>
+</html>

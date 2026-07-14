@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Whisper Guard warning</title>
+  <link rel="stylesheet" href="warning.css">
+</head>
+<body>
+  <main>
+    <div class="stop">&#11042;</div>
+    <h1>Whisper stopped a dangerous page<br>before you could enter your password.</h1>
+    <p id="detail"></p>
+    <div class="actions">
+      <button id="btn-back" class="btn primary">&larr; Back to safety</button>
+      <a id="btn-real" class="btn" href="#" hidden></a>
+    </div>
+    <button id="btn-continue" class="linkish">I understand the risk, continue anyway</button>
+    <p class="privacy" id="privacy"></p>
+  </main>
+  <script src="warning.js"></script>
+</body>
+</html>

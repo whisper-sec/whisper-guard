@@ -1,0 +1,8 @@
+Whisper Guard
+Copyright (c) 2026 viaGraph B.V. (Whisper Security)
+
+This product bundles a snapshot of the Public Suffix List
+(src/shared/psl-data.json), maintained by Mozilla and the PSL community at
+https://publicsuffix.org/, distributed under the Mozilla Public License 2.0
+(https://mozilla.org/MPL/2.0/). The snapshot is data only and is refreshed
+with scripts/fetch-psl.mjs.

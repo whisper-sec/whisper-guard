@@ -1,0 +1,54 @@
+/* SPDX-License-Identifier: MIT
+   Copyright (c) 2026 viaGraph B.V. (Whisper Security) */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1c0a0a;
+  color: #fee2e2;
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main { max-width: 560px; padding: 40px 24px; text-align: center; }
+
+.stop { font-size: 64px; color: #dc2626; line-height: 1; }
+
+h1 { font-size: 22px; margin: 18px 0 12px; }
+
+p { color: #fca5a5; }
+
+.actions { display: flex; gap: 12px; justify-content: center; margin: 26px 0 10px; flex-wrap: wrap; }
+
+.btn {
+  display: inline-block;
+  background: #27272a;
+  color: #fee2e2;
+  border: 1px solid #52525b;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn.primary { background: #fee2e2; color: #1c0a0a; border-color: #fee2e2; }
+
+.linkish {
+  background: none;
+  border: none;
+  color: #a1a1aa;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 8px;
+}
+
+.privacy { font-size: 11px; color: #7f6c6c; margin-top: 26px; }
+
+[hidden] { display: none !important; }
