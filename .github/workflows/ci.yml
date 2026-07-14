@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium firefox
+      - name: hermetic e2e (capture proxy, privacy invariant, Active Shield)
+        run: npm run e2e
+      - name: firefox gates (AMO lint + headless load)
+        run: npm run e2e:firefox
+      - name: package store zips
+        run: node scripts/package.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-zips
+          path: dist/*.zip
+          retention-days: 14
