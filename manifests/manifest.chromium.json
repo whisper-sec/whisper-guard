@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Whisper Guard",
   "version": "0.0.0",
-  "description": "Proactive phishing and brand protection. On-device look-alike detection the instant it installs; the live Whisper security graph signal when you sign in. Only a site's name is ever checked, never your browsing.",
+  "description": "Phishing protection that works the instant it installs. On-device look-alike alerts; a live safety signal when you sign in.",
   "minimum_chrome_version": "121",
   "background": {
     "service_worker": "background.js",
@@ -47,8 +47,12 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["warning.html"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "warning.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "content_security_policy": {

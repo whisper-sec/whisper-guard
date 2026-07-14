@@ -1,6 +1,6 @@
 {
   "name": "whisper-guard",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Whisper Guard browser extension: proactive phishing and brand protection, on-device first, powered by the Whisper security graph when you sign in.",
   "type": "module",

@@ -71,10 +71,13 @@ as a category (known-clean, partial, no-data), never dressed up as a score.
   IP literals, and `.local`/`.internal` names are never checked at all.
 - Every popup view states exactly what was sent for the current site.
 
+Docs: [whisper.online/docs/whisper-guard](https://whisper.online/docs/whisper-guard) ·
+Screenshots: [`shots/`](shots/index.html)
+
 ## Install
 
-Store listings (Chrome Web Store, Edge Add-ons, Firefox AMO) are on the way.
-Until then, load the built extension directly:
+Chrome Web Store and Firefox AMO listings are in submission. Until they land,
+load the built extension directly:
 
 ```bash
 npm ci
@@ -103,6 +106,32 @@ npm run psl              # refresh the vendored Public Suffix List snapshot
 
 The build is esbuild + a manifest transform per target, and it self-checks:
 a dist missing any file the manifest references fails the build.
+
+## End-to-end tests
+
+The e2e suite loads the real built extension into Chromium with Playwright.
+The hermetic suites point the whole browser at a local capture proxy, so the
+request log is a complete record of everything that left the browser; the
+hostname-only privacy invariant is asserted against that full capture, not a
+sample.
+
+```bash
+npm run e2e              # hermetic: 19 core tests + 7 Active Shield tests
+npm run e2e:firefox      # web-ext lint (zero findings) + headless load gate
+WHISPER_GUARD_E2E_KEY=... npm run e2e:live   # 6 tests against the real graph
+npx playwright test e2e/screenshots.spec.ts  # regenerate shots/
+```
+
+The live suite picks a currently-listed malicious hostname, pins its DNS to
+a local harmless page, and verifies the real verdict end to end; the key is
+read from the environment and never appears in any artifact. Fail-open
+(graph unreachable means UNKNOWN, never a block) is a tested path.
+
+## Store packaging
+
+`npm run package` produces `dist/whisper-guard-chromium-<v>.zip` and
+`dist/whisper-guard-firefox-<v>.zip`. Listing copy, permission
+justifications, and reviewer notes live in [`store/`](store/).
 
 ## Architecture
 
