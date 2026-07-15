@@ -93,6 +93,7 @@ export class E2ENetwork {
   private variantRows = new Map<string, Record<string, unknown>[]>();
   private historyRows = new Map<string, Record<string, unknown>[]>();
   private cohostRows = new Map<string, Record<string, unknown>>();
+  private pages = new Map<string, string>();
   readonly endpoints: MockEndpoint[] = [];
   readonly submits: Record<string, unknown>[] = [];
   readonly device: DeviceFlowMockState = {
@@ -146,6 +147,10 @@ export class E2ENetwork {
   }
   setCohost(host: string, row: Record<string, unknown>): void {
     this.cohostRows.set(host.toLowerCase(), row);
+  }
+  /** Serve custom HTML for one fake site (e.g. a page full of links). */
+  setPage(host: string, html: string): void {
+    this.pages.set(host.toLowerCase(), html);
   }
   addEndpoint(e: MockEndpoint): void {
     this.endpoints.push(e);
@@ -526,6 +531,11 @@ export class E2ENetwork {
   // ------------------------------------------------------------- fake web
 
   private serveFakeSite(host: string, path: string, res: http.ServerResponse): void {
+    const custom = this.pages.get(host);
+    if (custom !== undefined) {
+      res.writeHead(200, { "content-type": "text/html" }).end(custom);
+      return;
+    }
     res.writeHead(200, { "content-type": "text/html" }).end(
       `<!doctype html>
 <html><head><title>${host}</title></head>

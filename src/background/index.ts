@@ -56,7 +56,8 @@ import {
   onPollAlarm,
   resetFeed,
 } from "./monitor";
-import { egressDisable, egressEnable, egressStatus, resumeEgress } from "./egress";
+import { egressDisable, egressEnable, egressStatus, enrollBrowser, resumeEgress } from "./egress";
+import { scanTabLinks } from "./link-scan";
 import { rdapIpUrl, verifyIdentity } from "./rdap";
 
 // ---------------------------------------------------------------- tab state
@@ -473,6 +474,33 @@ async function handle(msg: BgRequest): Promise<BgResponse> {
       return { ok: true, egress: await egressEnable() };
     case "egressDisable":
       return { ok: true, egress: await egressDisable() };
+    case "enroll":
+      // ENROLL alone: reserve + verify the browser's identity. Control
+      // plane only; works whenever signed in, no proxy permission involved.
+      try {
+        return { ok: true, enrollment: await enrollBrowser() };
+      } catch (e) {
+        if (e instanceof GraphError && e.reason === "nokey") {
+          return {
+            ok: false,
+            error: "Sign in first; this browser's identity lives on your Whisper account.",
+            nokey: true,
+          };
+        }
+        return { ok: false, error: String(e instanceof Error ? e.message : e) };
+      }
+    case "scanLinks":
+      try {
+        return { ok: true, scan: await scanTabLinks(msg.tabId) };
+      } catch (e) {
+        const m = String(e instanceof Error ? e.message : e);
+        return {
+          ok: false,
+          error: m.includes("links")
+            ? m
+            : "could not reach Whisper for the link sweep; try again",
+        };
+      }
     case "verifyIdentity":
       return { ok: true, verification: await verifyIdentity(msg.ip) };
     case "allowHost": {

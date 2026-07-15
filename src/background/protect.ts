@@ -24,7 +24,7 @@ import {
   HISTORY_QUERY,
   VARIANTS_QUERY,
 } from "../shared/config";
-import type { AssessVerdict, CandidateVerdict, GraphBand, Protection } from "../shared/types";
+import type { AssessVerdict, CandidateVerdict, GraphBand, Protection, WhyFactor } from "../shared/types";
 import {
   inferCategory,
   isoFromPlace,
@@ -98,24 +98,57 @@ async function fetchWho(host: string): Promise<{
   return { who, category, where };
 }
 
-async function fetchWhy(host: string): Promise<string[]> {
+interface WhyPicture {
+  why: string[];
+  score: number | null;
+  factors: WhyFactor[];
+}
+
+/**
+ * The WHY behind the verdict, shaped from whisper.explain: the graph's
+ * score plus every listing as a NAMED, WEIGHTED factor. Popularity feeds
+ * (Tranco and friends) are shown as good standing, never as a threat.
+ */
+async function fetchWhy(host: string): Promise<WhyPicture> {
   const rows = await graphQuery("CALL whisper.explain($h)", { h: host }).catch(
     () => [] as Record<string, unknown>[],
   );
   const row = rows[0];
-  if (!row) return [];
+  if (!row) return { why: [], score: null, factors: [] };
   const why: string[] = [];
   const found = row["found"] === true;
   const explanation = str(row["explanation"]);
+  const rawScore = row["score"];
+  const score =
+    typeof rawScore === "number" && Number.isFinite(rawScore)
+      ? Math.round(rawScore * 10) / 10
+      : null;
   const sources = Array.isArray(row["sources"]) ? (row["sources"] as Record<string, unknown>[]) : [];
-  const threatFeeds = sources
-    .map((s) => str(s["feedId"]))
-    .filter((id): id is string => id !== null && !isPopularityFeed(id));
+
+  const factors: WhyFactor[] = [];
+  const threatFeeds: string[] = [];
+  for (const s of sources) {
+    const id = str(s["feedId"]);
+    if (!id) continue;
+    const w = s["weight"];
+    const weight = typeof w === "number" && Number.isFinite(w) ? w : null;
+    const good = isPopularityFeed(id);
+    factors.push({ name: id, weight, kind: good ? "good" : "threat" });
+    if (!good) threatFeeds.push(id);
+  }
+  // Threat factors first, heaviest first; good standing after.
+  factors.sort(
+    (a, b) =>
+      (a.kind === "threat" ? 0 : 1) - (b.kind === "threat" ? 0 : 1) ||
+      (b.weight ?? 0) - (a.weight ?? 0) ||
+      a.name.localeCompare(b.name),
+  );
+
   if (found && threatFeeds.length > 0) {
     why.push(`Listed in ${threatFeeds.length} threat feed${threatFeeds.length === 1 ? "" : "s"}: ${threatFeeds.join(", ")}`);
     if (explanation) why.push(explanation);
   }
-  return why;
+  return { why, score, factors };
 }
 
 async function fetchAgeDays(host: string): Promise<number | null> {
@@ -198,9 +231,9 @@ export async function protectHost(host: string, withVariants = false): Promise<P
       partial = true;
       return { who: null, category: null, where: null };
     }),
-    fetchWhy(h).catch(() => {
+    fetchWhy(h).catch((): WhyPicture => {
       partial = true;
-      return [] as string[];
+      return { why: [], score: null, factors: [] };
     }),
     fetchAgeDays(h).catch(() => {
       partial = true;
@@ -227,7 +260,9 @@ export async function protectHost(host: string, withVariants = false): Promise<P
     category: who.category,
     where: who.where,
     ageDays,
-    why,
+    why: why.why,
+    score: why.score,
+    whyFactors: why.factors,
     variants,
     partial,
   };

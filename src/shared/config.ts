@@ -110,6 +110,12 @@ export const CORPUS_SIGNING_KEY_B64U = "";
 // Cap on generated look-alike candidates confirmed via one batched assess.
 export const CANDIDATE_CAP = 48;
 
+// Page-link pre-verdicts: unique registrable destinations per scan, and the
+// per-call batch for the assess sweep. activeTab + scripting only; the page
+// reduces its own links to bare hostnames before anything leaves it.
+export const LINK_SCAN_HOST_CAP = 160;
+export const LINK_SCAN_BATCH = 60;
+
 // ---------------------------------------------------------------- dashboard
 
 // The on-device destination log: last 24h, busiest-first cap.

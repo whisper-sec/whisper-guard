@@ -22,9 +22,16 @@ history.
   an honest dashed-slate UNKNOWN for the internet's long tail. Never a fake
   green. Popularity feeds (Tranco and friends) are treated as good, never as a
   threat.
-- **The composed picture.** Click the mark for who runs the site and where it
-  lives, how old the domain is, the feed-cited "why", and a look-alike
-  neighborhood confirmed against the graph.
+- **The composed picture, WHY included.** Click the mark for who runs the site
+  and where it lives, how old the domain is, and the WHY behind the verdict
+  shown by default: the graph's score and its named, weighted factors (each
+  threat-feed listing with its weight; popularity listings shown as good
+  standing), plus a look-alike neighborhood confirmed against the graph.
+- **Page-link pre-verdicts.** One click reads every link on the current page
+  and verdicts each destination BEFORE you visit any of them: malicious,
+  suspicious, unknown, or clean, riskiest first. The links are reduced to bare
+  hostnames inside the page itself; only those names are checked, never the
+  page, its text, or your history. No new permissions.
 - **On-device look-alike detection.** Homoglyph tricks (`paypa1.com`, Cyrillic
   `pаypal.com`), TLD swaps (`paypal.tk`), hyphenation squats (`face-book.com`),
   brand-subdomain abuse (`paypal.com.evil.example`) and combosquats
@@ -48,11 +55,17 @@ history.
   connection constellation from the endpoint to where it went, and destination
   receipts with co-hosting fan-in and announcing-prefix threat neighbours. Every
   identity is anchored by an RDAP provenance link.
-- **Protect this browser (opt-in, off by default).** One toggle gives this
-  browser its own routable Whisper identity and routes its traffic through
-  Whisper egress, so it joins your fleet as a device with reverse-DNS and a
-  verifiable identity. WebRTC is hardened to proxied-only so nothing leaks around
-  the route. The new permissions are optional and requested on that click.
+- **Enroll this browser.** One click reserves this browser's own routable
+  Whisper identity: a real IPv6 address with reverse-DNS, verifiable by anyone
+  via public RDAP. Enrollment is pure control plane: it needs no browser
+  permission and works the moment you are signed in.
+- **Route this browser (opt-in, off by default).** A separate toggle then
+  routes the browser's traffic out through that identity, so it joins your
+  fleet as a device whose activity you can audit. WebRTC is hardened to
+  proxied-only so nothing leaks around the route. The proxy permissions are
+  optional and requested on that click; if another extension (a VPN, a proxy
+  manager) holds the browser's proxy setting, Guard says so plainly and keeps
+  the identity and verdicts working; routing is never a dead end.
 - Sign-in is the RFC 8628 device flow: you approve in the Whisper console and
   the extension receives its credential. You never see or paste a key.
 
@@ -125,7 +138,7 @@ npm run typecheck        # strict TypeScript, no emit
 npm run build            # typecheck + build dist/chromium and dist/firefox
 npm run build:chromium   # one target
 npm run package          # zip both targets for store upload
-npm run icons            # regenerate icon PNGs from the SVG sources (ImageMagick)
+npm run icons            # regenerate icon PNGs from the brand mark in assets/logo.png (ImageMagick)
 npm run psl              # refresh the vendored Public Suffix List snapshot
 ```
 
@@ -152,7 +165,13 @@ The browser-as-endpoint feature has its own hard dual-engine e2e
 routed through the Whisper egress endpoint (its own registered identity), that
 the identity appears in the account roster, and that keyless RDAP
 verify-identity of the routed address returns `is_whisper_agent: true`. It is
-never a structural pass.
+never a structural pass. `e2e/enroll.spec.ts` proves the split: enrollment
+succeeds with zero proxy permissions granted (and no traffic routed), and a
+REAL second proxy-holding extension cannot dead-end the flow: the browser
+still enrolls, and the conflict renders as an explanation with a way forward.
+`e2e/links.spec.ts` proves the page-link sweep against the full capture: only
+registrable hostnames reach the graph; the links' paths, queries and the
+page's text never leave the browser.
 
 The live suite picks a currently-listed malicious hostname, pins its DNS to
 a local harmless page, and verifies the real verdict end to end; the key is
@@ -183,7 +202,7 @@ src/
   options/     settings, sign-in, privacy panel
   pages/       full-page warning + pre-click check result
 manifests/     manifest.chromium.json, manifest.firefox.json
-icons/         pre-rendered PNG state sets (built from assets/icons)
+icons/         pre-rendered PNG state sets (built from the brand mark in assets/logo.png)
 ```
 
 Default permissions are deliberately minimal: `activeTab`, `webNavigation`,

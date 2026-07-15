@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <title>Whisper Guard</title>
+  <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -32,6 +33,14 @@
 
     <section id="protect-card" class="w-card" hidden>
       <div id="protect-rows" class="protect-rows"></div>
+      <div id="why-panel" hidden>
+        <div class="why-head">
+          <span class="w-label">Why this verdict</span>
+          <span id="why-score" class="w-chip chip-muted" hidden
+                title="The graph's threat score for this name, from its named weighted factors below."></span>
+        </div>
+        <div id="why-factors" class="why-factors"></div>
+      </div>
       <div id="why-chips" class="why-chips"></div>
     </section>
 
@@ -46,6 +55,33 @@
 
     <section id="graph-error" class="w-card muted" hidden></section>
 
+    <section id="linkscan-card" class="w-card" hidden>
+      <div class="mini-head">
+        <span class="w-label">Links on this page</span>
+        <button id="btn-linkscan" class="w-btn small primary">Check every link</button>
+      </div>
+      <div id="linkscan-note" class="w-note">Verdict every destination this page links to,
+      before you click any of them. Only the link hostnames are checked, never the page.</div>
+      <div id="linkscan-summary" class="linkscan-summary" hidden></div>
+      <div id="linkscan-list" class="linkscan-list" hidden></div>
+    </section>
+
+    <section id="identity-card" class="w-card" hidden>
+      <div class="mini-head">
+        <span class="w-label">This browser on the Whisper network</span>
+        <span id="identity-state" class="w-chip unknown">NOT ENROLLED</span>
+      </div>
+      <div id="identity-pitch" class="w-note" hidden>Give this browser its own routable
+      Whisper identity: a real IPv6 address with reverse-DNS, verifiable by anyone via
+      RDAP. One click; routing stays off until you turn it on.</div>
+      <div id="identity-detail" class="identity-detail" hidden></div>
+      <div class="row gap identity-actions">
+        <button id="btn-enroll" class="w-btn primary" hidden>Enroll this browser</button>
+        <button id="btn-identity-dash" class="w-btn small" hidden>Identity &amp; routing</button>
+      </div>
+      <div id="identity-note" class="w-note" hidden></div>
+    </section>
+
     <section id="mini-dash" class="w-card">
       <div class="mini-head">
         <span class="w-label">This browser, last 24h</span>
@@ -55,15 +91,17 @@
     </section>
 
     <section id="signin-pitch" class="w-card" hidden>
-      <p id="pitch-text">See your whole fleet of devices and agents, drill into any endpoint,
-      and put this browser on the Whisper network with its own verifiable identity. Free.</p>
+      <p id="pitch-text"><strong>Put this browser on the Whisper network</strong> with its own
+      verifiable identity (a real IPv6 address, reverse-DNS, public RDAP), see your whole
+      fleet of devices and agents, and drill into any endpoint. Free. Everything above
+      already works with no account.</p>
       <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
       <div id="device-status" class="w-note" hidden></div>
     </section>
 
     <div id="expanders" hidden>
       <details id="exp-why">
-        <summary>Why this verdict</summary>
+        <summary>Why, the full graph answer</summary>
         <div id="why-body" class="exp-body">Loading...</div>
       </details>
       <details id="exp-who">

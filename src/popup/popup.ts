@@ -9,7 +9,18 @@
 // what was sent.
 
 import { send, type BrowserReport } from "../shared/messages";
-import type { CandidateVerdict, ExplainResult, GraphBand, Protection, Settings, TabState } from "../shared/types";
+import type {
+  CandidateVerdict,
+  EgressStatus,
+  Enrollment,
+  ExplainResult,
+  GraphBand,
+  LinkScanResult,
+  Protection,
+  Settings,
+  TabState,
+  WhyFactor,
+} from "../shared/types";
 import { CATEGORY_LABEL, flagEmoji, type ReportCategory } from "../shared/report";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -162,11 +173,62 @@ function protectKv(k: string, v: string): HTMLElement {
   return row;
 }
 
+/** One named weighted factor row: dot + name + weight, colored by kind. */
+function factorRow(f: WhyFactor): HTMLElement {
+  const row = document.createElement("div");
+  row.className = `why-factor ${f.kind}`;
+  const dot = document.createElement("span");
+  dot.className = "w-dot";
+  const name = document.createElement("span");
+  name.className = "wf-name";
+  name.textContent = f.name;
+  name.title = f.kind === "threat" ? `${f.name}: a threat feed listing` : `${f.name}: a popularity/trust listing (good standing)`;
+  const meta = document.createElement("span");
+  meta.className = "wf-meta";
+  meta.textContent =
+    f.kind === "threat"
+      ? `threat feed${f.weight !== null ? ` · weight ${f.weight}` : ""}`
+      : `good standing${f.weight !== null ? ` · weight ${f.weight}` : ""}`;
+  row.append(dot, name, meta);
+  return row;
+}
+
+const MAX_FACTORS_SHOWN = 5;
+
+/** The WHY, front and center: the graph's score + its named weighted factors. */
+function renderWhy(p: Protection): boolean {
+  const panel = $("why-panel");
+  const scoreChip = $("why-score");
+  const box = $("why-factors");
+  if (p.whyFactors.length === 0 && p.score === null) return false;
+  panel.hidden = false;
+  if (p.score !== null) {
+    scoreChip.hidden = false;
+    scoreChip.textContent = `graph score ${p.score}`;
+  }
+  const shown = p.whyFactors.slice(0, MAX_FACTORS_SHOWN);
+  box.replaceChildren(...shown.map(factorRow));
+  if (p.whyFactors.length > shown.length) {
+    const more = document.createElement("div");
+    more.className = "why-factor more";
+    more.textContent = `+ ${p.whyFactors.length - shown.length} more listing(s) in the full graph answer below`;
+    box.appendChild(more);
+  }
+  if (shown.length === 0) {
+    const none = document.createElement("div");
+    none.className = "why-factor more";
+    none.textContent = "No feed lists this name either way.";
+    box.appendChild(none);
+  }
+  return true;
+}
+
 /** The composed picture: who runs it, where, how old, why flagged. */
 async function loadProtection(host: string): Promise<void> {
   const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
   if (!res.ok) return;
   const p = res.protection;
+  const hasWhy = renderWhy(p);
   const rows: HTMLElement[] = [];
   if (p.who) {
     const catLabel =
@@ -194,10 +256,183 @@ async function loadProtection(host: string): Promise<void> {
       return line;
     }),
   );
-  if (rows.length > 0 || p.why.length > 0) {
+  if (rows.length > 0 || p.why.length > 0 || hasWhy) {
     card.hidden = false;
     $("protect-rows").replaceChildren(...rows);
   }
+}
+
+// ------------------------------------------------------ browser identity
+
+function chipClsForBand(band: string): string {
+  const b = band.toUpperCase();
+  if (b === "CRITICAL") return "crit";
+  if (b === "HIGH") return "high";
+  if (b === "MEDIUM") return "med";
+  if (b === "UNKNOWN") return "unknown";
+  return "ok";
+}
+
+function identityLine(label: string, value: string, mono = true): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "protect-kv";
+  const k = document.createElement("span");
+  k.className = "k";
+  k.textContent = label;
+  const v = document.createElement("span");
+  v.className = mono ? "v w-mono" : "v";
+  v.textContent = value;
+  row.append(k, v);
+  return row;
+}
+
+function renderEnrolled(address: string, fqdn: string | null, rdapUrl: string | null, verified: boolean | null): void {
+  const stateChip = $("identity-state");
+  if (verified === true) {
+    stateChip.className = "w-chip ok";
+    stateChip.textContent = "VERIFIED";
+    stateChip.title = "This address resolves as a Whisper endpoint via keyless RDAP verify-identity.";
+  } else {
+    stateChip.className = "w-chip accent";
+    stateChip.textContent = "ENROLLED";
+    stateChip.title = verified === false ? "Identity reserved; public verification pending." : "Identity reserved.";
+  }
+  const detail = $("identity-detail");
+  detail.hidden = false;
+  const lines: HTMLElement[] = [identityLine("Address", address)];
+  if (fqdn) lines.push(identityLine("Name", fqdn));
+  if (rdapUrl) {
+    const row = document.createElement("div");
+    row.className = "protect-kv";
+    const k = document.createElement("span");
+    k.className = "k";
+    k.textContent = "Proof";
+    const v = document.createElement("span");
+    v.className = "v";
+    const a = document.createElement("a");
+    a.href = rdapUrl;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "RDAP registration (anyone can check)";
+    v.appendChild(a);
+    row.append(k, v);
+    lines.push(row);
+  }
+  detail.replaceChildren(...lines);
+  $("identity-pitch").hidden = true;
+  $("btn-enroll").hidden = true;
+  $("btn-identity-dash").hidden = false;
+}
+
+async function loadIdentityCard(): Promise<void> {
+  const card = $("identity-card");
+  card.hidden = false;
+  $("btn-identity-dash").addEventListener("click", () => {
+    void send({ kind: "openDashboard", view: "browser" }).then(() => window.close());
+  });
+  const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
+  if (res.ok && res.egress.enrolled && res.egress.address) {
+    renderEnrolled(res.egress.address, res.egress.fqdn, res.egress.rdapUrl, null);
+    // Verify keylessly in the background; upgrade the chip when it lands.
+    const v = await send<{ ok: true; verification: { isWhisperAgent: boolean; fqdn: string | null } | null }>({
+      kind: "verifyIdentity",
+      ip: res.egress.address,
+    });
+    if (v.ok && v.verification) {
+      renderEnrolled(
+        res.egress.address,
+        res.egress.fqdn ?? v.verification.fqdn,
+        res.egress.rdapUrl,
+        v.verification.isWhisperAgent,
+      );
+    }
+    return;
+  }
+  // Not enrolled yet: the CTA is the card.
+  $("identity-pitch").hidden = false;
+  const btn = $<HTMLButtonElement>("btn-enroll");
+  btn.hidden = false;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Enrolling...";
+    const note = $("identity-note");
+    const r = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({ kind: "enroll" });
+    if (r.ok) {
+      renderEnrolled(
+        r.enrollment.address,
+        r.enrollment.fqdn,
+        r.enrollment.rdapUrl,
+        r.enrollment.verification?.isWhisperAgent ?? null,
+      );
+      note.hidden = false;
+      note.textContent = "Enrolled. Routing stays off until you turn it on in the dashboard.";
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Enroll this browser";
+      note.hidden = false;
+      note.textContent = r.error;
+    }
+  });
+}
+
+// ----------------------------------------------------------- link sweep
+
+function linkRow(host: string, band: string, links: number): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "link-row";
+  const chip = document.createElement("span");
+  chip.className = `w-chip ${chipClsForBand(band)}`;
+  chip.textContent = band.toUpperCase() === "CRITICAL" ? "MALICIOUS" : band.toUpperCase();
+  const name = document.createElement("span");
+  name.className = "link-host";
+  name.textContent = host;
+  const n = document.createElement("span");
+  n.className = "link-n";
+  n.textContent = links > 1 ? `x${links}` : "";
+  row.append(chip, name, n);
+  return row;
+}
+
+function renderLinkScan(scan: LinkScanResult): void {
+  const summary = $("linkscan-summary");
+  summary.hidden = false;
+  const bits: string[] = [];
+  if (scan.flagged > 0) bits.push(`${scan.flagged} malicious`);
+  if (scan.suspicious > 0) bits.push(`${scan.suspicious} suspicious`);
+  bits.push(`${scan.unknown} unknown`, `${scan.clean} clean`);
+  summary.textContent = `${scan.hosts.length} destination(s) across ${scan.totalLinks} link(s): ${bits.join(", ")}.${scan.truncated ? " Showing the busiest; the page had more." : ""}`;
+  summary.className = `linkscan-summary${scan.flagged > 0 ? " hot" : ""}`;
+  const list = $("linkscan-list");
+  list.hidden = scan.hosts.length === 0;
+  // Clean rows collapse into the count above once anything is flagged;
+  // otherwise show everything (short lists read better complete).
+  const risky = scan.hosts.filter((h) => h.band !== "NONE" && h.band !== "LOW" && h.band !== "INFO");
+  const rows = risky.length > 0 && scan.hosts.length > 24 ? risky : scan.hosts;
+  list.replaceChildren(...rows.slice(0, 80).map((h) => linkRow(h.host, h.band, h.links)));
+  $("linkscan-note").textContent =
+    "Only the link hostnames were checked, never the page, its text, or your history.";
+}
+
+function wireLinkScan(): void {
+  $("linkscan-card").hidden = false;
+  const btn = $<HTMLButtonElement>("btn-linkscan");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Checking...";
+    const res = await send<{ ok: true; scan: LinkScanResult } | { ok: false; error: string }>({
+      kind: "scanLinks",
+      tabId,
+    });
+    btn.disabled = false;
+    btn.textContent = "Re-check";
+    if (res.ok) {
+      renderLinkScan(res.scan);
+    } else {
+      const summary = $("linkscan-summary");
+      summary.hidden = false;
+      summary.textContent = res.error;
+    }
+  });
 }
 
 async function loadMiniDash(): Promise<void> {
@@ -249,6 +484,15 @@ async function pollDeviceFlow(): Promise<void> {
   }
 }
 
+function wireSignin(): void {
+  $("signin-pitch").hidden = false;
+  $("btn-signin").addEventListener("click", async () => {
+    $("btn-signin").textContent = "Opening the console...";
+    await send({ kind: "signInStart" });
+    void pollDeviceFlow();
+  });
+}
+
 function render(): void {
   if (!state) return;
   const s = state;
@@ -262,6 +506,12 @@ function render(): void {
     void send({ kind: "openDashboard" }).then(() => window.close());
   });
 
+  // Enrollment is front and center on every page, signed in or not:
+  // keyed users see their browser's identity (or the one-click enroll),
+  // keyless users see what signing in unlocks. Two tiers, both honest.
+  if (s.signedIn) void loadIdentityCard();
+  else wireSignin();
+
   if (!s.eligible || !s.hostname) {
     $("ineligible").hidden = false;
     $("privacy-line").textContent = "Privacy: nothing was sent.";
@@ -271,6 +521,7 @@ function render(): void {
 
   $("host-row").hidden = false;
   $("hostname").textContent = host;
+  if (cloudCheck) wireLinkScan();
 
   const band: GraphBand | null = s.verdict?.band ?? null;
   const glyph = $("band-glyph");
@@ -401,13 +652,6 @@ function render(): void {
       ];
       await navigator.clipboard.writeText(lines.join("\n"));
       $("btn-dossier").textContent = "Copied";
-    });
-  } else {
-    $("signin-pitch").hidden = false;
-    $("btn-signin").addEventListener("click", async () => {
-      $("btn-signin").textContent = "Opening the console...";
-      await send({ kind: "signInStart" });
-      void pollDeviceFlow();
     });
   }
 

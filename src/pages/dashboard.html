@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <title>Whisper Guard dashboard</title>
+  <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="dashboard.css">
 </head>
@@ -59,11 +60,22 @@
     <section class="w-card" id="egress-card">
       <div class="card-head">
         <div>
-          <div class="w-label">Protect this browser</div>
-          <p class="w-note">Give this browser its own routable Whisper identity and route its traffic
-          through Whisper egress. It joins your fleet like any other device: reverse-DNS,
-          verifiable identity, activity you can audit here. Off by default; asks for the
+          <div class="w-label">This browser on the Whisper network</div>
+          <p class="w-note">Two independent steps. <strong>Enroll</strong> reserves this browser's own
+          routable Whisper identity: a real IPv6 address with reverse-DNS, verifiable by
+          anyone via RDAP. It needs no browser permission and works the moment you are
+          signed in. <strong>Route</strong> then sends this browser's traffic out through that
+          identity, so it joins your fleet like any other device; that step asks for the
           browser's proxy permission when you turn it on.</p>
+        </div>
+        <button id="enroll-btn" class="w-btn primary">Enroll this browser</button>
+      </div>
+      <div id="identity-detail" class="egress-detail"></div>
+      <div class="card-head route-head">
+        <div>
+          <div class="w-label">Route traffic through Whisper</div>
+          <p class="w-note" id="route-note">Off by default. Profile-global while on; WebRTC is
+          hardened to proxied-only on Chromium so nothing leaks around the route.</p>
         </div>
         <button id="egress-toggle" class="w-btn primary">Turn on</button>
       </div>

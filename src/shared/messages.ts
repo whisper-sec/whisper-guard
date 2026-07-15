@@ -11,10 +11,12 @@ import type {
   DetectorHit,
   EgressStatus,
   EndpointCounters,
+  Enrollment,
   ExplainResult,
   FeedStatus,
   FleetEndpoint,
   IdentityVerification,
+  LinkScanResult,
   Protection,
   SessionRisk,
   Settings,
@@ -49,6 +51,8 @@ export type BgRequest =
   | { kind: "egressStatus" }
   | { kind: "egressEnable" }
   | { kind: "egressDisable" }
+  | { kind: "enroll" }
+  | { kind: "scanLinks"; tabId: number }
   | { kind: "verifyIdentity"; ip: string };
 
 export interface CheckHostResult {
@@ -110,6 +114,8 @@ export type BgResponse =
   | { ok: true; endpoint: EndpointDetail }
   | { ok: true; drill: DestinationDrill }
   | { ok: true; egress: EgressStatus }
+  | { ok: true; enrollment: Enrollment }
+  | { ok: true; scan: LinkScanResult }
   | { ok: true; verification: IdentityVerification | null }
   | { ok: true }
   | { ok: false; error: string; nokey?: boolean };

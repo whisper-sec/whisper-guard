@@ -1,33 +1,40 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// Browser-as-endpoint: the opt-in, off-by-default toggle that gives THIS
-// browser its own routable Whisper identity and routes it through the
-// Whisper HTTPS egress, so it shows up in the fleet like any other device.
+// Browser-as-endpoint, two cleanly separated ideas:
 //
-//   register-once   op:register {label, device:true} exactly once; the
-//                   identity (agent + /128) persists and is reused forever.
-//                   If the account already holds a device with our exact
-//                   label, it is ADOPTED, never duplicated (registration
-//                   writes durable state).
-//   connect         op:connect {agent} -> an authenticated HTTPS-CONNECT
-//                   egress endpoint bound to the browser's own /128. The
-//                   token is cached locally, refreshed only when refused.
-//   route           ONE HTTPS-CONNECT code path for both engines:
-//                   Chromium fixed_servers + onAuthRequired credentials;
-//                   Firefox proxy.onRequest + proxyAuthorizationHeader.
-//   WebRTC          disable_non_proxied_udp rides the toggle on Chromium,
-//                   or the "everything sources from the /128" claim would
-//                   be false. (Firefox has no such extension control; the
-//                   limit is stated in the UI, not papered over.)
+//   ENROLL    reserve this browser's own routable Whisper identity (an
+//             agent + /128, verifiable via reverse-DNS and RDAP). Pure
+//             control plane: works whenever the user is signed in, needs
+//             NO browser permission, and never touches the proxy setting.
+//             register-once: op:register {label, device:true} exactly once;
+//             the identity persists and is reused forever. If the account
+//             already holds a device with our exact label it is ADOPTED,
+//             never duplicated (registration writes durable state).
+//   PROTECT   route this browser's traffic through that identity via the
+//             authenticated Whisper HTTPS-CONNECT egress (op:connect).
+//             This half needs the optional proxy permission and a proxy
+//             setting nothing else owns; when it cannot engage, enrollment
+//             stands and the UI says exactly what is in the way.
+//
+//   route     ONE HTTPS-CONNECT code path for both engines:
+//             Chromium fixed_servers + onAuthRequired credentials;
+//             Firefox proxy.onRequest + proxyAuthorizationHeader.
+//   WebRTC    disable_non_proxied_udp rides the toggle on Chromium, or the
+//             "everything sources from the /128" claim would be false.
+//             (Firefox has no such extension control; the limit is stated
+//             in the UI, not papered over.)
 //
 // Honest limits, surfaced not hidden: the proxy setting is PROFILE-GLOBAL
-// and single-owner; when another extension controls it we say so plainly.
+// and single-owner; when another extension controls it we say so plainly,
+// keep the identity, and point at the fix instead of dead-ending.
 
 import { ext } from "../shared/api";
-import type { EgressStatus } from "../shared/types";
+import { IS_FIREFOX } from "../shared/engine";
+import type { EgressStatus, Enrollment } from "../shared/types";
 import { controlCall, ControlError } from "./control";
 import { GraphError } from "./graph-client";
+import { rdapIpUrl, verifyIdentity } from "./rdap";
 
 const DEVICE_LABEL = "This browser (Whisper Guard)";
 
@@ -35,6 +42,7 @@ interface EgressIdentity {
   agent: string;
   address: string;
   label: string;
+  fqdn: string | null;
 }
 
 interface EgressConfig {
@@ -68,7 +76,8 @@ async function getStored(): Promise<StoredEgress> {
     if (s && typeof s === "object") {
       return {
         on: s.on === true,
-        identity: s.identity ?? null,
+        // Identities stored by older versions carry no fqdn yet.
+        identity: s.identity ? { ...s.identity, fqdn: s.identity.fqdn ?? null } : null,
         config: s.config ?? null,
         error: s.error ?? null,
       };
@@ -86,21 +95,11 @@ async function setStored(patch: Partial<StoredEgress>): Promise<StoredEgress> {
   return next;
 }
 
-// Engine split by CAPABILITY, not by the `browser` global (modern Chrome
-// aliases `browser` to `chrome`, so its mere presence proves nothing).
-// Firefox routes per-request via proxy.onRequest; Chromium has no such API
-// and drives the profile proxy through proxy.settings instead.
-interface MaybeProxy {
-  proxy?: { onRequest?: { addListener?: unknown } };
-}
-const isFirefox =
-  typeof (globalThis as { browser?: MaybeProxy }).browser?.proxy?.onRequest?.addListener ===
-  "function";
-
 // -------------------------------------------------------------- identity
 
 /** Register-once: reuse the stored identity, adopt an existing device with
- *  our label, or mint a fresh one; in that order. */
+ *  our label, or mint a fresh one; in that order. Control plane only: no
+ *  browser permission is involved anywhere in here. */
 async function ensureIdentity(): Promise<EgressIdentity> {
   const stored = await getStored();
   if (stored.identity) return stored.identity;
@@ -117,7 +116,12 @@ async function ensureIdentity(): Promise<EgressIdentity> {
       const agent = str(item["agent"]);
       const address = str(item["address"]);
       if (agent && address) {
-        const identity = { agent, address, label: DEVICE_LABEL };
+        const identity: EgressIdentity = {
+          agent,
+          address,
+          label: DEVICE_LABEL,
+          fqdn: str(item["fqdn"])?.replace(/\.$/, "") ?? null,
+        };
         await setStored({ identity });
         return identity;
       }
@@ -131,9 +135,38 @@ async function ensureIdentity(): Promise<EgressIdentity> {
   const agent = str(row["agent"]);
   const address = str(row["address"]);
   if (!agent || !address) throw new ControlError(0, "register returned no identity");
-  const identity = { agent, address, label: DEVICE_LABEL };
+  const identity: EgressIdentity = {
+    agent,
+    address,
+    label: DEVICE_LABEL,
+    fqdn: str(row["fqdn"])?.replace(/\.$/, "") ?? null,
+  };
   await setStored({ identity });
   return identity;
+}
+
+/**
+ * ENROLL this browser: reserve (or re-find) its identity and verify it
+ * against keyless RDAP. Succeeds for any signed-in user, independent of the
+ * proxy permission, other extensions, or the egress endpoint.
+ */
+export async function enrollBrowser(): Promise<Enrollment> {
+  const identity = await ensureIdentity();
+  const verification = await verifyIdentity(identity.address);
+  if (verification?.fqdn && !identity.fqdn) {
+    // The reverse-DNS name came back from verification: remember it.
+    const fqdn = verification.fqdn.replace(/\.$/, "");
+    await setStored({ identity: { ...identity, fqdn } });
+    identity.fqdn = fqdn;
+  }
+  return {
+    agent: identity.agent,
+    address: identity.address,
+    label: identity.label,
+    fqdn: identity.fqdn,
+    rdapUrl: rdapIpUrl(identity.address),
+    verification,
+  };
 }
 
 // ------------------------------------------------------------------ token
@@ -185,7 +218,7 @@ let authListenerInstalled = false;
 
 /** Supply the egress credentials to Chromium's proxy-auth challenge. */
 function installAuthListener(): void {
-  if (isFirefox || authListenerInstalled) return;
+  if (IS_FIREFOX || authListenerInstalled) return;
   if (!chrome.webRequest?.onAuthRequired) return;
   const attempts = new Map<string, number>();
   chrome.webRequest.onAuthRequired.addListener(
@@ -234,7 +267,7 @@ interface FirefoxProxyApi {
 }
 
 function installFirefoxProxy(): void {
-  if (!isFirefox || ffProxyInstalled) return;
+  if (!IS_FIREFOX || ffProxyInstalled) return;
   const proxyApi = (globalThis as { browser?: { proxy?: FirefoxProxyApi } }).browser?.proxy;
   if (!proxyApi?.onRequest) return;
   proxyApi.onRequest.addListener(
@@ -304,8 +337,18 @@ export const EGRESS_PERMISSIONS = {
   firefox: { permissions: ["proxy"], origins: ["<all_urls>"] },
 } as const;
 
+// The honest, actionable messages for the two ways routing (not identity)
+// can be blocked. Neither is a dead end: enrollment and verdicts stand.
+const MSG_NO_PERMISSION =
+  "the browser did not grant the proxy permission, so routing stayed off. " +
+  "Your browser identity and site verdicts keep working; grant the permission to route.";
+const MSG_PROXY_CONFLICT =
+  "another extension (a VPN or proxy manager) holds this browser's proxy setting, " +
+  "so routing cannot engage. Your identity is reserved and verdicts keep working. " +
+  "Disable that extension's proxy control, then turn this on again.";
+
 async function permissionsGranted(): Promise<boolean> {
-  const want = isFirefox ? EGRESS_PERMISSIONS.firefox : EGRESS_PERMISSIONS.chromium;
+  const want = IS_FIREFOX ? EGRESS_PERMISSIONS.firefox : EGRESS_PERMISSIONS.chromium;
   try {
     return await ext.permissions.contains({
       permissions: [...want.permissions],
@@ -320,40 +363,58 @@ export async function egressStatus(): Promise<EgressStatus> {
   const s = await getStored();
   return {
     on: s.on,
+    enrolled: s.identity !== null,
     agent: s.identity?.agent ?? null,
     address: s.identity?.address ?? null,
     label: s.identity?.label ?? null,
-    controlledByOther: !isFirefox && !s.on ? await proxyControlledByOther() : false,
-    webrtcHardened: isFirefox ? null : s.on,
+    fqdn: s.identity?.fqdn ?? null,
+    rdapUrl: s.identity ? rdapIpUrl(s.identity.address) : null,
+    controlledByOther: !IS_FIREFOX && !s.on ? await proxyControlledByOther() : false,
+    webrtcHardened: IS_FIREFOX ? null : s.on,
     error: s.error,
   };
 }
 
 /**
- * Turn the browser into a Whisper endpoint. The PAGE requests the optional
- * permissions on the user gesture BEFORE messaging this; here we verify,
- * provision and route. Every failure is a clear message, never silence.
+ * PROTECT: route the browser through its Whisper identity. The PAGE requests
+ * the optional permissions on the user gesture BEFORE messaging this; here
+ * we enroll (always, first, so identity survives any routing failure), then
+ * verify permissions, take the proxy, and route. Every failure is a clear,
+ * actionable message, never silence and never a dead end.
  */
 export async function egressEnable(): Promise<EgressStatus> {
   try {
+    // 1) ENROLL first. Identity is control-plane only; nothing below may
+    //    stop this browser from having its verifiable /128.
+    const identity = await ensureIdentity();
+
+    // 2) Routing needs the optional permissions.
     if (!(await permissionsGranted())) {
-      await setStored({ on: false, error: "the browser permissions were not granted" });
-      return egressStatus();
-    }
-    if (!isFirefox && (await proxyControlledByOther())) {
-      await setStored({
-        on: false,
-        error: "another extension controls this browser's proxy; disable it first",
-      });
+      await setStored({ on: false, error: MSG_NO_PERMISSION });
       return egressStatus();
     }
 
-    const identity = await ensureIdentity();
+    // 3) The proxy setting is single-owner; if someone else holds it, say
+    //    who can fix it and keep everything else alive. (Chromium only:
+    //    Firefox proxy.onRequest handlers compose instead of owning.)
+    if (!IS_FIREFOX) {
+      if (!chrome.proxy?.settings) {
+        // Defensive: the API binding should appear the moment the optional
+        // permission is granted; if it has not, one more toggle picks it up.
+        await setStored({ on: false, error: "the proxy API is not up yet; toggle once more" });
+        return egressStatus();
+      }
+      if (await proxyControlledByOther()) {
+        await setStored({ on: false, error: MSG_PROXY_CONFLICT });
+        return egressStatus();
+      }
+    }
+
     const stored = await getStored();
     const config = stored.config ?? (await provisionEgress(identity));
     await setStored({ config, error: null });
 
-    if (isFirefox) {
+    if (IS_FIREFOX) {
       installFirefoxProxy();
       await setStored({ on: true, error: null });
     } else {
@@ -382,7 +443,7 @@ export async function egressReprovision(): Promise<EgressStatus> {
   try {
     const config = await provisionEgress(s.identity);
     await setStored({ config, error: null });
-    if (s.on && !isFirefox) await applyChromiumProxy(config);
+    if (s.on && !IS_FIREFOX) await applyChromiumProxy(config);
     return egressStatus();
   } catch (e) {
     await setStored({ error: String(e instanceof Error ? e.message : e) });
@@ -392,7 +453,7 @@ export async function egressReprovision(): Promise<EgressStatus> {
 
 export async function egressDisable(): Promise<EgressStatus> {
   await setStored({ on: false, error: null });
-  if (!isFirefox) {
+  if (!IS_FIREFOX) {
     try {
       await chrome.proxy.settings.clear({ scope: "regular" });
     } catch {
@@ -407,7 +468,7 @@ export async function egressDisable(): Promise<EgressStatus> {
 export async function resumeEgress(): Promise<void> {
   const s = await getStored();
   if (!s.on) return;
-  if (isFirefox) {
+  if (IS_FIREFOX) {
     installFirefoxProxy();
     return;
   }

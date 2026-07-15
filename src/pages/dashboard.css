@@ -151,10 +151,13 @@ body {
 .drill-kv .k { flex: 0 0 9em; color: var(--w-faint); }
 .drill-kv .v { color: var(--w-text); min-width: 0; word-break: break-word; }
 
-/* Egress */
+/* Identity + egress */
 #egress-card .card-head { align-items: flex-start; }
 #egress-card .card-head > div { max-width: 70ch; }
+#egress-card .route-head { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--w-line); }
 .egress-detail { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.egress-detail:empty { margin-top: 0; }
 .egress-detail .w-ip { font-size: 12.5px; }
+.egress-detail .w-btn { align-self: flex-start; }
 
 footer { padding: 12px 20px 18px; width: min(1200px, 100%); margin: 0 auto; }
