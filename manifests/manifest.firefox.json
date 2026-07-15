@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Whisper Guard",
-  "version": "0.0.0",
+  "version": "2.1.0",
   "description": "The Whisper security graph in your browser: a live safety verdict on every site, plus a dashboard of where your devices go.",
   "browser_specific_settings": {
     "gecko": {
