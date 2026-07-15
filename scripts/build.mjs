@@ -23,7 +23,8 @@ const OUT = join(ROOT, "dist", target);
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
-// 1) Bundles.
+// 1) Bundles. The engine is a BUILD-TIME constant (src/shared/engine.ts):
+// each target knows what it is instead of probing permission-gated APIs.
 const common = {
   bundle: true,
   minify: false,
@@ -31,6 +32,7 @@ const common = {
   target: ["es2022"],
   platform: "browser",
   logLevel: "warning",
+  define: { __FIREFOX__: target === "firefox" ? "true" : "false" },
 };
 
 await build({

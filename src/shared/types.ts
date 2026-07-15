@@ -138,6 +138,16 @@ export interface CandidateVerdict {
 
 // ------------------------------------------------------- composed protection
 
+/** One named, weighted factor behind a verdict (whisper.explain, shaped). */
+export interface WhyFactor {
+  /** The factor's name (a feed id, or a graph-computed line). */
+  name: string;
+  /** The graph's weight for the factor, when it carries one. */
+  weight: number | null;
+  /** threat = counts against the site; good = popularity/trust listing. */
+  kind: "threat" | "good";
+}
+
 /** The one composed, reconciled site verdict (see background/protect.ts). */
 export interface Protection {
   host: string;
@@ -154,6 +164,10 @@ export interface Protection {
   ageDays: number | null;
   /** Feed-cited reasons (threat feeds only; popularity lists are good). */
   why: string[];
+  /** The graph's threat score for this name, when explain returned one. */
+  score: number | null;
+  /** The named weighted factors behind the verdict, shown by default. */
+  whyFactors: WhyFactor[];
   /** Registered look-alike variants of this name flagged in the graph. */
   variants: CandidateVerdict[];
   /** Set when parts of the picture could not be fetched (fail-open). */
@@ -218,14 +232,58 @@ export interface FeedStatus {
 export interface EgressStatus {
   /** Whether the browser is currently routed through Whisper egress. */
   on: boolean;
+  /** ENROLLED: the browser holds its own reserved identity (independent of
+   *  routing; enrollment never needs the proxy permission). */
+  enrolled: boolean;
   /** The browser's own registered device identity, once minted. */
   agent: string | null;
   address: string | null;
   label: string | null;
+  /** The identity's reverse-DNS name, once known. */
+  fqdn: string | null;
+  /** The public RDAP provenance link for the identity's /128. */
+  rdapUrl: string | null;
   /** Honest limit surfacing: who controls the proxy setting right now. */
   controlledByOther: boolean;
   /** WebRTC leak hardening state (Chromium only; null elsewhere). */
   webrtcHardened: boolean | null;
   /** Last error, human-readable, when a step failed. */
   error: string | null;
+}
+
+/** The result of enrolling this browser (identity only, no routing). */
+export interface Enrollment {
+  agent: string;
+  address: string;
+  label: string;
+  fqdn: string | null;
+  rdapUrl: string;
+  /** Keyless RDAP verification of the fresh identity (null = unreachable). */
+  verification: IdentityVerification | null;
+}
+
+// ---------------------------------------------------------------- link scan
+
+/** One registrable destination found among the current page's links. */
+export interface LinkVerdictRow {
+  /** The registrable domain the links point at. */
+  host: string;
+  band: GraphBand;
+  label: string | null;
+  /** How many links on the page point at this destination. */
+  links: number;
+}
+
+/** The pre-visit verdict sweep over the current page's outbound links. */
+export interface LinkScanResult {
+  /** Unique registrable destinations, riskiest first. */
+  hosts: LinkVerdictRow[];
+  /** Total <a href> links inspected on the page (locally). */
+  totalLinks: number;
+  flagged: number;
+  suspicious: number;
+  unknown: number;
+  clean: number;
+  /** True when the page held more unique destinations than the scan cap. */
+  truncated: boolean;
 }

@@ -16,7 +16,8 @@
 // empty states, and never shows a number it cannot back.
 
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
-import type { EgressStatus, FleetEndpoint } from "../shared/types";
+import { IS_FIREFOX } from "../shared/engine";
+import type { EgressStatus, Enrollment, FleetEndpoint } from "../shared/types";
 import {
   CATEGORY_HEX,
   CATEGORY_LABEL,
@@ -177,6 +178,12 @@ function renderOwnerBars(container: HTMLElement, hosts: ReportHost[]): void {
   );
 }
 
+// TODO(fleet-map): a small geo dot-map of where this browser / the fleet
+// actually goes. The data already exists (ReportHost.country + .asn from the
+// graph enrichment feeding tallyCountry below); the render would be one
+// equirectangular canvas next to the country bars, no new permissions and no
+// new network. Deferred rather than half-built: a map that renders badly is
+// worse than bars that render well.
 function renderCountryBars(container: HTMLElement, hosts: ReportHost[]): void {
   const countries = tallyCountry(hosts).slice(0, 10);
   const max = countries[0]?.[1] ?? 0;
@@ -595,15 +602,74 @@ async function populatePicker(): Promise<void> {
   }
 }
 
-// ------------------------------------------------------------- egress
+// -------------------------------------------------- identity + egress
+
+// The last status the page saw: lets the toggle click decide its direction
+// SYNCHRONOUSLY, so chrome.permissions.request rides the user gesture with
+// no message round-trip in front of it (a round-trip can outlive the
+// gesture and the request then fails as "not granted" without a prompt).
+let lastEgress: EgressStatus | null = null;
 
 async function refreshEgress(): Promise<void> {
   const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
   if (!res.ok) return;
+  lastEgress = res.egress;
+  renderIdentity(res.egress);
   renderEgress(res.egress);
   await refreshIdentityChip(res.egress);
 }
 
+/** ENROLL: the identity half. Works signed-in, no permission, no proxy. */
+function renderIdentity(s: EgressStatus): void {
+  const btn = $<HTMLButtonElement>("enroll-btn");
+  const detail = $("identity-detail");
+  detail.replaceChildren();
+  if (s.enrolled && s.address) {
+    btn.hidden = true;
+    const line = el("div");
+    line.append(
+      el("span", "w-chip ok", "ENROLLED"),
+      document.createTextNode(" This browser's identity: "),
+      el("span", "w-ip", s.address),
+    );
+    detail.append(line);
+    if (s.fqdn) {
+      const nameLine = el("div", "w-note");
+      nameLine.append(document.createTextNode("Reverse-DNS: "), el("span", "w-mono", s.fqdn));
+      detail.append(nameLine);
+    }
+    if (s.rdapUrl) {
+      const proof = el("div", "w-note");
+      const a = el("a", undefined, "RDAP registration (anyone can verify this address)") as HTMLAnchorElement;
+      a.href = s.rdapUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      proof.append(a);
+      detail.append(proof);
+    }
+  } else {
+    btn.hidden = false;
+  }
+}
+
+async function enrollClick(): Promise<void> {
+  const btn = $<HTMLButtonElement>("enroll-btn");
+  btn.disabled = true;
+  btn.textContent = "Enrolling...";
+  const detail = $("identity-detail");
+  const res = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({
+    kind: "enroll",
+  });
+  btn.disabled = false;
+  btn.textContent = "Enroll this browser";
+  if (!res.ok) {
+    detail.replaceChildren(el("div", "w-note", `⚠ ${res.error}`));
+    return;
+  }
+  await refreshEgress();
+}
+
+/** PROTECT: the routing half, honest about everything in its way. */
 function renderEgress(s: EgressStatus): void {
   const btn = $<HTMLButtonElement>("egress-toggle");
   const detail = $("egress-detail");
@@ -625,81 +691,86 @@ function renderEgress(s: EgressStatus): void {
         "Profile-global: every profile window rides this route. WebRTC is hardened to proxied-only on Chromium.",
       ),
     );
-  } else {
-    if (s.controlledByOther) {
-      detail.append(
-        el("div", "w-note", "Another extension currently controls this browser's proxy; disable it first."),
-      );
-    }
-    if (s.address) {
-      const line = el("div", "w-note");
-      line.append(
-        document.createTextNode("This browser's reserved identity: "),
-        el("span", "w-ip", s.address),
-        document.createTextNode(" (kept for you; reused when you turn routing back on)"),
-      );
-      detail.append(line);
+  } else if (s.controlledByOther) {
+    // Never a dead end: name the situation, keep what works, point at the fix.
+    detail.append(
+      el(
+        "div",
+        "w-note",
+        "Another extension (a VPN or proxy manager) holds this browser's proxy setting, so routing cannot engage. " +
+          "Your identity and site verdicts keep working. Disable that extension's proxy control, then try again.",
+      ),
+    );
+    if (!IS_FIREFOX) {
+      const open = el("button", "w-btn small", "Open the extensions page") as HTMLButtonElement;
+      open.addEventListener("click", () => {
+        chrome.tabs.create({ url: "chrome://extensions" }).catch(() => undefined);
+      });
+      detail.append(open);
     }
   }
-  if (s.error) detail.append(el("div", "w-note", `⚠ ${s.error}`));
+  if (s.error && !(s.controlledByOther && !s.on)) detail.append(el("div", "w-note", `⚠ ${s.error}`));
 }
 
-// Firefox is detected by its per-request proxy API, not the `browser` global
-// (modern Chrome aliases `browser`), so the right permission set is requested.
-const isFirefox =
-  typeof (globalThis as { browser?: { proxy?: { onRequest?: { addListener?: unknown } } } }).browser
-    ?.proxy?.onRequest?.addListener === "function";
-
-async function toggleEgress(): Promise<void> {
+function toggleEgress(): void {
   const btn = $<HTMLButtonElement>("egress-toggle");
-  btn.disabled = true;
-  try {
-    const status = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
-    if (status.ok && status.egress.on) {
-      const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressDisable" });
-      if (res.ok) renderEgress(res.egress);
-    } else {
-      // The permission request must ride THIS user gesture, in the page.
-      const want = isFirefox
-        ? { permissions: ["proxy"], origins: ["<all_urls>"] }
-        : {
-            permissions: ["proxy", "webRequest", "webRequestAuthProvider", "privacy"],
-            origins: ["<all_urls>"],
-          };
-      let granted = false;
-      try {
-        granted = await chrome.permissions.request(want as chrome.permissions.Permissions);
-      } catch {
-        granted = false;
-      }
-      if (!granted) {
-        renderEgress({
-          on: false,
-          agent: null,
-          address: null,
-          label: null,
-          controlledByOther: false,
-          webrtcHardened: null,
-          error: "the browser permissions were not granted; nothing was changed",
-        });
-        return;
-      }
-      const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressEnable" });
-      if (res.ok) renderEgress(res.egress);
+  const wasOn = lastEgress?.on === true;
+
+  const finish = async (p: Promise<void>): Promise<void> => {
+    try {
+      await p;
+    } finally {
+      btn.disabled = false;
+      await refreshEgress();
     }
-  } finally {
-    btn.disabled = false;
-    const s = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
-    if (s.ok) await refreshIdentityChip(s.egress);
+  };
+
+  btn.disabled = true;
+  if (wasOn) {
+    void finish(send({ kind: "egressDisable" }).then(() => undefined));
+    return;
   }
+
+  // The permission request is the FIRST thing on this gesture: no awaits in
+  // front of it. The per-engine set is a build-time constant (engine.ts).
+  const want = IS_FIREFOX
+    ? { permissions: ["proxy"], origins: ["<all_urls>"] }
+    : {
+        permissions: ["proxy", "webRequest", "webRequestAuthProvider", "privacy"],
+        origins: ["<all_urls>"],
+      };
+  let request: Promise<boolean>;
+  try {
+    request = Promise.resolve(chrome.permissions.request(want as chrome.permissions.Permissions));
+  } catch {
+    request = Promise.resolve(false);
+  }
+  void finish(
+    request
+      .catch(() => false)
+      .then(async (granted) => {
+        if (!granted) {
+          $("egress-detail").replaceChildren(
+            el(
+              "div",
+              "w-note",
+              "⚠ the browser did not grant the proxy permission, so routing stayed off. " +
+                "Your identity and verdicts keep working; try again to grant it.",
+            ),
+          );
+          return;
+        }
+        await send({ kind: "egressEnable" });
+      }),
+  );
 }
 
 async function refreshIdentityChip(s: EgressStatus): Promise<void> {
   const chip = $("identity-chip");
-  if (!s.on || !s.address) {
+  if (!s.enrolled || !s.address) {
     chip.className = "w-chip unknown";
     chip.textContent = "NOT ON THE WHISPER NETWORK";
-    chip.title = "Turn on 'Protect this browser' to route it through Whisper egress.";
+    chip.title = "Enroll this browser below to give it its own verifiable Whisper identity.";
     return;
   }
   chip.className = "w-chip accent";
@@ -708,14 +779,15 @@ async function refreshIdentityChip(s: EgressStatus): Promise<void> {
     kind: "verifyIdentity",
     ip: s.address,
   });
+  const routed = s.on ? "routed through it" : "identity reserved; routing off";
   if (res.ok && res.verification?.isWhisperAgent) {
     chip.className = "w-chip ok";
     chip.textContent = "VERIFIED WHISPER ENDPOINT";
-    chip.title = res.verification.fqdn ?? s.address;
+    chip.title = `${res.verification.fqdn ?? s.address} (${routed})`;
   } else if (res.ok && res.verification) {
     chip.className = "w-chip unknown";
     chip.textContent = "IDENTITY NOT VERIFIED";
-    chip.title = s.address;
+    chip.title = `${s.address} (${routed})`;
   } else {
     chip.className = "w-chip unknown";
     chip.textContent = "COULD NOT VERIFY";
@@ -788,8 +860,9 @@ function init(): void {
   $("tab-browser").addEventListener("click", () => switchView("browser"));
   $("tab-fleet").addEventListener("click", () => switchView("fleet"));
   $("tab-endpoint").addEventListener("click", () => switchView("endpoint"));
-  $("egress-toggle").addEventListener("click", () => {
-    void toggleEgress();
+  $("egress-toggle").addEventListener("click", toggleEgress);
+  $("enroll-btn").addEventListener("click", () => {
+    void enrollClick();
   });
   $("fleet-signin").addEventListener("click", () => {
     void startSignIn("fleet-device-status");

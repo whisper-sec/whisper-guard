@@ -47,6 +47,9 @@ export interface LaunchOptions {
   proxyPort?: number;
   dist?: string;
   hostResolverRules?: string;
+  /** Additional unpacked extensions to load NEXT TO Whisper Guard (they
+   *  install after it, so e.g. a proxy holder wins the proxy setting). */
+  extraExtensions?: string[];
 }
 
 /**
@@ -56,9 +59,10 @@ export interface LaunchOptions {
 export async function launchExtension(opts: LaunchOptions = {}): Promise<Extension> {
   const dist = opts.dist ?? DIST_CHROMIUM;
   const userDataDir = mkdtempSync(join(tmpdir(), "whisper-guard-profile-"));
+  const allDists = [dist, ...(opts.extraExtensions ?? [])].join(",");
   const args = [
-    `--disable-extensions-except=${dist}`,
-    `--load-extension=${dist}`,
+    `--disable-extensions-except=${allDists}`,
+    `--load-extension=${allDists}`,
     "--ignore-certificate-errors",
     "--disable-features=DisableLoadExtensionCommandLineSwitch",
     // Quiet the browser's own background services so the capture proxy log
@@ -83,8 +87,14 @@ export async function launchExtension(opts: LaunchOptions = {}): Promise<Extensi
     viewport: { width: 1280, height: 800 },
   });
 
-  let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent("serviceworker");
+  // With extra extensions loaded there is more than one service worker:
+  // Whisper Guard's is the one running background.js.
+  const isGuardSw = (w: Worker): boolean => w.url().endsWith("/background.js");
+  let sw = context.serviceWorkers().find(isGuardSw);
+  while (!sw) {
+    const next = await context.waitForEvent("serviceworker");
+    if (isGuardSw(next)) sw = next;
+  }
   const id = new URL(sw.url()).host;
   return {
     context,
@@ -135,6 +145,40 @@ export function makeEgressDist(): string {
   manifest.host_permissions = [...manifest.host_permissions, "<all_urls>"];
   delete manifest.optional_permissions;
   writeFileSync(mpath, JSON.stringify(manifest, null, 2));
+  return dir;
+}
+
+/**
+ * A minimal SECOND extension that takes ownership of the browser's proxy
+ * setting (pointed at the capture proxy, so the run stays hermetic). Loaded
+ * after Whisper Guard it wins the setting, and Guard's proxy.settings.get
+ * reports levelOfControl "controlled_by_other_extensions": the real-world
+ * VPN/proxy-manager conflict, reproduced faithfully.
+ */
+export function makeProxyHolderExt(captureProxyPort: number): string {
+  const dir = mkdtempSync(join(tmpdir(), "whisper-guard-proxy-holder-"));
+  writeFileSync(
+    join(dir, "manifest.json"),
+    JSON.stringify(
+      {
+        manifest_version: 3,
+        name: "e2e proxy holder",
+        version: "1.0.0",
+        permissions: ["proxy"],
+        background: { service_worker: "holder.js" },
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(
+    join(dir, "holder.js"),
+    `chrome.proxy.settings.set({
+  value: { mode: "fixed_servers", rules: { singleProxy: { scheme: "http", host: "127.0.0.1", port: ${captureProxyPort} } } },
+  scope: "regular",
+});
+`,
+  );
   return dir;
 }
 
