@@ -18,7 +18,7 @@ h1 { font-size: 16px; margin: 0 0 10px; }
   font: 600 15px/1.4 ui-monospace, monospace;
   word-break: break-all;
   margin-bottom: 14px;
-  color: #38bdf8;
+  color: var(--w-accent);
 }
 
 .card {
@@ -63,7 +63,7 @@ h1 { font-size: 16px; margin: 0 0 10px; }
   text-decoration: none;
 }
 .btn:hover { border-color: #6b7280; }
-.btn.primary { background: #38bdf8; border-color: #38bdf8; color: #06202e; }
+.btn.primary { background: var(--w-gradient); border-color: transparent; color: #fff; }
 
 .privacy { font-size: 11px; color: #6b7280; margin-top: 20px; }
 
