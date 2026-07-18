@@ -19,6 +19,9 @@
   },
   "license": "MIT",
   "author": "Whisper Security (viaGraph B.V.)",
+  "overrides": {
+    "adm-zip": "^0.6.0"
+  },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/chrome": "^0.0.268",
