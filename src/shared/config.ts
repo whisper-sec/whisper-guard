@@ -81,7 +81,25 @@ export const COHOST_QUERY =
 export const GRAPH_TIMEOUT_MS = 4000;
 // Control-plane ops traverse warm storage and can be slower; still bounded.
 export const CONTROL_TIMEOUT_MS = 8000;
+// Provisioning ops (register a device + allocate its /128, connect + set up
+// egress) do real work on the control plane and legitimately take several
+// seconds; give them a generous budget so a real round-trip is never mistaken
+// for a failure. Still bounded, so a genuinely stuck call cannot hang forever.
+export const CONTROL_PROVISION_TIMEOUT_MS = 30_000;
 export const GRAPH_MAX_RESPONSE_BYTES = 1_048_576;
+
+// "Protect this browser" (egress) permission sets, one source of truth for
+// the background and the dashboard. On Chromium `proxy` is a REQUIRED
+// permission (Chrome forbids it in optional_permissions), so it is NOT in the
+// runtime-requested set there; the rest are requested on the user's click.
+// Firefox DOES allow `proxy` as optional, so it is requested at runtime there.
+export const EGRESS_REQUEST = {
+  chromium: {
+    permissions: ["webRequest", "webRequestAuthProvider", "privacy"],
+    origins: ["<all_urls>"],
+  },
+  firefox: { permissions: ["proxy"], origins: ["<all_urls>"] },
+} as const;
 
 // Per-tab navigation debounce (SPA route bursts, redirect chains).
 export const NAV_DEBOUNCE_MS = 150;

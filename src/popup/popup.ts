@@ -356,6 +356,10 @@ async function loadIdentityCard(): Promise<void> {
     btn.disabled = true;
     btn.textContent = "Enrolling...";
     const note = $("identity-note");
+    // Honest pending state: enrollment is a real control-plane round-trip
+    // (register + /128 allocation) that can take a few seconds.
+    note.hidden = false;
+    note.textContent = "Reserving this browser's identity (a few seconds)...";
     const r = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({ kind: "enroll" });
     if (r.ok) {
       renderEnrolled(
@@ -413,25 +417,70 @@ function renderLinkScan(scan: LinkScanResult): void {
     "Only the link hostnames were checked, never the page, its text, or your history.";
 }
 
+// When the reader was blocked (the popup opened without host access to this
+// tab), the next click first asks for THIS SITE's access before scanning.
+let linkScanNeedsGrant = false;
+
+/** Host access to the current site only, never the whole web. Covered by the
+ *  manifest's optional_host_permissions (<all_urls>); requested per-site so
+ *  Guard only ever gains access to sites the user actually scans. */
+function linkScanOrigins(): string[] {
+  const host = state?.hostname;
+  return host ? [`https://${host}/*`, `http://${host}/*`] : ["<all_urls>"];
+}
+
+async function runLinkScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Promise<void> {
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+  const summary = $("linkscan-summary");
+  if (grant) {
+    const ok = await grant.catch(() => false);
+    if (!ok) {
+      btn.disabled = false;
+      btn.textContent = "Allow this page & check";
+      summary.hidden = false;
+      summary.textContent = "Whisper Guard needs your OK to read this page's link addresses. Nothing else is read.";
+      return;
+    }
+    linkScanNeedsGrant = false;
+  }
+  const res = await send<{ ok: true; scan: LinkScanResult } | { ok: false; error: string; nohost?: boolean }>({
+    kind: "scanLinks",
+    tabId,
+  });
+  btn.disabled = false;
+  if (res.ok) {
+    btn.textContent = "Re-check";
+    renderLinkScan(res.scan);
+    return;
+  }
+  if (res.nohost) {
+    // A fresh user gesture is required to request the permission, so arm the
+    // next click instead of prompting from this (already-consumed) one.
+    linkScanNeedsGrant = true;
+    btn.textContent = "Allow this page & check";
+  } else {
+    btn.textContent = "Re-check";
+  }
+  summary.hidden = false;
+  summary.textContent = res.error;
+}
+
 function wireLinkScan(): void {
   $("linkscan-card").hidden = false;
   const btn = $<HTMLButtonElement>("btn-linkscan");
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    btn.textContent = "Checking...";
-    const res = await send<{ ok: true; scan: LinkScanResult } | { ok: false; error: string }>({
-      kind: "scanLinks",
-      tabId,
-    });
-    btn.disabled = false;
-    btn.textContent = "Re-check";
-    if (res.ok) {
-      renderLinkScan(res.scan);
-    } else {
-      const summary = $("linkscan-summary");
-      summary.hidden = false;
-      summary.textContent = res.error;
+  btn.addEventListener("click", () => {
+    // If the reader was blocked, ask for this-site host access FIRST (no await
+    // before it, so it counts as a user gesture); promptless if already held.
+    let grant: Promise<boolean> | undefined;
+    if (linkScanNeedsGrant) {
+      try {
+        grant = Promise.resolve(chrome.permissions.request({ origins: linkScanOrigins() }));
+      } catch {
+        grant = Promise.resolve(false);
+      }
     }
+    void runLinkScan(btn, grant);
   });
 }
 

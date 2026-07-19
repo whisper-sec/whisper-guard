@@ -83,8 +83,10 @@ Use the gallery in `shots/` (regenerate with
     query, and content are discarded at parse time.
   - `storage`: local settings, the local verdict cache, the on-device
     destination log, and the sign-in credential. Nothing is synced.
-  - `scripting`: used only after the optional Active Shield opt-in, to draw
-    the warning banner and password-field caution on flagged sites.
+  - `scripting`: draws the Active Shield warning banner and password-field
+    caution on flagged sites (after the Shield opt-in), and, on the user's
+    click, reads only the `<a href>` HOSTNAMES of the current page for the
+    pre-click link sweep. Page text, paths and queries are never read.
   - `declarativeNetRequest`: to block navigation to known credential-phishing
     sites before the request leaves the browser (Active Shield).
   - `contextMenus`: the "Check this link with Whisper" right-click action.
@@ -97,16 +99,19 @@ Use the gallery in `shots/` (regenerate with
     destination enrichment (hostname only), the sign-in flow, corpus updates,
     and public identity verification of the user's own endpoints (IP literals
     only), respectively. No other host is ever contacted.
-  - `proxy`, `webRequest`, `webRequestAuthProvider`, `privacy` (all OPTIONAL):
-    requested at runtime only when the user turns on "Protect this browser",
-    which routes this browser through Whisper egress so it becomes an endpoint
-    on the user's account. `proxy` sets the route, `webRequest` +
-    `webRequestAuthProvider` supply the egress credential, and `privacy`
-    hardens WebRTC to proxied-only so the source address cannot leak. Off by
-    default; keyless users never grant them.
+  - `proxy` (REQUIRED), `webRequest`, `webRequestAuthProvider`, `privacy`
+    (OPTIONAL): power "Protect this browser", which routes this browser through
+    Whisper egress so it becomes an endpoint on the user's account. `proxy`
+    sets the route; Chrome does not permit `proxy` to be an optional permission,
+    so it is declared required, but it is only ACTIVATED when the user turns
+    routing on, never before. `webRequest` + `webRequestAuthProvider` supply the
+    egress credential and `privacy` hardens WebRTC to proxied-only; these three
+    are requested at runtime on that same click. Routing is off by default; the
+    proxy setting is never touched until the user opts in.
   - `<all_urls>` (optional): requested at runtime only when the user enables
-    Active Shield (warnings) or the browser-egress route. The default install
-    has no broad host access.
+    Active Shield (warnings), the pre-click link sweep (this-site access,
+    requested per site), or the browser-egress route. The default install has
+    no broad host access.
 - **Data usage:** Website content: NOT collected. Web history: NOT collected
   (the hostname of the current site is transmitted to answer the user's
   safety check and enrich the dashboard; it is not retained to build a

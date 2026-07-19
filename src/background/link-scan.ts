@@ -2,9 +2,13 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // Page-link pre-verdicts: one click reads every link on the CURRENT page and
-// verdicts each destination BEFORE the user visits any of them. No new
-// permissions: the click that opens the popup grants activeTab, and the
-// injection rides the existing "scripting" permission.
+// verdicts each destination BEFORE the user visits any of them. The reader is
+// injected with the "scripting" permission; host access to the page is the
+// CURRENT SITE ONLY, granted on the user's click gesture (see popup.ts). We do
+// not rely on activeTab alone: opening the popup does not reliably arm it for
+// the popup -> background -> executeScript path, so a bare-install click hit
+// "Cannot access contents of the page". A blanket <all_urls> install grant is
+// deliberately NOT taken; page access stays scoped to sites the user scans.
 //
 // THE PRIVACY INVARIANT, held twice over:
 //   1) the injected collector reduces links to bare HOSTNAMES inside the

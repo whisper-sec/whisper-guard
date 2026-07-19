@@ -11,8 +11,9 @@
 // (no OffscreenCanvas).
 //
 // Pipeline, per state: plate+ring SVG rendered at 512 -> brand mark
-// composited (original gradient, or recolored via its alpha mask for the
-// white/dim states) -> badge overlay -> downsampled to 16/32/48/128.
+// composited (the brand SILHOUETTE painted via its alpha mask: bold Whisper
+// purple in every state, white on the malicious red plate) -> badge overlay
+// -> downsampled to 16/32/48/128.
 // The per-state SVGs in assets/icons/ are written as self-contained design
 // sources with the mark embedded as a data URI.
 //
@@ -44,6 +45,12 @@ const C = {
   slate: "#6b7280",
   faint: "#475569",
   accent: "#8a5cc7", // theme --w-accent: Whisper violet
+  // The MARK's fill: a bold, bright Whisper purple. The interlocking-rings
+  // mark from the raw logo is a dark gradient that reads as near-black at
+  // 16px on the browser toolbar, so we paint the brand SILHOUETTE in this
+  // strong violet instead. High contrast on the dark plate, clearly purple in
+  // both light and dark browser chrome. This is the icon's headline colour.
+  markPurple: "#7c5cff",
 };
 
 const convert = (args) => execFileSync("convert", args);
@@ -70,8 +77,16 @@ function recolorMark(color, out) {
 }
 const markWhite = join(WORK, "mark-white.png");
 const markDim = join(WORK, "mark-dim.png");
+const markPurple = join(WORK, "mark-purple.png");
 recolorMark("#ffffff", markWhite);
 recolorMark(C.markDim, markDim);
+// The purple mark gets a proportional stroke-thickening first: the raw ring
+// strokes are ~1px at 16px and anti-alias into the dark plate, so we dilate
+// the silhouette a touch (a "heavier stroke") so the bold purple still reads
+// crisply at toolbar size. Subtle enough to keep the interlocking-rings look.
+const markPurpleMask = join(WORK, "mark-purple-mask.png");
+convert([markMask, "-morphology", "Dilate", "Disk:4", markPurpleMask]);
+convert([markPurpleMask, "-background", C.markPurple, "-alpha", "shape", markPurple]);
 
 // 2) Plate + ring + badge, in the same 64-unit design space as before.
 function ring(color, width = 4, dash = "") {
@@ -110,18 +125,23 @@ const BADGES = {
 };
 
 // state -> { plate SVG body, badge SVG body, which mark variant }
+// The MARK is the bold Whisper purple in every state except malicious (a
+// white silhouette on the red stop-plate for maximum contrast). The verdict
+// lives in the RING colour (green / amber / red) and the corner badge, never
+// in the mark: the mark's job is to be an unmistakably purple, highly visible
+// brand anchor at 16px, including the default signed-out state.
 const STATES = {
-  base: { plate: squircle(C.bg) + ring(C.accent), badge: "", mark: markBrand },
-  benign: { plate: squircle(C.bg) + ring(C.green), badge: BADGES.benign, mark: markBrand },
-  suspicious: { plate: squircle(C.bg) + ring(C.amber), badge: BADGES.suspicious, mark: markBrand },
+  base: { plate: squircle(C.bg) + ring(C.accent), badge: "", mark: markPurple },
+  benign: { plate: squircle(C.bg) + ring(C.green), badge: BADGES.benign, mark: markPurple },
+  suspicious: { plate: squircle(C.bg) + ring(C.amber), badge: BADGES.suspicious, mark: markPurple },
   malicious: {
     plate: `<rect x="2" y="2" width="60" height="60" rx="16" fill="${C.red}"/>` + squircle(C.red) + ring(C.redDark, 5),
     badge: BADGES.malicious,
     mark: markWhite,
   },
-  unknown: { plate: squircle(C.bg) + ring(C.slate, 4, "7 5"), badge: BADGES.unknown, mark: markBrand },
-  checking: { plate: squircle(C.bg) + ring(C.faint, 3, "2 4"), badge: BADGES.checking, mark: markBrand },
-  signedout: { plate: squircle(C.bg) + ring("#374151"), badge: BADGES.signedout, mark: markDim },
+  unknown: { plate: squircle(C.bg) + ring(C.slate, 4, "7 5"), badge: BADGES.unknown, mark: markPurple },
+  checking: { plate: squircle(C.bg) + ring(C.faint, 3, "2 4"), badge: BADGES.checking, mark: markPurple },
+  signedout: { plate: squircle(C.bg) + ring("#374151"), badge: BADGES.signedout, mark: markPurple },
 };
 
 // Mark geometry in the 64-unit space: 34 units wide, centered at (32, 31)

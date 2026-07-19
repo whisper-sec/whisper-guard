@@ -494,6 +494,16 @@ async function handle(msg: BgRequest): Promise<BgResponse> {
         return { ok: true, scan: await scanTabLinks(msg.tabId) };
       } catch (e) {
         const m = String(e instanceof Error ? e.message : e);
+        // The reader could not access the page: the popup opened without host
+        // access to this tab. Flag it so the UI can ask for this-site access
+        // on the next click, rather than dead-ending on an opaque error.
+        if (/cannot access|host permission|permission to access|missing host/i.test(m)) {
+          return {
+            ok: false,
+            nohost: true,
+            error: "Whisper Guard needs your OK to read this page's link addresses (this site only, never the page).",
+          };
+        }
         return {
           ok: false,
           error: m.includes("links")

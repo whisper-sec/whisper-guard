@@ -35,7 +35,8 @@
     "scripting",
     "contextMenus",
     "declarativeNetRequest",
-    "alarms"
+    "alarms",
+    "proxy"
   ],
   "host_permissions": [
     "https://graph.whisper.security/*",
@@ -44,7 +45,6 @@
     "https://rdap.whisper.online/*"
   ],
   "optional_permissions": [
-    "proxy",
     "webRequest",
     "webRequestAuthProvider",
     "privacy"

@@ -104,9 +104,10 @@ function coerceResult(raw: unknown): ControlResult {
 export async function controlCall(
   op: string,
   args: Record<string, unknown> = {},
+  timeoutMs: number = CONTROL_TIMEOUT_MS,
 ): Promise<ControlResult> {
   if (!(await hasKey())) throw new GraphError("nokey", "sign in to use your fleet");
-  const rows = await graphQuery(buildAgentsCall(op, args), {}, CONTROL_TIMEOUT_MS);
+  const rows = await graphQuery(buildAgentsCall(op, args), {}, timeoutMs);
   const envelope = rows[0];
   if (!envelope) throw new ControlError(0, "the control plane returned no envelope");
   if (envelope["ok"] !== true) {

@@ -45,7 +45,8 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   by default; keyless users never grant it. Firefox uses `proxy.onRequest` with
   a `proxyAuthorizationHeader`.
 - `<all_urls>` is optional and runtime-requested (Active Shield on-page
-  warnings, and the egress route); the default install has no broad host access.
+  warnings, the pre-click link sweep with this-site access requested per site,
+  and the egress route); the default install has no broad host access.
 - The brand corpus is bundled and works offline from first install. The
   daily update channel to `get.whisper.online` activates only once the
   corpus signing key is published; until then no request is made to that

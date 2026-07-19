@@ -118,7 +118,7 @@ export type BgResponse =
   | { ok: true; scan: LinkScanResult }
   | { ok: true; verification: IdentityVerification | null }
   | { ok: true }
-  | { ok: false; error: string; nokey?: boolean };
+  | { ok: false; error: string; nokey?: boolean; nohost?: boolean };
 
 export function send<T extends BgResponse = BgResponse>(msg: BgRequest): Promise<T> {
   return chrome.runtime.sendMessage(msg) as Promise<T>;

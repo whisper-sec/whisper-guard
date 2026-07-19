@@ -135,12 +135,16 @@ export function makeEgressDist(): string {
   cpSync(DIST_CHROMIUM, dir, { recursive: true });
   const mpath = join(dir, "manifest.json");
   const manifest = JSON.parse(readFileSync(mpath, "utf8"));
+  // proxy is already REQUIRED on Chromium (it cannot be optional); the rest
+  // are promoted here so the e2e never faces the un-scriptable consent dialog.
   manifest.permissions = [
-    ...manifest.permissions,
-    "proxy",
-    "webRequest",
-    "webRequestAuthProvider",
-    "privacy",
+    ...new Set([
+      ...manifest.permissions,
+      "proxy",
+      "webRequest",
+      "webRequestAuthProvider",
+      "privacy",
+    ]),
   ];
   manifest.host_permissions = [...manifest.host_permissions, "<all_urls>"];
   delete manifest.optional_permissions;

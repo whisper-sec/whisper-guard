@@ -16,6 +16,7 @@
 // empty states, and never shows a number it cannot back.
 
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
+import { EGRESS_REQUEST } from "../shared/config";
 import { IS_FIREFOX } from "../shared/engine";
 import type { EgressStatus, Enrollment, FleetEndpoint } from "../shared/types";
 import {
@@ -657,6 +658,12 @@ async function enrollClick(): Promise<void> {
   btn.disabled = true;
   btn.textContent = "Enrolling...";
   const detail = $("identity-detail");
+  // Honest pending state: register + /128 allocation is a real control-plane
+  // round-trip that legitimately takes a few seconds; say so instead of
+  // looking hung.
+  detail.replaceChildren(
+    el("div", "w-note", "Reserving this browser's identity on the Whisper network. This can take a few seconds..."),
+  );
   const res = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({
     kind: "enroll",
   });
@@ -732,16 +739,18 @@ function toggleEgress(): void {
   }
 
   // The permission request is the FIRST thing on this gesture: no awaits in
-  // front of it. The per-engine set is a build-time constant (engine.ts).
-  const want = IS_FIREFOX
-    ? { permissions: ["proxy"], origins: ["<all_urls>"] }
-    : {
-        permissions: ["proxy", "webRequest", "webRequestAuthProvider", "privacy"],
-        origins: ["<all_urls>"],
-      };
+  // front of it. The per-engine set is a build-time constant (config.ts):
+  // `proxy` is REQUIRED on Chromium (Chrome forbids it as optional and throws
+  // on request), so it is never in the requested set there; Firefox requests
+  // it at runtime.
+  const set = IS_FIREFOX ? EGRESS_REQUEST.firefox : EGRESS_REQUEST.chromium;
+  const want: chrome.permissions.Permissions = {
+    permissions: [...set.permissions],
+    origins: [...set.origins],
+  };
   let request: Promise<boolean>;
   try {
-    request = Promise.resolve(chrome.permissions.request(want as chrome.permissions.Permissions));
+    request = Promise.resolve(chrome.permissions.request(want));
   } catch {
     request = Promise.resolve(false);
   }

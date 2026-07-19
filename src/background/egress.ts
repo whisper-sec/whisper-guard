@@ -30,6 +30,7 @@
 // keep the identity, and point at the fix instead of dead-ending.
 
 import { ext } from "../shared/api";
+import { CONTROL_PROVISION_TIMEOUT_MS, EGRESS_REQUEST } from "../shared/config";
 import { IS_FIREFOX } from "../shared/engine";
 import type { EgressStatus, Enrollment } from "../shared/types";
 import { controlCall, ControlError } from "./control";
@@ -130,7 +131,11 @@ async function ensureIdentity(): Promise<EgressIdentity> {
     // listing failed: fall through to register (it will fail loudly if truly broken)
   }
 
-  const res = await controlCall("register", { label: DEVICE_LABEL, device: true });
+  const res = await controlCall(
+    "register",
+    { label: DEVICE_LABEL, device: true },
+    CONTROL_PROVISION_TIMEOUT_MS,
+  );
   const row = res.rows[0] ?? {};
   const agent = str(row["agent"]);
   const address = str(row["address"]);
@@ -191,7 +196,7 @@ function parseProxyUrl(raw: string): EgressConfig | null {
 }
 
 async function provisionEgress(identity: EgressIdentity): Promise<EgressConfig> {
-  const res = await controlCall("connect", { agent: identity.agent });
+  const res = await controlCall("connect", { agent: identity.agent }, CONTROL_PROVISION_TIMEOUT_MS);
   const row = res.rows[0] ?? {};
   // Liberal-accept the field the platform returns the HTTP(S) form under
   // (production hands back an https egress endpoint; the field name varies).
@@ -329,14 +334,6 @@ async function proxyControlledByOther(): Promise<boolean> {
 
 // ------------------------------------------------------------------ public
 
-export const EGRESS_PERMISSIONS = {
-  chromium: {
-    permissions: ["proxy", "webRequest", "webRequestAuthProvider", "privacy"],
-    origins: ["<all_urls>"],
-  },
-  firefox: { permissions: ["proxy"], origins: ["<all_urls>"] },
-} as const;
-
 // The honest, actionable messages for the two ways routing (not identity)
 // can be blocked. Neither is a dead end: enrollment and verdicts stand.
 const MSG_NO_PERMISSION =
@@ -348,7 +345,7 @@ const MSG_PROXY_CONFLICT =
   "Disable that extension's proxy control, then turn this on again.";
 
 async function permissionsGranted(): Promise<boolean> {
-  const want = IS_FIREFOX ? EGRESS_PERMISSIONS.firefox : EGRESS_PERMISSIONS.chromium;
+  const want = IS_FIREFOX ? EGRESS_REQUEST.firefox : EGRESS_REQUEST.chromium;
   try {
     return await ext.permissions.contains({
       permissions: [...want.permissions],
