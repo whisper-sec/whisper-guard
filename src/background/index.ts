@@ -56,7 +56,8 @@ import {
   onPollAlarm,
   resetFeed,
 } from "./monitor";
-import { egressDisable, egressEnable, egressStatus, enrollBrowser, resumeEgress } from "./egress";
+import { egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
+import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
 import { scanTabLinks } from "./link-scan";
 import { rdapIpUrl, verifyIdentity } from "./rdap";
 
@@ -440,6 +441,33 @@ async function handle(msg: BgRequest): Promise<BgResponse> {
             error: String(e instanceof Error ? e.message : e),
           }
         );
+      }
+    case "getDevicePolicy":
+      try {
+        return { ok: true, policy: await readDevicePolicy(msg.agent) };
+      } catch (e) {
+        return nokeyResponse(e) ?? { ok: false, error: String(e instanceof Error ? e.message : e) };
+      }
+    case "setDevicePolicy":
+      try {
+        return { ok: true, policy: await writeDevicePolicy(msg.agent, msg.policy) };
+      } catch (e) {
+        return nokeyResponse(e) ?? { ok: false, error: String(e instanceof Error ? e.message : e) };
+      }
+    case "revokeEndpoint":
+      try {
+        const revoked = await revokeEndpoint(msg.agent);
+        // If the browser just revoked ITSELF, drop the stored identity and
+        // disengage routing so nothing keeps claiming the retired /128.
+        // Both selector forms are checked: the id the caller named and the
+        // id the engine echoed back (they differ when revoking by address).
+        if (revoked.status === "revoked") {
+          await forgetIdentity(revoked.agent);
+          await forgetIdentity(msg.agent);
+        }
+        return { ok: true, revoked };
+      } catch (e) {
+        return nokeyResponse(e) ?? { ok: false, error: String(e instanceof Error ? e.message : e) };
       }
     case "getDestinationDrill": {
       try {

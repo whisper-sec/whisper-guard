@@ -195,6 +195,73 @@
         </div>
         <div id="e-activity" class="w-ledger"></div>
       </section>
+
+      <section class="w-card" id="e-govern">
+        <div class="card-head">
+          <div>
+            <div class="w-label">Protection policy</div>
+            <p class="w-note">This endpoint's DNS policy, enforced on the Whisper network the
+            moment you change it. A preset is a set of live graph-evaluated protections; your
+            own rules and blocked countries apply on top.</p>
+          </div>
+          <span class="w-note" id="g-status"></span>
+        </div>
+        <div id="g-error" class="w-note" hidden></div>
+        <div id="g-body" hidden>
+          <div class="g-row">
+            <div class="g-sub">Preset</div>
+            <div id="g-presets" class="g-presets"></div>
+          </div>
+          <div class="g-row">
+            <div class="g-sub">Protections</div>
+            <div id="g-bundles" class="g-bundles"></div>
+          </div>
+          <div class="g-row">
+            <div class="g-sub">Blocked countries</div>
+            <div id="g-geo-chips" class="g-chips"></div>
+            <form id="g-geo-form" class="g-add">
+              <input id="g-geo-input" class="g-input" list="g-countries"
+                     placeholder="Country name or ISO code" autocomplete="off" aria-label="Country to block">
+              <datalist id="g-countries"></datalist>
+              <button class="w-btn small" type="submit">Block country</button>
+            </form>
+          </div>
+          <div class="g-row">
+            <div class="g-sub">Rules</div>
+            <label class="g-default w-note">When no rule matches:
+              <select id="g-default" class="picker g-select" aria-label="Default action">
+                <option value="allow">Allow (block only what is listed)</option>
+                <option value="deny">Block (allow only what is listed)</option>
+              </select>
+            </label>
+            <form id="g-rule-form" class="g-add">
+              <select id="g-rule-action" class="picker g-select" aria-label="Rule action">
+                <option value="block">Block</option>
+                <option value="allow">Allow</option>
+              </select>
+              <input id="g-rule-input" class="g-input" placeholder="domain, e.g. ads.example.com"
+                     autocomplete="off" aria-label="Domain for the rule">
+              <button class="w-btn small" type="submit">Add rule</button>
+            </form>
+            <div id="g-rules" class="w-ledger g-rules"></div>
+            <p id="g-rules-empty" class="w-note" hidden>No rules yet. Add a domain above to
+            allow or block it for this endpoint.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="w-card danger-card" id="e-danger">
+        <div class="w-label">Danger zone</div>
+        <p class="w-note">Revoking retires this endpoint's <span class="w-mono">/128</span> everywhere:
+        its address and reverse-DNS are withdrawn, its identity stops verifying, and its egress
+        credentials die. This cannot be undone.</p>
+        <p class="w-note" id="d-hint"></p>
+        <div class="g-add">
+          <input id="d-confirm" class="g-input" autocomplete="off" aria-label="Type the endpoint label to confirm">
+          <button id="d-revoke" class="w-btn danger" disabled>Revoke endpoint</button>
+        </div>
+        <div id="d-status" class="w-note"></div>
+      </section>
     </div>
   </main>
 

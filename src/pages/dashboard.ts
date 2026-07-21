@@ -33,6 +33,20 @@ import {
   type ReportHost,
   type ReportTotals,
 } from "../shared/report";
+import {
+  BUNDLE_INFO,
+  bundlesForPreset,
+  countryName,
+  countryOptions,
+  MAX_GEO_CODES,
+  MAX_POLICY_ENTRIES,
+  normalizeDomain,
+  PRESETS,
+  presetOf,
+  resolveCountry,
+  type DevicePolicy,
+  type RevokeResult,
+} from "../shared/policy";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -572,6 +586,14 @@ async function refreshEndpoint(agent: string): Promise<void> {
     }),
   );
   $("e-feed-note").textContent = `polling, updated ${agoLabel(Date.now())}`;
+
+  // The governor half: policy + danger zone. The policy loads once per
+  // endpoint switch (never on the 15s poll, so it can't clobber an edit
+  // in progress); the danger zone re-arms against this endpoint's label.
+  governLabel = d.endpoint.label;
+  $("d-hint").textContent = `Type "${governLabel.trim() || "revoke"}" to confirm.`;
+  updateRevokeArmed();
+  void refreshGovern(agent);
 }
 
 async function populatePicker(): Promise<void> {
@@ -601,6 +623,260 @@ async function populatePicker(): Promise<void> {
     picker.value = first;
     await refreshEndpoint(first);
   }
+}
+
+// ------------------------------------------------------------- govern
+//
+// The control half of the endpoint view: the same op:policy / op:revoke
+// verbs the console's device controls speak, from the dashboard. Every
+// change is ONE whole-value policy write; the UI always re-renders from
+// the engine's own read-back, so what is shown is what is in force.
+
+let governAgent: string | null = null;
+let governLabel = "";
+let governPolicy: DevicePolicy | null = null;
+let governBusy = false;
+
+async function refreshGovern(agent: string, force = false): Promise<void> {
+  if (!force && agent === governAgent && governPolicy) return;
+  if (agent !== governAgent) {
+    // A fresh endpoint gets a fresh danger zone: nothing typed, no stale outcome.
+    $<HTMLInputElement>("d-confirm").value = "";
+    $("d-status").textContent = "";
+    updateRevokeArmed();
+  }
+  governAgent = agent;
+  governPolicy = null;
+  $("g-status").textContent = "loading…";
+  renderGovern();
+  const res = await send<{ ok: true; policy: DevicePolicy } | { ok: false; error: string; nokey?: boolean }>({
+    kind: "getDevicePolicy",
+    agent,
+  });
+  if (governAgent !== agent) return; // switched away while loading
+  const err = $("g-error");
+  $("g-status").textContent = "";
+  if (!res.ok) {
+    err.textContent = `Could not load this endpoint's policy: ${res.error}`;
+    err.hidden = false;
+    $("g-body").hidden = true;
+    return;
+  }
+  err.hidden = true;
+  governPolicy = res.policy;
+  renderGovern();
+}
+
+/**
+ * Apply one policy change: mutate the model, paint optimistically, send
+ * the whole-value write, then adopt the engine's read-back as the truth.
+ * A refused write reloads the real policy so the optimistic paint never
+ * stands.
+ */
+async function applyGovern(mutate: (cur: DevicePolicy) => DevicePolicy | null): Promise<void> {
+  if (governBusy || !governAgent || !governPolicy) return;
+  const agent = governAgent;
+  const next = mutate(governPolicy);
+  if (!next) return;
+  governBusy = true;
+  governPolicy = next;
+  renderGovern();
+  $("g-status").textContent = "applying…";
+  const res = await send<{ ok: true; policy: DevicePolicy } | { ok: false; error: string; nokey?: boolean }>({
+    kind: "setDevicePolicy",
+    agent,
+    policy: next,
+  });
+  governBusy = false;
+  if (governAgent !== agent) return; // switched away while applying
+  if (res.ok) {
+    governPolicy = res.policy;
+    $("g-status").textContent = "applied, in force now";
+    renderGovern();
+  } else {
+    await refreshGovern(agent, true);
+    $("g-status").textContent = `⚠ ${res.error}`;
+  }
+}
+
+function renderGovern(): void {
+  const body = $("g-body");
+  const p = governPolicy;
+  if (!p) {
+    body.hidden = true;
+    return;
+  }
+  body.hidden = false;
+  const busy = governBusy;
+
+  const active = presetOf(p.bundles);
+  $("g-presets").replaceChildren(
+    ...PRESETS.map((info) => {
+      const card = el("button", `preset-card${info.id === active ? " active" : ""}`) as HTMLButtonElement;
+      card.type = "button";
+      card.setAttribute("aria-pressed", info.id === active ? "true" : "false");
+      card.append(el("div", "pc-label", info.label), el("div", "pc-promise", info.promise));
+      // Custom is a state you reach by mixing below, not a button target.
+      card.disabled = busy || info.id === "custom";
+      if (info.id !== "custom") {
+        card.addEventListener("click", () => {
+          void applyGovern((cur) => {
+            const want = bundlesForPreset(info.id);
+            return want ? { ...cur, bundles: want } : null;
+          });
+        });
+      }
+      return card;
+    }),
+  );
+
+  const bundleRows: HTMLElement[] = BUNDLE_INFO.map((b) => {
+    const label = el("label", "bundle");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = p.bundles.includes(b.id);
+    box.disabled = busy;
+    box.addEventListener("change", () => {
+      void applyGovern((cur) => ({
+        ...cur,
+        bundles: box.checked ? [...cur.bundles.filter((x) => x !== b.id), b.id] : cur.bundles.filter((x) => x !== b.id),
+      }));
+    });
+    label.append(box, el("span", "b-label", b.label), el("span", "b-desc", b.description));
+    return label;
+  });
+  if (p.passthrough.length > 0) {
+    // Honesty: settings from another surface (console/CLI) we don't model
+    // here ride along untouched on every write; say so instead of hiding it.
+    bundleRows.push(
+      el("div", "w-note", `${p.passthrough.length} advanced setting(s) from the console are preserved untouched.`),
+    );
+  }
+  $("g-bundles").replaceChildren(...bundleRows);
+
+  $("g-geo-chips").replaceChildren(
+    ...p.geoDeny.map((cc) => {
+      const chip = el("span", "g-chip");
+      const remove = el("button", undefined, "×") as HTMLButtonElement;
+      remove.type = "button";
+      remove.title = `Unblock ${countryName(cc)}`;
+      remove.disabled = busy;
+      remove.addEventListener("click", () => {
+        void applyGovern((cur) => ({ ...cur, geoDeny: cur.geoDeny.filter((c) => c !== cc) }));
+      });
+      chip.append(document.createTextNode(`${flagEmoji(cc)} ${countryName(cc)} `), el("span", "cc", cc), remove);
+      return chip;
+    }),
+  );
+
+  const def = $<HTMLSelectElement>("g-default");
+  def.value = p.defaultAction;
+  def.disabled = busy;
+
+  $("g-rules").replaceChildren(
+    ...p.rules.map((r) => {
+      const row = el("div", "w-ledger-row");
+      const remove = el("button", "cell-rule-remove", "×") as HTMLButtonElement;
+      remove.type = "button";
+      remove.title = `Remove the ${r.action} rule for ${r.value}`;
+      remove.disabled = busy;
+      remove.addEventListener("click", () => {
+        void applyGovern((cur) => ({
+          ...cur,
+          rules: cur.rules.filter((x) => !(x.value === r.value && x.action === r.action)),
+        }));
+      });
+      row.append(
+        el("span", `w-chip ${r.action === "block" ? "high" : "ok"} cell-action`, r.action.toUpperCase()),
+        el("span", "cell-host", r.value),
+        remove,
+      );
+      return row;
+    }),
+  );
+  $("g-rules-empty").hidden = p.rules.length > 0;
+}
+
+function addRuleSubmit(ev: Event): void {
+  ev.preventDefault();
+  const input = $<HTMLInputElement>("g-rule-input");
+  const action = $<HTMLSelectElement>("g-rule-action").value === "allow" ? "allow" : "block";
+  const domain = normalizeDomain(input.value);
+  if (!domain) {
+    $("g-status").textContent = "⚠ that does not look like a domain";
+    return;
+  }
+  input.value = "";
+  void applyGovern((cur) => {
+    if (cur.rules.length >= MAX_POLICY_ENTRIES) {
+      $("g-status").textContent = `⚠ the rule list is full (${MAX_POLICY_ENTRIES})`;
+      return null;
+    }
+    // One rule per name: re-adding a domain replaces its previous action.
+    return { ...cur, rules: [...cur.rules.filter((r) => r.value !== domain), { action, value: domain }] };
+  });
+}
+
+function addGeoSubmit(ev: Event): void {
+  ev.preventDefault();
+  const input = $<HTMLInputElement>("g-geo-input");
+  const cc = resolveCountry(input.value);
+  if (!cc) {
+    $("g-status").textContent = "⚠ name a country or give its two-letter ISO code";
+    return;
+  }
+  input.value = "";
+  void applyGovern((cur) => {
+    if (cur.geoDeny.includes(cc)) return null;
+    if (cur.geoDeny.length >= MAX_GEO_CODES) {
+      $("g-status").textContent = `⚠ the country list is full (${MAX_GEO_CODES})`;
+      return null;
+    }
+    return { ...cur, geoDeny: [...cur.geoDeny, cc] };
+  });
+}
+
+// --------------------------------------------------------- danger zone
+
+function updateRevokeArmed(): void {
+  const phrase = (governLabel.trim() || "revoke").toLowerCase();
+  const typed = $<HTMLInputElement>("d-confirm").value.trim().toLowerCase();
+  $<HTMLButtonElement>("d-revoke").disabled = typed !== phrase;
+}
+
+async function revokeClick(): Promise<void> {
+  const agent = currentAgent;
+  if (!agent || $<HTMLButtonElement>("d-revoke").disabled) return;
+  $<HTMLButtonElement>("d-revoke").disabled = true;
+  const status = $("d-status");
+  status.textContent = "Revoking: withdrawing the address, reverse-DNS and egress credentials…";
+  const res = await send<{ ok: true; revoked: RevokeResult } | { ok: false; error: string; nokey?: boolean }>({
+    kind: "revokeEndpoint",
+    agent,
+  });
+  if (!res.ok) {
+    status.textContent = `⚠ ${res.error}`;
+    updateRevokeArmed();
+    return;
+  }
+  if (res.revoked.status !== "revoked") {
+    status.textContent = `The control plane answered "${res.revoked.status}"; nothing was changed.`;
+    updateRevokeArmed();
+    return;
+  }
+  $<HTMLInputElement>("d-confirm").value = "";
+  // The roster shrank: rebuild the picker (it lands on the first remaining
+  // endpoint) and refresh the identity chip in case the browser revoked
+  // itself. With nothing left, the fleet view says so honestly.
+  currentAgent = null;
+  governAgent = null;
+  governPolicy = null;
+  await populatePicker();
+  await refreshEgress();
+  if ($<HTMLSelectElement>("e-picker").options.length === 0) {
+    switchView("fleet");
+  }
+  status.textContent = "Endpoint revoked. Its /128 is retired everywhere.";
 }
 
 // -------------------------------------------------- identity + egress
@@ -647,6 +923,16 @@ function renderIdentity(s: EgressStatus): void {
       a.rel = "noopener";
       proof.append(a);
       detail.append(proof);
+    }
+    const agent = s.agent;
+    if (agent) {
+      // The governor is one click away: this browser is a fleet endpoint
+      // like any other, so its policy and revoke live in the endpoint view.
+      const govern = el("button", "w-btn small", "Govern this browser") as HTMLButtonElement;
+      govern.addEventListener("click", () => {
+        void openEndpoint(agent);
+      });
+      detail.append(govern);
     }
   } else {
     btn.hidden = false;
@@ -882,6 +1168,25 @@ function init(): void {
   $<HTMLSelectElement>("e-picker").addEventListener("change", (ev) => {
     void refreshEndpoint((ev.target as HTMLSelectElement).value);
   });
+
+  // The governor's persistent controls (per-render elements wire inline).
+  $<HTMLSelectElement>("g-default").addEventListener("change", (ev) => {
+    const v = (ev.target as HTMLSelectElement).value === "deny" ? "deny" : "allow";
+    void applyGovern((cur) => (cur.defaultAction === v ? null : { ...cur, defaultAction: v }));
+  });
+  $("g-rule-form").addEventListener("submit", addRuleSubmit);
+  $("g-geo-form").addEventListener("submit", addGeoSubmit);
+  $("d-confirm").addEventListener("input", updateRevokeArmed);
+  $("d-revoke").addEventListener("click", () => {
+    void revokeClick();
+  });
+  $("g-countries").replaceChildren(
+    ...countryOptions().map((c) => {
+      const opt = document.createElement("option");
+      opt.value = `${c.name} (${c.iso})`;
+      return opt;
+    }),
+  );
 
   // Live nudges: the background pokes this port on every committed
   // navigation; the browser view repaints (debounced) while the fleet

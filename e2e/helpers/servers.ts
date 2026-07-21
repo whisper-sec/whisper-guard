@@ -80,6 +80,8 @@ export interface MockEndpoint {
   state?: string;
   counters?: Record<string, number>;
   logs?: Record<string, unknown>[];
+  /** The per-device policy (op:policy with the device selector). */
+  policy?: { block: string[]; allow: string[]; default: string; bundles: string[] };
 }
 
 export class E2ENetwork {
@@ -443,6 +445,54 @@ export class E2ENetwork {
       const e: MockEndpoint = { agent, address, label: labelMatch?.[1] ?? "device", device: true, state: "active", logs: [] };
       this.endpoints.push(e);
       result = { columns: ["agent", "address", "label"], rows: [[agent, address, e.label]] };
+    } else if (op === "policy") {
+      // The per-device policy, faithful to the engine: a body arg replaces
+      // the WHOLE rule set; no body reads back what is in force. Output is
+      // the ["key","value"] entry-row shape with a leading ["device", addr].
+      const agentMatch = /agent:'([^']+)'/.exec(query);
+      const e = this.endpoints.find((x) => x.agent === agentMatch?.[1]);
+      if (e) {
+        const list = (name: string): string[] | null => {
+          const m = new RegExp(`${name}:\\[([^\\]]*)\\]`).exec(query);
+          if (!m) return null;
+          return [...(m[1] ?? "").matchAll(/'([^']*)'/g)].map((x) => x[1] ?? "");
+        };
+        const block = list("block");
+        const allow = list("allow");
+        const bundles = list("bundles");
+        const defMatch = /default:'([a-z]+)'/.exec(query);
+        if (block || allow || bundles || defMatch) {
+          e.policy = {
+            block: block ?? [],
+            allow: allow ?? [],
+            default: defMatch?.[1] === "deny" || defMatch?.[1] === "block" ? "deny" : "allow",
+            bundles: bundles ?? [],
+          };
+        }
+        const p = e.policy ?? { block: [], allow: [], default: "allow", bundles: [] };
+        result = {
+          columns: ["key", "value"],
+          rows: [
+            ["device", e.address],
+            ["default", p.default],
+            ["mode", "hybrid"],
+            ...p.block.map((b) => ["block", b]),
+            ...p.allow.map((a) => ["allow", a]),
+            ...p.bundles.map((b) => ["bundle", b]),
+          ],
+        };
+      }
+    } else if (op === "revoke") {
+      // Idempotent like the engine: an unknown selector is a clean
+      // not_found status row, never an error envelope.
+      const agentMatch = /agent:'([^']+)'/.exec(query);
+      const idx = this.endpoints.findIndex((x) => x.agent === agentMatch?.[1]);
+      if (idx >= 0) {
+        const gone = this.endpoints.splice(idx, 1)[0];
+        result = { columns: ["agent", "status"], rows: [[gone?.agent ?? "", "revoked"]] };
+      } else {
+        result = { columns: ["agent", "status"], rows: [[agentMatch?.[1] ?? "", "not_found"]] };
+      }
     } else if (op === "connect") {
       const agentMatch = /agent:'([^']+)'/.exec(query);
       const e = this.endpoints.find((x) => x.agent === agentMatch?.[1]);

@@ -461,6 +461,19 @@ export async function egressDisable(): Promise<EgressStatus> {
   return egressStatus();
 }
 
+/**
+ * After an op:revoke that retired THIS browser's own agent: drop the
+ * stored identity and disengage routing, so the UI never keeps claiming
+ * an identity (or riding a proxy credential) that is gone. A revoke of
+ * any other endpoint is a no-op here.
+ */
+export async function forgetIdentity(agent: string): Promise<void> {
+  const s = await getStored();
+  if (!s.identity || s.identity.agent !== agent) return;
+  await egressDisable();
+  await setStored({ identity: null, config: null, error: null });
+}
+
 /** Re-arm listeners + proxy after a service-worker restart. */
 export async function resumeEgress(): Promise<void> {
   const s = await getStored();

@@ -160,4 +160,66 @@ body {
 .egress-detail .w-ip { font-size: 12.5px; }
 .egress-detail .w-btn { align-self: flex-start; }
 
+/* Govern (protection policy + danger zone) */
+#e-govern .card-head { align-items: flex-start; }
+#e-govern .card-head > div { max-width: 70ch; }
+.g-row { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--w-line); }
+.g-row:first-child { margin-top: 8px; padding-top: 0; border-top: none; }
+.g-sub {
+  font: 600 10px/1.4 var(--w-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-faint);
+  margin-bottom: 8px;
+}
+.g-presets { display: flex; gap: 10px; flex-wrap: wrap; }
+.preset-card {
+  flex: 1 1 160px; min-width: 150px; max-width: 240px; text-align: left;
+  background: var(--w-elev); border: 1px solid var(--w-line); border-radius: 10px;
+  padding: 10px 12px; cursor: pointer; color: var(--w-text); font: inherit;
+}
+.preset-card:hover { border-color: var(--w-accent-line); }
+.preset-card.active { border-color: var(--w-accent-line); background: var(--w-accent-soft); }
+.preset-card .pc-label { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+.preset-card .pc-promise { color: var(--w-muted); font-size: 11.5px; line-height: 1.45; }
+.preset-card[disabled] { cursor: default; }
+.g-bundles { display: flex; flex-direction: column; gap: 6px; }
+.bundle { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.bundle input { accent-color: var(--w-accent); }
+.bundle .b-label { font-weight: 500; }
+.bundle .b-desc { color: var(--w-faint); font-size: 11.5px; }
+.g-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.g-chips:empty { margin-bottom: 0; }
+.g-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--w-elev); border: 1px solid var(--w-line); border-radius: 999px;
+  padding: 3px 6px 3px 10px; font-size: 12px;
+}
+.g-chip .cc { font-family: var(--w-mono); color: var(--w-faint); font-size: 11px; }
+.g-chip button {
+  background: none; border: none; color: var(--w-faint); cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 2px 4px; border-radius: 50%;
+}
+.g-chip button:hover { color: var(--w-v-high); }
+.g-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.g-input {
+  background: var(--w-elev); border: 1px solid var(--w-line); border-radius: 8px;
+  color: var(--w-text); font: 12.5px var(--w-mono); padding: 7px 10px; min-width: 220px;
+}
+.g-input:focus { outline: none; border-color: var(--w-accent-line); }
+.g-select { max-width: none; width: auto; font-size: 12px; padding: 6px 8px; }
+.g-default { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.g-rules { margin-top: 10px; max-height: 260px; }
+.cell-action { flex: 0 0 4.5em; }
+.cell-rule-remove {
+  flex: 0 0 auto; background: none; border: none; color: var(--w-faint);
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 6px;
+}
+.cell-rule-remove:hover { color: var(--w-v-high); }
+
+.danger-card { border-color: rgba(239, 68, 68, 0.35); }
+.danger-card .w-label { color: var(--w-v-high); }
+.danger-card .g-add { margin-top: 10px; }
+#d-status:empty { display: none; }
+
 footer { padding: 12px 20px 18px; width: min(1200px, 100%); margin: 0 auto; }

@@ -7,6 +7,9 @@
 //   - the "This browser" report (keyless keystone) from on-device
 //     navigation, graph-enriched, realtime per navigation
 //   - the keyed Fleet + Per-endpoint views from op:list / op:agent / op:logs
+//   - the governor half of the endpoint view: op:policy (presets, rules,
+//     geo blocklist) rendered from the engine's read-back, and op:revoke
+//     behind its type-to-confirm gate
 //   - the browser-as-endpoint egress path (dual-engine HTTPS-CONNECT), with
 //     the identity chip verifying against keyless rdap
 // All two-tier: the keyless half works with NO key; the key unlocks the rest.
@@ -214,6 +217,76 @@ test("per-endpoint view shows counters, health, constellation and a destination 
   await dash.locator("#e-hosts .w-ledger-row", { hasText: "evil-known-guard-e2e.com" }).first().click();
   await expect(dash.locator("#e-drill-body")).toContainText("Co-hosted", { timeout: 15_000 });
   await expect(dash.locator("#e-drill-body")).toContainText("12 other");
+  await dash.close();
+});
+
+// ------------------------------------------- WB5: the governor half
+
+test("endpoint governor: preset, rule and country block write op:policy and render the read-back", async () => {
+  await setKey(ext, MOCK_KEY);
+  net.clearEndpoints();
+  net.addEndpoint({ agent: "agent-e2ephone", address: "2a04:2a01:e2e:1::1", label: "My iPhone", device: true, logs: [] });
+
+  const dash = await openDashboard(ext, "endpoint");
+  await expect(dash.locator("#g-body")).toBeVisible({ timeout: 15_000 });
+
+  // A preset click is one whole-value policy write; the checkboxes below
+  // render from the engine's read-back, not from the click.
+  await dash.locator(".preset-card", { hasText: "Standard" }).click();
+  await expect(dash.locator("#g-status")).toContainText("applied", { timeout: 15_000 });
+  await expect(dash.locator(".bundle", { hasText: "Threat & sanctions" }).locator("input")).toBeChecked();
+  await expect(dash.locator(".bundle", { hasText: "Bulletproof" }).locator("input")).toBeChecked();
+  await expect(dash.locator(".bundle", { hasText: "Brand-new domains" }).locator("input")).not.toBeChecked();
+
+  // A pasted URL lands as a clean suffix rule (Postel-liberal input).
+  await dash.locator("#g-rule-input").fill("https://Ads.Example/x?y=1");
+  await dash.locator("#g-rule-form button[type=submit]").click();
+  await expect(dash.locator("#g-rules")).toContainText("ads.example", { timeout: 15_000 });
+  await expect(dash.locator("#g-rules")).toContainText("BLOCK");
+
+  // The country blocklist rides the geo:deny bundle on the same verb.
+  await dash.locator("#g-geo-input").fill("Netherlands (NL)");
+  await dash.locator("#g-geo-form button[type=submit]").click();
+  await expect(dash.locator("#g-geo-chips")).toContainText("NL", { timeout: 15_000 });
+
+  // The mock control plane holds exactly what the writes claimed.
+  const stored = net.endpoints[0]?.policy;
+  expect(stored?.block).toContain("ads.example");
+  expect(stored?.bundles).toContain("block:sanctions");
+  expect(stored?.bundles).toContain("block:bulletproof");
+  expect(stored?.bundles).toContain("geo:deny:NL");
+  await dash.close();
+});
+
+test("endpoint danger zone revokes only behind type-to-confirm, then lands on the next endpoint", async () => {
+  await setKey(ext, MOCK_KEY);
+  net.clearEndpoints();
+  net.addEndpoint({
+    agent: "agent-e2ephone", address: "2a04:2a01:e2e:1::1", label: "My iPhone",
+    device: true, created: Date.now(), logs: [],
+  });
+  net.addEndpoint({
+    agent: "agent-e2elaptop", address: "2a04:2a01:e2e:2::1", label: "Work laptop",
+    created: Date.now() - 60_000, logs: [],
+  });
+
+  const dash = await openDashboard(ext, "endpoint");
+  await expect(dash.locator("#e-address")).toHaveText("2a04:2a01:e2e:1::1", { timeout: 15_000 });
+  await expect(dash.locator("#d-hint")).toContainText("My iPhone");
+
+  // Wrong phrase: the button stays dead.
+  await dash.locator("#d-confirm").fill("something else");
+  await expect(dash.locator("#d-revoke")).toBeDisabled();
+
+  // The label (case-insensitive) arms it; the click revokes for real.
+  await dash.locator("#d-confirm").fill("my iphone");
+  await expect(dash.locator("#d-revoke")).toBeEnabled();
+  await dash.locator("#d-revoke").click();
+  await expect(dash.locator("#d-status")).toContainText("revoked", { timeout: 15_000 });
+
+  // The roster shrank and the view landed on the remaining endpoint.
+  await expect(dash.locator("#e-address")).toHaveText("2a04:2a01:e2e:2::1", { timeout: 15_000 });
+  expect(net.endpoints.map((e) => e.agent)).toEqual(["agent-e2elaptop"]);
   await dash.close();
 });
 

@@ -148,6 +148,8 @@ body {
 }
 .w-btn.primary:hover { filter: brightness(1.08); }
 .w-btn.small { padding: 5px 10px; font-size: 12px; font-weight: 500; }
+.w-btn.danger { color: var(--w-v-high); border-color: rgba(239, 68, 68, 0.45); }
+.w-btn.danger:hover:not([disabled]) { background: var(--w-v-crit); border-color: var(--w-v-crit); color: #fff; }
 .w-btn[disabled] { opacity: 0.5; cursor: default; }
 
 /* Horizontal tally bar (by company / country / network). */

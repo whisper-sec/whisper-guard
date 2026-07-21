@@ -23,6 +23,7 @@ import type {
   TabState,
 } from "./types";
 import type { EndpointHealth, ReportHost, ReportTotals } from "./report";
+import type { DevicePolicy, RevokeResult } from "./policy";
 
 export type BgRequest =
   | { kind: "getTabState"; tabId: number }
@@ -46,6 +47,9 @@ export type BgRequest =
   | { kind: "getBrowserReport"; limit?: number }
   | { kind: "getFleetReport" }
   | { kind: "getEndpointDetail"; agent: string }
+  | { kind: "getDevicePolicy"; agent: string }
+  | { kind: "setDevicePolicy"; agent: string; policy: DevicePolicy }
+  | { kind: "revokeEndpoint"; agent: string }
   | { kind: "getDestinationDrill"; host: string }
   | { kind: "openDashboard"; view?: string }
   | { kind: "egressStatus" }
@@ -112,6 +116,8 @@ export type BgResponse =
   | { ok: true; report: BrowserReport }
   | { ok: true; fleet: FleetReport }
   | { ok: true; endpoint: EndpointDetail }
+  | { ok: true; policy: DevicePolicy }
+  | { ok: true; revoked: RevokeResult }
   | { ok: true; drill: DestinationDrill }
   | { ok: true; egress: EgressStatus }
   | { ok: true; enrollment: Enrollment }
