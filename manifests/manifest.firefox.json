@@ -24,10 +24,10 @@
     "default_title": "Whisper Guard",
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/signedout-16.png",
-      "32": "icons/signedout-32.png",
-      "48": "icons/signedout-48.png",
-      "128": "icons/signedout-128.png"
+      "16": "icons/neutral-16.png",
+      "32": "icons/neutral-32.png",
+      "48": "icons/neutral-48.png",
+      "128": "icons/neutral-128.png"
     }
   },
   "icons": {
