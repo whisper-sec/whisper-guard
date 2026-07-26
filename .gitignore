@@ -5,3 +5,11 @@ dist/
 e2e-report/
 e2e-artifacts/
 test-results/
+
+# credentials / secrets - NEVER commit (store creds in whisper-net/.secrets, outside this repo)
+*.env
+.env
+web-ext-artifacts/
+amo-metadata.json
+*.pem
+*.key
