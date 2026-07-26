@@ -6,7 +6,7 @@ Whisper Guard is a security product, and we treat reports about it seriously.
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.x   | yes       |
+| 2.1.x   | yes       |
 
 The latest published release is always the supported one.
 
