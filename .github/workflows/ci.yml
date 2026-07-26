@@ -24,7 +24,7 @@ jobs:
         run: npm run e2e:firefox
       - name: package store zips
         run: node scripts/package.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: store-zips
           path: dist/*.zip
