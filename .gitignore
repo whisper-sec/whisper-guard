@@ -6,7 +6,7 @@ e2e-report/
 e2e-artifacts/
 test-results/
 
-# credentials / secrets - NEVER commit (store creds in whisper-net/.secrets, outside this repo)
+# credentials / secrets - NEVER commit (keep them outside this repo)
 *.env
 .env
 web-ext-artifacts/
