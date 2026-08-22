@@ -705,7 +705,7 @@ function render(): void {
   }
 
   $("privacy-line").textContent = cloudCheck
-    ? `Privacy: only "${host}" was sent, to graph.whisper.security. Never the page, path, or your history.`
+    ? `Privacy: only "${host}" was sent, to graph.whisper.online. Never the page, path, or your history.`
     : s.detector
       ? `Privacy: nothing left your browser. The look-alike check ran on-device.`
       : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`;

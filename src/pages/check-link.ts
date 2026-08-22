@@ -73,7 +73,7 @@ async function init(): Promise<void> {
   // the check was on-device only (live check switched off).
   $("privacy").textContent =
     c.verdict || c.graphError
-      ? `Privacy: only "${host}" was sent, to graph.whisper.security.`
+      ? `Privacy: only "${host}" was sent, to graph.whisper.online.`
       : `Privacy: nothing left your browser. The check ran on-device.`;
 
   $("btn-copy").addEventListener("click", async () => {

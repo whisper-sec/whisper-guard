@@ -207,7 +207,7 @@ export class E2ENetwork {
     this.proxy.on("connect", (req, clientSocket, head) => {
       const host = (req.url ?? "").split(":")[0].toLowerCase();
       this.log.push({ scheme: "connect", method: "CONNECT", host, path: "", body: "", at: Date.now() });
-      if (this.graphMode === "down" && host === "graph.whisper.security") {
+      if (this.graphMode === "down" && host === "graph.whisper.online") {
         clientSocket.destroy();
         return;
       }
@@ -276,7 +276,7 @@ export class E2ENetwork {
     const body = Buffer.concat(chunks).toString("utf8");
     this.log.push({ scheme, method: req.method ?? "GET", host, path, body, at: Date.now() });
 
-    if (host === "graph.whisper.security") return this.serveGraph(path, body, res);
+    if (host === "graph.whisper.online") return this.serveGraph(path, body, res);
     if (host === "console.whisper.security") return this.serveConsole(path, body, res);
     if (host === "rdap.whisper.online") return this.serveRdap(path, res);
     if (host === "get.whisper.online") {

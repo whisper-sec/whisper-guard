@@ -4,12 +4,12 @@
 // All endpoints and tunables in one place. Four Whisper endpoints exist,
 // each with one narrow purpose; browsing hostnames go to exactly ONE of them:
 //
-//   graph.whisper.security    the safety check + enrichment (hostname only, keyed or not)
+//   graph.whisper.online    the safety check + enrichment (hostname only, keyed or not)
 //   console.whisper.security  sign-in only (RFC 8628 device flow, no browsing data)
 //   get.whisper.online        detector corpus updates only (no browsing data)
 //   rdap.whisper.online       public endpoint-identity verification (IP literals only)
 
-export const GRAPH_QUERY_URL = "https://graph.whisper.security/api/query";
+export const GRAPH_QUERY_URL = "https://graph.whisper.online/api/query";
 export const CONSOLE_URL = "https://console.whisper.security";
 export const CORPUS_URL = "https://get.whisper.online/guard/corpus.v1.json";
 export const CONSOLE_KEYS_URL = "https://console.whisper.security/settings";

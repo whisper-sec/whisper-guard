@@ -86,7 +86,7 @@ Provides the proxy authorization for the optional Whisper egress route, so the r
 Hardens WebRTC to proxied-only while the optional Whisper egress route is on, so the browser's real IP cannot leak around the proxy. Applied only when routing is enabled.
 
 --- Host permission justification ---
-graph.whisper.security: the safety check + destination enrichment (hostname only). console.whisper.security: the sign-in device flow (no browsing data). get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). No other host is ever contacted.
+graph.whisper.online: the safety check + destination enrichment (hostname only). console.whisper.security: the sign-in device flow (no browsing data). get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). No other host is ever contacted.
 
 --- Remote code ---
 No, I am not using Remote code.

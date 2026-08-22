@@ -2,7 +2,7 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The single network client for the Whisper graph. Every request is a
-// POST { query, parameters } to graph.whisper.security/api/query, with the
+// POST { query, parameters } to graph.whisper.online/api/query, with the
 // user's key as X-API-Key when one exists. The public tier (assess,
 // identify, explain, variants, history, shallow enrichment) answers
 // keyless; the key unlocks the control plane and deep traversals. The ONLY

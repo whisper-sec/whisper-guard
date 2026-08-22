@@ -91,7 +91,7 @@ public identity verification all work with no key.
 ## Privacy model
 
 - The only browsing datum that can ever leave the browser is a **hostname**,
-  sent to exactly one endpoint, `graph.whisper.security`, whether or not you are
+  sent to exactly one endpoint, `graph.whisper.online`, whether or not you are
   signed in. Extraction happens at parse time; path, query, fragment, page
   content, and form data are discarded before any network code runs. Your
   on-device navigation list and session allow-list never leave the device.

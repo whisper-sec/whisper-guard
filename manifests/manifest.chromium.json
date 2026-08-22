@@ -39,7 +39,7 @@
     "proxy"
   ],
   "host_permissions": [
-    "https://graph.whisper.security/*",
+    "https://graph.whisper.online/*",
     "https://console.whisper.security/*",
     "https://get.whisper.online/*",
     "https://rdap.whisper.online/*"

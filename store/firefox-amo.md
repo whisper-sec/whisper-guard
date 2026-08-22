@@ -20,7 +20,7 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 ## Data collection (the manifest already declares this)
 
 - `data_collection_permissions.required = ["websiteActivity"]`: the live safety
-  check sends the hostname of the site you visit to `graph.whisper.security`,
+  check sends the hostname of the site you visit to `graph.whisper.online`,
   on by default, to answer "is this site safe?". Only the bare hostname leaves,
   never the page, path, or your history, and hostnames are not retained to build
   a browsing profile. One switch in settings turns the live check off, after
@@ -31,7 +31,7 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 - Build from source: `npm ci && npm run build`; the Firefox package is
   `dist/firefox`. Node 22, esbuild; the build is deterministic and
   self-checking.
-- The network endpoints are: `graph.whisper.security` (the safety check +
+- The network endpoints are: `graph.whisper.online` (the safety check +
   destination enrichment, hostname only), `console.whisper.security` (RFC 8628
   device-flow sign-in, no browsing data), `get.whisper.online` (signed
   brand-corpus updates, no browsing data), and `rdap.whisper.online` (public

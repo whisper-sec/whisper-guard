@@ -94,7 +94,7 @@ Use the gallery in `shots/` (regenerate with
     activity poll (signed-in dashboard).
   - `activeTab`: to act on the current tab when the user clicks the toolbar
     action.
-  - Host permissions (`graph.whisper.security`, `console.whisper.security`,
+  - Host permissions (`graph.whisper.online`, `console.whisper.security`,
     `get.whisper.online`, `rdap.whisper.online`): the safety check +
     destination enrichment (hostname only), the sign-in flow, corpus updates,
     and public identity verification of the user's own endpoints (IP literals

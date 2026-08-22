@@ -30,7 +30,7 @@ unless you prefer to stay anonymous.
 
 This policy covers the Whisper Guard extension in this repository. The
 extension's only network endpoints are the public Whisper graph
-(`graph.whisper.security`), the sign-in console
+(`graph.whisper.online`), the sign-in console
 (`console.whisper.security`), and the brand-corpus host
 (`get.whisper.online`); reports about those services are welcome here and we
 will route them to the right team.

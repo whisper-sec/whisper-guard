@@ -102,8 +102,8 @@ test("keyless privacy: only the bare hostname leaves, only to the graph, no key 
   await page.waitForTimeout(400);
 
   // The full-capture set: only the visited site and the graph, nothing else.
-  expect(net.contactedHosts().sort()).toEqual(["graph.whisper.security", "privacy-fresh-guard-e2e.com"]);
-  const graphReqs = net.requestsTo("graph.whisper.security").filter((r) => r.scheme === "https");
+  expect(net.contactedHosts().sort()).toEqual(["graph.whisper.online", "privacy-fresh-guard-e2e.com"]);
+  const graphReqs = net.requestsTo("graph.whisper.online").filter((r) => r.scheme === "https");
   expect(graphReqs.length).toBeGreaterThan(0);
   // The only browsing datum on the wire is the bare hostname; the path/query
   // never leave, and the visited host was assessed by name alone.
@@ -132,7 +132,7 @@ test("keyless: on-device detector runs locally; with the live check OFF nothing 
   // still fires entirely on-device.
   await page.waitForTimeout(400);
   expect(net.contactedHosts()).toEqual(["paypa1-secure-login.com"]);
-  expect(net.requestsTo("graph.whisper.security")).toHaveLength(0);
+  expect(net.requestsTo("graph.whisper.online")).toHaveLength(0);
   await page.close();
   await setSettings(ext, { cloudCheck: true });
 });
@@ -149,7 +149,7 @@ test("keyless: popup shows the on-device look-alike hit and the honest privacy l
   await expect(popup.locator("#btn-goto")).toHaveText("Go to the real paypal.com");
   await expect(popup.locator("#signin-pitch")).toBeVisible();
   await expect(popup.locator("#btn-signin")).toHaveText("Sign in with Whisper");
-  await expect(popup.locator("#privacy-line")).toContainText("graph.whisper.security");
+  await expect(popup.locator("#privacy-line")).toContainText("graph.whisper.online");
   await popup.close();
   await page.close();
 });
@@ -198,7 +198,7 @@ test("keyed: popup shows the evidenced band, categorical coverage chip, explain,
   await expect(popup.locator("#coverage-chip")).toContainText("malicious-evidenced");
   await expect(popup.locator("#coverage-chip")).toContainText("not a safety score");
   await expect(popup.locator("#privacy-line")).toContainText('only "evil-known-guard-e2e.com" was sent');
-  await expect(popup.locator("#privacy-line")).toContainText("graph.whisper.security");
+  await expect(popup.locator("#privacy-line")).toContainText("graph.whisper.online");
 
   // Why this verdict (whisper.explain), lazily loaded on expand.
   await popup.locator("#exp-why summary").click();
@@ -269,11 +269,11 @@ test("privacy invariant: ONLY the hostname leaves, only to the graph, with the f
   // 1) Complete-capture check: the browser contacted the visited site and
   // the graph, nothing else (no console, no corpus host, no third parties).
   const hosts = net.contactedHosts().sort();
-  expect(hosts).toEqual(["graph.whisper.security", "privacy-probe-guard-e2e.com"]);
+  expect(hosts).toEqual(["graph.whisper.online", "privacy-probe-guard-e2e.com"]);
 
   // 2) The graph saw exactly one POST /api/query whose only browsing datum
   // is the bare hostname.
-  const graphReqs = net.requestsTo("graph.whisper.security").filter((r) => r.scheme === "https");
+  const graphReqs = net.requestsTo("graph.whisper.online").filter((r) => r.scheme === "https");
   expect(graphReqs).toHaveLength(1);
   const body = JSON.parse(graphReqs[0].body);
   expect(body.parameters).toEqual({ hs: ["privacy-probe-guard-e2e.com"] });
@@ -302,7 +302,7 @@ test("privacy invariant: revisit paints from cache with zero graph traffic", asy
   const again = await visit(ext, "https://clean-site-guard-e2e.com/");
   await waitForIcon(ext, again.tabId, ["benign"]);
   await again.page.waitForTimeout(400);
-  expect(net.requestsTo("graph.whisper.security")).toHaveLength(0);
+  expect(net.requestsTo("graph.whisper.online")).toHaveLength(0);
   await again.page.close();
 });
 
@@ -312,7 +312,7 @@ test("privacy: internal pages are never assessed and read as out of scope", asyn
   const page = await ext.context.newPage();
   await page.goto("chrome://version/");
   await page.waitForTimeout(600);
-  expect(net.requestsTo("graph.whisper.security")).toHaveLength(0);
+  expect(net.requestsTo("graph.whisper.online")).toHaveLength(0);
   await page.close();
 });
 
@@ -416,7 +416,7 @@ test("pre-click check vets a destination before navigation, keyless and keyed", 
   await expect(check.locator("#detector-text")).toContainText("paypal.com");
   await expect(check.locator("#btn-real")).toContainText("Go to the real paypal.com");
   await expect(check.locator("#privacy")).toContainText("nothing left your browser");
-  expect(net.requestsTo("graph.whisper.security")).toHaveLength(0);
+  expect(net.requestsTo("graph.whisper.online")).toHaveLength(0);
   await check.close();
   await setSettings(ext, { cloudCheck: true });
 

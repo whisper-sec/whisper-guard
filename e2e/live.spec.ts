@@ -32,7 +32,7 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIVE_KEY = process.env["WHISPER_GUARD_E2E_KEY"] ?? "";
-const GRAPH = "https://graph.whisper.security/api/query";
+const GRAPH = "https://graph.whisper.online/api/query";
 const EVIDENCE = resolve(HERE, "../e2e-artifacts/live-evidence.md");
 
 // A fresh URLhaus pull happens first; these recently-listed hosts are the
@@ -129,7 +129,7 @@ test.describe("live graph, real key", () => {
     evidence(``);
     evidence(`- run: ${new Date().toISOString()}`);
     evidence(`- key: whisper-****************************************************(redacted)`);
-    evidence(`- graph endpoint: graph.whisper.security (production)`);
+    evidence(`- graph endpoint: graph.whisper.online (production)`);
     evidence(`- evidenced-malicious host under test: ${badHost} (DNS pinned to a local harmless page; verdict is the real graph's)`);
     evidence(`- baseline assess row: ${JSON.stringify(badVerdict)}`);
   });
