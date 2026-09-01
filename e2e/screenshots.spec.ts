@@ -305,7 +305,11 @@ test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () =
 
   const ep = await openDashboard(ext, "endpoint");
   await ep.setViewportSize({ width: 1180, height: 1600 });
-  await expect(ep.locator("#e-address")).not.toBeEmpty({ timeout: 15_000 });
+  // A negated matcher is satisfied by an element that is not there, and this
+  // capture becomes a published figure: an empty or missing address would ship
+  // a screenshot of a blank identity with nothing going red. Pin the value's
+  // SHAPE instead, which only a real /128 has.
+  await expect(ep.locator("#e-address")).toHaveText(/^[0-9a-f]{1,4}:[0-9a-f:]+$/i, { timeout: 15_000 });
   // Open a destination's receipts (co-hosting from the graph) for the shot.
   // No swallowed failure here: this capture becomes a published figure, so a
   // click that silently missed would ship a screenshot without the receipts

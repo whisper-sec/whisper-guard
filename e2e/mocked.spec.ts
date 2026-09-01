@@ -312,6 +312,25 @@ test("privacy: internal pages are never assessed and read as out of scope", asyn
   await page.waitForTimeout(600);
   expect(net.requestsTo(GRAPH_READ_HOST)).toHaveLength(0);
   await page.close();
+
+  // CONTROL: silence is also exactly what a DEAD prober looks like. A prober
+  // that had stopped firing altogether would satisfy the line above and every
+  // other privacy assertion in this file, which is the whole reason to check.
+  // So assess a normal site right after, on a host this run has not visited
+  // (an already-assessed one answers from the verdict cache and would be
+  // silent for a second, innocent reason).
+  net.setVerdict("probe-alive-guard-e2e.com", { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.clearLog();
+  const live = await visit(ext, "https://probe-alive-guard-e2e.com/");
+  // "unknown" is accepted here on purpose: this control is about whether the
+  // prober SPOKE, not about what it concluded, and letting the icon decide
+  // would report a dead prober as an icon-colour failure.
+  await waitForIcon(ext, live.tabId, ["benign", "unknown"]);
+  expect(
+    net.requestsTo(GRAPH_READ_HOST).length,
+    "the prober must be alive, or the silence above is a dead prober rather than a privacy guarantee",
+  ).toBeGreaterThan(0);
+  await live.page.close();
 });
 
 // ------------------------------------------------------------- device flow

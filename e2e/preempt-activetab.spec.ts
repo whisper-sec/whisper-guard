@@ -16,7 +16,8 @@
 
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { E2ENetwork, GRAPH_READ_HOST } from "./helpers/servers";
 import {
   launchExtension,
@@ -84,15 +85,46 @@ test("the extension under test provably holds NO broad grant", async () => {
     optional_permissions?: string[];
     optional_host_permissions?: string[];
   };
-  // No grant route to <all_urls> exists: not held, not even requestable.
-  // (web_accessible_resources.matches is a resource-exposure matcher for
-  // the warning page, not a permission; it grants the extension nothing.)
+  // No grant route to <all_urls> exists in the build under test: not held, not
+  // even requestable. (web_accessible_resources.matches is a resource-exposure
+  // matcher for the warning page, not a permission; it grants nothing.)
   expect(manifest.permissions).not.toContain("<all_urls>");
   expect(manifest.host_permissions).not.toContain("<all_urls>");
   expect(manifest.optional_permissions ?? []).not.toContain("<all_urls>");
   expect(manifest.optional_host_permissions).toBeUndefined();
   expect(manifest.host_permissions).toContain(`https://${START}/*`);
   expect(manifest.host_permissions).not.toContain(`https://${EVIL}/*`);
+
+  // The manifest above is the SCOPED test build (makeScopedDist), which has the
+  // optional route DELETED so this suite can prove the pre-emptive rung needs
+  // no broad grant at all. The comment beside those lines used to read as a
+  // claim about the product, and it is not one: the SHIPPED manifests do
+  // declare <all_urls> under optional_host_permissions, because Active Shield
+  // is an opt-in the user grants at a gesture. Nothing was wrong with the
+  // product; the test's own words were wider than what it checked.
+  //
+  // What IS true of the shipped pair, and worth pinning here because a slip
+  // would be a silent expansion of what the extension holds on install: no
+  // broad grant is ever HELD by default. It stays behind an explicit request.
+  for (const rel of ["manifests/manifest.chromium.json", "manifests/manifest.firefox.json"]) {
+    const shipped = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", rel), "utf8")) as {
+      permissions?: string[];
+      host_permissions?: string[];
+      optional_permissions?: string[];
+      optional_host_permissions?: string[];
+    };
+    // CONTROL first: a manifest that did not parse into this shape would pass
+    // every "not.toContain" below on an undefined default.
+    expect(shipped.permissions, `${rel} must declare permissions`).toBeInstanceOf(Array);
+    expect(shipped.host_permissions, `${rel} must declare host_permissions`).toBeInstanceOf(Array);
+
+    expect(shipped.permissions, `${rel} must not HOLD a broad grant`).not.toContain("<all_urls>");
+    expect(shipped.host_permissions, `${rel} must not HOLD a broad host grant`).not.toContain("<all_urls>");
+    expect(shipped.optional_permissions ?? [], `${rel} optional_permissions`).not.toContain("<all_urls>");
+    // The one broad grant that exists is OPTIONAL and only there: Active
+    // Shield's opt-in. Pinned positively, so moving it anywhere else fails.
+    expect(shipped.optional_host_permissions ?? [], `${rel} Active Shield's opt-in grant`).toEqual(["<all_urls>"]);
+  }
   // And the product settings never opted into Active Shield.
   const shieldOn = await ext.sw.evaluate(async () => {
     const s = (await chrome.storage.local.get("settings"))["settings"] as

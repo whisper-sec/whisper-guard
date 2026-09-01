@@ -74,9 +74,18 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
   await dash.locator("#egress-toggle").click();
   await expect(dash.locator("#egress-toggle")).toHaveText("Turn on", { timeout: 15_000 });
   net.clearEgressLog();
+  net.clearLog(); // so the control below counts THIS navigation, not the routed one above
   const page2 = await ext.context.newPage();
   await page2.goto("https://example-egress-e2e.com/", { waitUntil: "domcontentloaded" }).catch(() => undefined);
   await page2.waitForTimeout(400);
+  // CONTROL: goto's rejection is swallowed on the line above, so a page that
+  // never loaded produces zero egress CONNECTs just as convincingly as one
+  // that loaded directly. Prove the traffic HAPPENED before reading that it
+  // did not go through the endpoint.
+  expect(
+    net.requestsTo("example-egress-e2e.com").length,
+    "the page must actually have loaded, or a zero egress count proves nothing",
+  ).toBeGreaterThan(0);
   expect(net.egressConnects("example-egress-e2e.com")).toBe(0);
   await page2.close();
   await dash.close();
@@ -85,6 +94,10 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
 test("browser-as-endpoint: the identity is register-once and reused, never duplicated", async () => {
   await setKey(ext, MOCK_KEY);
   const before = net.endpoints.filter((e) => e.label.includes("This browser")).length;
+  // CONTROL: this test builds on the registration the previous one made, and
+  // "no second row" is trivially true when there is no first row. Pin it, so
+  // running this in isolation says so instead of passing on two zeroes.
+  expect(before, "the browser must already be registered from the previous test, or reuse is untested").toBe(1);
 
   const dash = await openDashboard(ext, "browser");
   await dash.locator("#egress-toggle").click();
