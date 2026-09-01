@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <title>Whisper Guard</title>
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
@@ -13,25 +13,34 @@
     <img src="logo.png" alt="Whisper" class="w-logo">
     <span class="product">Guard</span>
     <span class="spacer"></span>
-    <span id="signin-dot" class="dot" title=""></span>
+    <button id="btn-refresh" class="icon-btn" title="Re-check this site" aria-label="Re-check this site">&#8635;</button>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
   </header>
 
-  <main id="main">
+  <main>
+    <!-- 1. THIS SITE. The verdict is the headline, not a card: one glyph,
+         one name, one badge, one sentence. Everything under it is evidence
+         for that sentence and is styled to read as subordinate to it. -->
     <section id="host-row" hidden>
       <div id="band-glyph" class="glyph"></div>
       <div class="host-meta">
         <div id="hostname" class="hostname w-host"></div>
-        <div class="chips">
-          <span id="band-chip" class="w-chip"></span>
-          <span id="coverage-chip" class="w-chip chip-muted" hidden
-                title="Coverage says how much data the graph has on this host. It is NOT a safety score."></span>
-        </div>
-        <div id="band-note" class="w-note"></div>
+        <div class="chips"><span id="band-chip" class="w-chip"></span></div>
+        <div id="band-note" class="verdict-line"></div>
       </div>
     </section>
 
-    <!-- hosts blocked this session, each clearable in-flow (never a dead-end
+    <!-- The on-device look-alike catch: an alert with its own way out. -->
+    <section id="lookalike" class="w-card warn" hidden>
+      <div id="lookalike-text"></div>
+      <div class="row gap">
+        <a id="btn-goto" class="w-btn primary" href="#">Go to the real site</a>
+        <button id="btn-report" class="w-btn" hidden>Report</button>
+      </div>
+      <div id="report-status" class="w-note" hidden></div>
+    </section>
+
+    <!-- Hosts blocked this session, each clearable in flow (never a dead-end
          ERR_BLOCKED_BY_CLIENT). Shown only when the ledger is non-empty. -->
     <section id="blocked-card" class="w-card crit" hidden>
       <div id="blocked-banner" class="blocked-banner" hidden></div>
@@ -39,7 +48,11 @@
       <div id="blocked-body" class="blocked-body"></div>
     </section>
 
-    <section id="protect-card" class="w-card" hidden>
+    <section id="graph-error" class="w-card muted" hidden></section>
+
+    <!-- The evidence behind the verdict: who runs it, where, how old, and
+         the named weighted factors the graph scored it on. -->
+    <section id="protect-card" class="panel" hidden>
       <div id="protect-rows" class="protect-rows"></div>
       <div id="why-panel" hidden>
         <div class="why-head">
@@ -50,77 +63,67 @@
         <div id="why-factors" class="why-factors"></div>
       </div>
       <div id="why-chips" class="why-chips"></div>
+      <div id="coverage-chip" class="w-note coverage-line" hidden></div>
     </section>
 
-    <section id="lookalike" class="w-card warn" hidden>
-      <div id="lookalike-text"></div>
-      <div class="row gap">
-        <a id="btn-goto" class="w-btn primary" href="#">Go to the real site</a>
-        <button id="btn-report" class="w-btn" hidden>Report</button>
-      </div>
-      <div id="report-status" class="w-note" hidden></div>
-    </section>
-
-    <section id="graph-error" class="w-card muted" hidden></section>
-
-    <section id="linkscan-card" class="w-card" hidden>
+    <section id="linkscan-card" class="panel" hidden>
       <div class="mini-head">
         <span class="w-label">Links on this page</span>
-        <button id="btn-linkscan" class="w-btn small primary">Check every link</button>
+        <button id="btn-linkscan" class="w-btn small"
+                title="Verdict every destination this page links to, before you click one. Only the link hostnames are checked, never the page.">Check every link</button>
       </div>
-      <div id="linkscan-note" class="w-note">Verdict every destination this page links to,
-      before you click any of them. Only the link hostnames are checked, never the page.</div>
       <div id="linkscan-summary" class="linkscan-summary" hidden></div>
       <div id="linkscan-list" class="linkscan-list" hidden></div>
+      <div id="linkscan-note" class="w-note" hidden></div>
     </section>
 
+    <!-- 2. THIS BROWSER. One control does the whole thing: reserve the
+         identity AND route through it, asking for the permission it needs
+         at the moment it needs it. No second step, no hand-off. -->
     <section id="identity-card" class="w-card" hidden>
       <div class="mini-head">
-        <span class="w-label">This browser on the Whisper network</span>
+        <span class="w-label">This browser</span>
         <span id="identity-state" class="w-chip unknown">NOT ENROLLED</span>
       </div>
-      <div id="identity-pitch" class="w-note" hidden>Give this browser its own routable
-      Whisper identity: a real IPv6 address with reverse-DNS, verifiable by anyone via
-      RDAP. One click; routing stays off until you turn it on.</div>
+      <div id="route-line" class="route-line"></div>
       <div id="identity-detail" class="identity-detail" hidden></div>
       <div class="row gap identity-actions">
-        <button id="btn-enroll" class="w-btn primary" hidden>Enroll this browser</button>
-        <button id="btn-identity-dash" class="w-btn small" hidden>Identity &amp; routing</button>
+        <button id="btn-protect" class="w-btn primary">Protect this browser</button>
+        <button id="btn-route-fix" class="w-btn small" hidden></button>
       </div>
       <div id="identity-note" class="w-note" hidden></div>
     </section>
 
-    <section id="today-card" class="w-card">
-      <div class="mini-head">
-        <span class="w-label">Handled quietly today</span>
-      </div>
-      <div class="today-row">
-        <div id="today-hero" class="today-hero">0</div>
-        <div id="today-breakdown" class="today-breakdown"></div>
-      </div>
-      <div id="today-note" class="w-note"></div>
-    </section>
-
-    <section id="mini-dash" class="w-card">
-      <div class="mini-head">
-        <span class="w-label">This browser, last 24h</span>
-        <button id="btn-dashboard" class="w-btn small">Open dashboard</button>
-      </div>
-      <div id="mini-tiles" class="mini-tiles"></div>
-    </section>
-
     <section id="signin-pitch" class="w-card" hidden>
-      <p id="pitch-text"><strong>Put this browser on the Whisper network</strong> with its own
-      verifiable identity (a real IPv6 address, reverse-DNS, public RDAP), see your whole
-      fleet of devices and agents, and drill into any endpoint. Free. Everything above
-      already works with no account.</p>
+      <div class="mini-head">
+        <span class="w-label">This browser</span>
+        <span class="w-chip unknown">NOT ON THE NETWORK</span>
+      </div>
+      <p>Sign in to give this browser its own routable Whisper address and
+      route its traffic through it. Everything above already works without an account.</p>
       <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
       <div id="device-status" class="w-note" hidden></div>
     </section>
 
+    <!-- 3. WHAT IT HAS DONE. Lines, not tiles: a count nobody can act on is
+         not worth a card, and a zero is not worth a number. -->
+    <section class="panel">
+      <div class="mini-head">
+        <span class="w-label">Activity</span>
+        <button id="btn-dashboard" class="w-btn small">Open dashboard</button>
+      </div>
+      <div id="today-row" class="today-row" hidden>
+        <span id="today-hero" class="today-hero">0</span>
+        <span class="today-caption">handled quietly today</span>
+      </div>
+      <div id="today-breakdown" class="today-breakdown"></div>
+      <div id="browser-24h" class="w-note"></div>
+      <div id="today-note" class="w-note"></div>
+    </section>
+
     <div id="expanders" hidden>
       <details id="exp-why">
-        <summary>Why, the full graph answer</summary>
+        <summary>The full graph answer</summary>
         <div id="why-body" class="exp-body">Loading...</div>
       </details>
       <details id="exp-who">
@@ -146,11 +149,9 @@
   </main>
 
   <footer>
-    <div class="row gap">
+    <div id="footer-actions" class="row gap" hidden>
       <button id="btn-console" class="w-btn small" hidden>Open in console</button>
       <button id="btn-dossier" class="w-btn small" hidden>Copy dossier</button>
-      <span class="spacer"></span>
-      <button id="btn-refresh" class="icon-btn" title="Re-check" aria-label="Re-check">&#8635;</button>
     </div>
     <div id="privacy-line" class="w-privacy"></div>
   </footer>

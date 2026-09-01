@@ -70,7 +70,7 @@ history.
   guessed at. However many walls a page turns out to have, the tally counts
   the page once, because that is what was handled for you. Off with one
   switch.
-- **A calm tally of what it handled.** One card in the popup counts today's
+- **A calm tally of what it handled.** One line in the panel counts today's
   quiet wins by category (clicks held, identities verified, cookie prompts
   declined) and nothing else: the record is a category, a count and today's
   date, so it resets on its own and can never learn a site you visited. There
@@ -86,17 +86,20 @@ history.
   connection constellation from the endpoint to where it went, and destination
   receipts with co-hosting fan-in and announcing-prefix threat neighbours. Every
   identity is anchored by an RDAP provenance link.
-- **Enroll this browser.** One click reserves this browser's own routable
-  Whisper identity: a real IPv6 address with reverse-DNS, verifiable by anyone
-  via public RDAP. Enrollment is pure control plane: it needs no browser
-  permission and works the moment you are signed in.
-- **Route this browser (opt-in, off by default).** A separate toggle then
-  routes the browser's traffic out through that identity, so it joins your
-  fleet as a device whose activity you can audit. WebRTC is hardened to
-  proxied-only so nothing leaks around the route. The proxy permissions are
-  optional and requested on that click; if another extension (a VPN, a proxy
-  manager) holds the browser's proxy setting, Guard says so plainly and keeps
-  the identity and verdicts working; routing is never a dead end.
+- **Protect this browser (opt-in, off by default).** One control in the panel
+  does the whole thing: it reserves this browser's own routable Whisper
+  identity (a real IPv6 address with reverse-DNS, verifiable by anyone via
+  public RDAP) and routes the browser's traffic out through that identity, so
+  it joins your fleet as a device whose activity you can audit. WebRTC is
+  hardened to proxied-only so nothing leaks around the route.
+
+  The two halves are separate underneath, which is what lets the failures stay
+  honest. The identity is pure control plane: no browser permission, reserved
+  first, and it stands whatever happens next. Routing needs the optional proxy
+  permissions, asked for on that click. Refuse them, or let a VPN or proxy
+  manager keep the browser's single-owner proxy setting, and you still have the
+  identity and the verdicts; the panel names what is in the way and offers the
+  way out. Routing is never a dead end, and the same button turns it off.
 - Sign-in is the RFC 8628 device flow: you approve in the Whisper console and
   the extension receives its credential. You never see or paste a key.
 
@@ -164,7 +167,7 @@ public identity verification all work with no key.
 - No telemetry, no analytics, no sync. The credential lives in local extension
   storage only. Internal pages (`chrome://`), localhost, private addresses,
   IP literals, and `.local`/`.internal` names are never checked at all.
-- Every popup view states exactly what was sent for the current site.
+- Every panel view states exactly what was sent for the current site.
 
 Docs: [whisper.online/docs/whisper-guard](https://whisper.online/docs/whisper-guard) ·
 Screenshots: [`shots/`](shots/index.html)

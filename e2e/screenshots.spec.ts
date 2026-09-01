@@ -8,7 +8,9 @@
 //   npx playwright test e2e/screenshots.spec.ts
 //
 // Output: shots/*.png plus the composed toolbar-state strip. The gallery
-// page (shots/index.html) references these files.
+// page (shots/index.html) references these files. The panel's own
+// protection states (offered, protected, refused, proxy taken) and its
+// light rendering are captured by e2e/protect.spec.ts, which proves them.
 
 import { test, expect } from "@playwright/test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -108,6 +110,10 @@ test.afterAll(async () => {
 
 async function popupShot(tabId: number, file: string, prep?: (p: import("@playwright/test").Page) => Promise<void>) {
   const popup = await openPopup(ext, tabId);
+  // The panel follows the reader's colour scheme. The gallery is captured
+  // dark, which is what the rest of the product's surfaces are; the light
+  // rendering has its own captures in e2e/protect.spec.ts.
+  await popup.emulateMedia({ colorScheme: "dark" });
   await popup.setViewportSize({ width: 380, height: 650 });
   await popup.waitForTimeout(400);
   if (prep) await prep(popup);
@@ -332,13 +338,17 @@ test("dashboard: Protect this browser (egress toggle, off by default)", async ()
   await dash.close();
 });
 
-test("popup: mini-dashboard summary of this browser", async () => {
+test("popup: the activity line for this browser", async () => {
   await setKey(ext, null);
   await setSettings(ext, { cloudCheck: true });
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  await popupShot(tabId, "popup-mini-dashboard.png", async (p) => {
+  await popupShot(tabId, "popup-activity.png", async (p) => {
     await p.setViewportSize({ width: 390, height: 720 });
+    // The four-tile grid became one line, and the only number in it that a
+    // reader can act on is the flagged one. Pin the line rather than merely
+    // capturing it, so a caption quoting it cannot go stale in silence.
+    await expect(p.locator("#browser-24h")).toContainText("in the last 24h");
   });
   await page.close();
 });
@@ -448,7 +458,7 @@ test("cookie-consent auto-decline on a real-shaped banner", async () => {
   await setSettings(ext, { shield: false });
 });
 
-test("popup: the calm 'handled quietly today' card, with the counts that interrupt earned", async () => {
+test("popup: the calm 'handled quietly today' line, with the counts that interrupt earned", async () => {
   // Counts come from the two captures above - the held click (preemptBlock)
   // and the declined banner (cookieDecline). Real wins from real protection,
   // not a seeded record.
@@ -456,6 +466,7 @@ test("popup: the calm 'handled quietly today' card, with the counts that interru
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
   const popup = await openPopup(ext, tabId);
+  await popup.emulateMedia({ colorScheme: "dark" });
   await popup.setViewportSize({ width: 380, height: 650 });
   // Pinned to the exact number, not merely "not 0". A negated matcher is
   // satisfied by a missing element, so not.toHaveText("0") would survive the

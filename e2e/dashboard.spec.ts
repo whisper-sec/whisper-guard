@@ -106,9 +106,24 @@ test("protection: keyless composed verdict cites feeds, owner, and age; populari
   await expect(popup.locator("#protect-card")).toBeVisible({ timeout: 15_000 });
   await expect(popup.locator("#protect-rows")).toContainText("Sketchy Co");
   await expect(popup.locator("#protect-rows")).toContainText("Montreal");
+  // The named weighted factors ARE the citation now: the panel no longer
+  // repeats them as a sentence directly underneath itself. So the exclusion
+  // is pinned where it lives, on the rows, and more precisely than before.
+  const threats = popup.locator("#why-factors .why-factor.threat");
+  await expect(threats).toHaveCount(2);
+  // Ordered because the shaping orders them: threat first, then heaviest,
+  // then by name (background/protect.ts).
+  await expect(threats.locator(".wf-name")).toHaveText(["hagezi-tif", "phishing-army"]);
+  // CONTROL: tranco IS in the picture, as good standing. Without this the
+  // assertion below would pass just as well on a panel that dropped the feed
+  // entirely, or never fetched it, which proves no exclusion at all.
+  await expect(popup.locator("#why-factors .why-factor.good")).toContainText("tranco");
+  // The graph's own cited prose is still rendered under the factors.
   await expect(popup.locator("#why-chips")).toContainText("threat feed");
-  await expect(popup.locator("#why-chips")).toContainText("phishing-army");
-  // A popularity/trust feed (tranco) is GOOD, never cited as a threat.
+  // A popularity/trust feed is GOOD, never cited as a threat. The exact
+  // list above already excludes it from the threat rows (an exact list is
+  // stronger than a not-contains, which a missing element would satisfy);
+  // this pins that the graph's cited prose does not name it either.
   await expect(popup.locator("#why-chips")).not.toContainText("tranco");
   await popup.close();
   await page.close();

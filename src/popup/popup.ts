@@ -1,12 +1,24 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// The click-panel: a verdict and one action above the fold; the composed
-// protection picture (who runs it, where, how old, why) right under it; a
-// mini "this browser" dashboard; analyst affordances collapsed. UNKNOWN is
-// the honest common state and reads as "not confirmed either way", never
-// as green. Every view carries the per-host privacy line saying exactly
-// what was sent.
+// The click-panel answers three questions in this order and nothing else:
+//
+//   1. is this site safe?      one glyph, one badge, ONE sentence. The
+//                              sentence never restates the badge, and
+//                              coverage lives with the evidence, not beside
+//                              the verdict where it reads as a score.
+//   2. am I protected?         ONE control. It reserves this browser's
+//                              routable Whisper identity AND routes through
+//                              it, asking for the permission routing needs
+//                              at the moment it is needed. There is no
+//                              second step and no hand-off to another page.
+//   3. what has it done?       lines, not tiles. A count nobody can act on
+//                              is not worth a card and a zero is not worth
+//                              a number.
+//
+// UNKNOWN is the honest common state and reads as "not confirmed either
+// way", never as green. Every view carries the per-host privacy line saying
+// exactly what was sent.
 
 import { send, type BrowserReport } from "../shared/messages";
 import {
@@ -16,6 +28,7 @@ import {
   type Enrollment,
   type ExplainResult,
   type GraphBand,
+  type IdentityVerification,
   type LinkScanResult,
   type Protection,
   type Settings,
@@ -25,7 +38,9 @@ import {
   type WinsToday,
 } from "../shared/types";
 import { CATEGORY_LABEL, flagEmoji, type ReportCategory } from "../shared/report";
-import { GRAPH_HOST } from "../shared/config";
+import { ext } from "../shared/api";
+import { EGRESS_REQUEST, GRAPH_HOST } from "../shared/config";
+import { IS_FIREFOX } from "../shared/engine";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -33,15 +48,53 @@ let tabId = -1;
 let state: TabState | null = null;
 let settings: Settings | null = null;
 
-const BAND_UI: Record<GraphBand, { glyphCls: string; chipCls: string; chip: string; glyph: string; note: string }> = {
-  CRITICAL: { glyphCls: "malicious", chipCls: "crit", chip: "MALICIOUS - evidenced", glyph: "⬣", note: "Known threat, listed in the graph. Do not enter credentials." },
-  HIGH: { glyphCls: "malicious", chipCls: "high", chip: "HIGH RISK", glyph: "⬣", note: "Strong risk signals in the graph. Stay away." },
-  MEDIUM: { glyphCls: "suspicious", chipCls: "med", chip: "SUSPICIOUS", glyph: "▲", note: "Some risk signals. Be careful." },
-  LOW: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓", note: "Low-level signals only. Not a warranty." },
-  INFO: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓", note: "Informational signals only. Not a warranty." },
-  NONE: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓", note: "No known threat. Not a warranty." },
-  UNKNOWN: { glyphCls: "unknown", chipCls: "unknown", chip: "UNKNOWN", glyph: "?", note: "New or low-coverage site. Not confirmed safe or unsafe." },
+const BAND_UI: Record<GraphBand, { glyphCls: string; chipCls: string; chip: string; glyph: string }> = {
+  CRITICAL: { glyphCls: "malicious", chipCls: "crit", chip: "MALICIOUS - evidenced", glyph: "⬣" },
+  HIGH: { glyphCls: "malicious", chipCls: "high", chip: "HIGH RISK", glyph: "⬣" },
+  MEDIUM: { glyphCls: "suspicious", chipCls: "med", chip: "SUSPICIOUS", glyph: "▲" },
+  LOW: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓" },
+  INFO: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓" },
+  NONE: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓" },
+  UNKNOWN: { glyphCls: "unknown", chipCls: "unknown", chip: "UNKNOWN", glyph: "?" },
 };
+
+// Labels that are a synonym of the band already on the badge. Rendering one
+// turns the verdict into "NO KNOWN THREAT / No known threat / clean", which
+// is the same claim three times and reads as evasion. A label that carries
+// real information ("credential-phishing suspect") is always shown.
+const BAND_SYNONYM =
+  /^(clean|none|no known threat|unknown|benign|safe|ok|low|info|informational|malicious|suspicious|high|medium|critical)$/i;
+
+/** The single true sentence about this site. Said once, with the graph's own
+ *  label folded in when the label adds something the band does not. */
+function verdictSentence(band: GraphBand, label: string | null): string {
+  const l = label && !BAND_SYNONYM.test(label.trim()) ? label.trim() : null;
+  const q = l ? ` (${l})` : "";
+  switch (band) {
+    case "CRITICAL":
+      return `Listed in the graph as a known threat${q}. Do not sign in or enter card details.`;
+    case "HIGH":
+      return `Strong risk signals in the graph${q}. Leave this site.`;
+    case "MEDIUM":
+      return `Some risk signals in the graph${q}. Do not enter anything private here.`;
+    case "LOW":
+      return `Nothing lists this site as a threat; only low-level signals${q}.`;
+    case "INFO":
+      return `Nothing lists this site as a threat; only informational signals${q}.`;
+    case "NONE":
+      return `Nothing in the graph lists this site${q}.`;
+    case "UNKNOWN":
+      return `Not confirmed safe or unsafe${q}. The graph has little or no data on this name.`;
+  }
+}
+
+/** One CSS custom property, resolved. The canvas cannot use var(), so the
+ *  neighborhood graph reads the live theme instead of hard-coding one, and
+ *  stays legible when the reader's system is in light mode. */
+function themeColor(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v === "" ? fallback : v;
+}
 
 /** Render key/value rows as a table, DOM-built (no HTML strings). */
 function renderKV(rows: Record<string, unknown>[]): Node {
@@ -87,38 +140,48 @@ function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates:
   const cx = W / 2;
   const cy = H / 2;
 
-  const colors: Record<string, string> = { CRITICAL: "#dc2626", HIGH: "#ef4444", MEDIUM: "#f59e0b" };
+  const line = themeColor("--w-line-strong", "#2a2a44");
+  const faint = themeColor("--w-faint", "#62627a");
+  const muted = themeColor("--w-muted", "#9a9ab0");
+  const text = themeColor("--w-text", "#e8e8f2");
+  const accent = themeColor("--w-accent", "#8a5cc7");
+  const crit = themeColor("--w-v-crit", "#dc2626");
+  const colors: Record<string, string> = {
+    CRITICAL: crit,
+    HIGH: themeColor("--w-v-high", "#ef4444"),
+    MEDIUM: themeColor("--w-v-low", "#f59e0b"),
+  };
   const n = candidates.length;
   candidates.forEach((c, i) => {
     const angle = (2 * Math.PI * i) / Math.max(n, 1) - Math.PI / 2;
     const r = Math.min(W, H) / 2 - 28;
     const x = cx + r * Math.cos(angle);
     const y = cy + r * Math.sin(angle);
-    ctx.strokeStyle = "#2a2a44";
+    ctx.strokeStyle = line;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(x, y);
     ctx.stroke();
-    ctx.fillStyle = colors[c.band] ?? "#62627a";
+    ctx.fillStyle = colors[c.band] ?? faint;
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, 2 * Math.PI);
     ctx.fill();
     if (c.band === "CRITICAL") {
-      ctx.strokeStyle = "#dc2626";
+      ctx.strokeStyle = crit;
       ctx.beginPath();
       ctx.arc(x, y, 8, 0, 2 * Math.PI);
       ctx.stroke();
     }
-    ctx.fillStyle = "#9a9ab0";
+    ctx.fillStyle = muted;
     const label = c.host.length > 22 ? c.host.slice(0, 21) + "…" : c.host;
     ctx.fillText(label, x - ctx.measureText(label).width / 2, y + 18);
   });
 
-  ctx.fillStyle = "#8a5cc7";
+  ctx.fillStyle = accent;
   ctx.beginPath();
   ctx.arc(cx, cy, 7, 0, 2 * Math.PI);
   ctx.fill();
-  ctx.fillStyle = "#e8e8f2";
+  ctx.fillStyle = text;
   const cl = center.length > 26 ? center.slice(0, 25) + "…" : center;
   ctx.fillText(cl, cx - ctx.measureText(cl).width / 2, cy - 12);
 }
@@ -261,20 +324,28 @@ function factorRow(f: WhyFactor): HTMLElement {
 
 const MAX_FACTORS_SHOWN = 5;
 
+interface WhyRender {
+  /** The factor panel rendered at all. */
+  shown: boolean;
+  /** A factor was cut from the list, so a summary of them still adds. */
+  truncated: boolean;
+}
+
 /** The WHY, front and center: the graph's score + its named weighted factors. */
-function renderWhy(p: Protection): boolean {
+function renderWhy(p: Protection): WhyRender {
   const panel = $("why-panel");
   const scoreChip = $("why-score");
   const box = $("why-factors");
-  if (p.whyFactors.length === 0 && p.score === null) return false;
+  if (p.whyFactors.length === 0 && p.score === null) return { shown: false, truncated: false };
   panel.hidden = false;
   if (p.score !== null) {
     scoreChip.hidden = false;
     scoreChip.textContent = `graph score ${p.score}`;
   }
   const shown = p.whyFactors.slice(0, MAX_FACTORS_SHOWN);
+  const truncated = p.whyFactors.length > shown.length;
   box.replaceChildren(...shown.map(factorRow));
-  if (p.whyFactors.length > shown.length) {
+  if (truncated) {
     const more = document.createElement("div");
     more.className = "why-factor more";
     more.textContent = `+ ${p.whyFactors.length - shown.length} more listing(s) in the full graph answer below`;
@@ -286,6 +357,27 @@ function renderWhy(p: Protection): boolean {
     none.textContent = "No feed lists this name either way.";
     box.appendChild(none);
   }
+  return { shown: true, truncated };
+}
+
+/**
+ * Coverage: how much the graph KNOWS about this name. It is categorical and
+ * it is NOT a safety score (a CRITICAL host can be known-clean coverage),
+ * which is why it belongs down here with the machine vocabulary instead of
+ * next to the verdict, where a reader takes any second badge for a grade.
+ */
+function renderCoverage(coverage: string | null): boolean {
+  const el = $("coverage-chip");
+  if (!coverage) return false;
+  const val = document.createElement("span");
+  val.className = "cov";
+  val.textContent = coverage;
+  el.replaceChildren(
+    document.createTextNode("Coverage "),
+    val,
+    document.createTextNode(": what the graph knows about this name, not a safety score."),
+  );
+  el.hidden = false;
   return true;
 }
 
@@ -294,14 +386,22 @@ async function loadProtection(host: string): Promise<void> {
   const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
   if (!res.ok) return;
   const p = res.protection;
-  const hasWhy = renderWhy(p);
+  const why = renderWhy(p);
   const rows: HTMLElement[] = [];
   if (p.who) {
-    const catLabel =
-      p.category && p.category in CATEGORY_LABEL
-        ? ` · ${CATEGORY_LABEL[p.category as ReportCategory]}`
-        : "";
-    rows.push(protectKv("Who", `${p.who}${catLabel}`));
+    // The owner chain falls back to the registrable domain when the graph
+    // has no organization and no canonical name for the host, so "Who:
+    // example.com" is the shape of "not known" wearing the shape of an
+    // answer. Say the unknown out loud instead: on a security panel, "we
+    // could not identify who runs this" is information, and echoing the
+    // hostname back at the reader is not.
+    const fallback = (state?.registrable ?? "").toLowerCase();
+    const named = p.who.toLowerCase() !== fallback && p.who.toLowerCase() !== host.toLowerCase();
+    const category =
+      p.category && p.category in CATEGORY_LABEL ? CATEGORY_LABEL[p.category as ReportCategory] : null;
+    const known = category && category !== CATEGORY_LABEL.unresolved ? category : null;
+    if (named) rows.push(protectKv("Who", known ? `${p.who} · ${known}` : p.who));
+    else rows.push(protectKv("Who", known ? `not identified · ${known}` : "not identified in the graph"));
   }
   if (p.where && (p.where.city || p.where.country)) {
     const flag = flagEmoji(p.where.country ?? undefined);
@@ -314,29 +414,56 @@ async function loadProtection(host: string): Promise<void> {
   }
   const card = $("protect-card");
   const whyBox = $("why-chips");
+  // p.why[0] is a summary we synthesise of the very factors listed directly
+  // above it ("Listed in 2 threat feeds: a, b"). When every factor is on
+  // screen that is the same sentence twice, which is what makes a panel read
+  // as padding; when the list was cut short it is the only complete naming
+  // of the feeds, so it stays. What follows it is the graph's own words and
+  // is never dropped: it can carry more than the count it usually carries.
+  const prose = why.shown && !why.truncated ? p.why.slice(1) : p.why;
   whyBox.replaceChildren(
-    ...p.why.map((w, i) => {
+    ...prose.map((w, i) => {
       const line = document.createElement("div");
-      line.className = `why-line${i === 0 ? " threat" : ""}`;
+      line.className = `why-line${i === 0 && !why.shown ? " threat" : ""}`;
       line.textContent = w;
       return line;
     }),
   );
-  if (rows.length > 0 || p.why.length > 0 || hasWhy) {
+  if (rows.length > 0 || prose.length > 0 || why.shown) {
     card.hidden = false;
     $("protect-rows").replaceChildren(...rows);
   }
 }
 
-// ------------------------------------------------------ browser identity
+// ---------------------------------------- this browser: the ONE control
 
-function chipClsForBand(band: string): string {
-  const b = band.toUpperCase();
-  if (b === "CRITICAL") return "crit";
-  if (b === "HIGH") return "high";
-  if (b === "MEDIUM") return "med";
-  if (b === "UNKNOWN") return "unknown";
-  return "ok";
+/** RDAP verification of the enrolled address; null until it lands. */
+let identityVerified: boolean | null = null;
+
+/** The permissions ROUTING needs, per engine. On Chromium `proxy` is a
+ *  REQUIRED manifest permission (Chrome forbids it as optional), so it is
+ *  not in the runtime set there; config.ts owns both sets. */
+function routingPermissions(): chrome.permissions.Permissions {
+  const set = IS_FIREFOX ? EGRESS_REQUEST.firefox : EGRESS_REQUEST.chromium;
+  return { permissions: [...set.permissions], origins: [...set.origins] };
+}
+
+/** The control-plane messages are written to follow a "\u26a0 " prefix, so they
+ *  open in lower case. Here they follow a full stop instead. */
+function asSentence(text: string): string {
+  return text.length === 0 ? text : text[0]!.toUpperCase() + text.slice(1);
+}
+
+function routeLine(dot: "on" | "blocked" | "off", lead: string, rest: string): void {
+  const d = document.createElement("span");
+  d.className = `w-dot ${dot}`;
+  const text = document.createElement("span");
+  text.className = "rl-text";
+  const strong = document.createElement("span");
+  strong.className = "rl-lead";
+  strong.textContent = lead;
+  text.append(strong, document.createTextNode(` ${rest}`));
+  $("route-line").replaceChildren(d, text);
 }
 
 function identityLine(label: string, value: string, mono = true): HTMLElement {
@@ -352,22 +479,16 @@ function identityLine(label: string, value: string, mono = true): HTMLElement {
   return row;
 }
 
-function renderEnrolled(address: string, fqdn: string | null, rdapUrl: string | null, verified: boolean | null): void {
-  const stateChip = $("identity-state");
-  if (verified === true) {
-    stateChip.className = "w-chip ok";
-    stateChip.textContent = "VERIFIED";
-    stateChip.title = "This address resolves as a Whisper endpoint via keyless RDAP verify-identity.";
-  } else {
-    stateChip.className = "w-chip accent";
-    stateChip.textContent = "ENROLLED";
-    stateChip.title = verified === false ? "Identity reserved; public verification pending." : "Identity reserved.";
-  }
+function identityDetail(s: EgressStatus): void {
   const detail = $("identity-detail");
+  if (!s.address) {
+    detail.hidden = true;
+    return;
+  }
   detail.hidden = false;
-  const lines: HTMLElement[] = [identityLine("Address", address)];
-  if (fqdn) lines.push(identityLine("Name", fqdn));
-  if (rdapUrl) {
+  const lines: HTMLElement[] = [identityLine("Address", s.address)];
+  if (s.fqdn) lines.push(identityLine("Name", s.fqdn));
+  if (s.rdapUrl) {
     const row = document.createElement("div");
     row.className = "protect-kv";
     const k = document.createElement("span");
@@ -376,7 +497,7 @@ function renderEnrolled(address: string, fqdn: string | null, rdapUrl: string | 
     const v = document.createElement("span");
     v.className = "v";
     const a = document.createElement("a");
-    a.href = rdapUrl;
+    a.href = s.rdapUrl;
     a.target = "_blank";
     a.rel = "noopener";
     a.textContent = "RDAP registration (anyone can check)";
@@ -385,67 +506,265 @@ function renderEnrolled(address: string, fqdn: string | null, rdapUrl: string | 
     lines.push(row);
   }
   detail.replaceChildren(...lines);
-  $("identity-pitch").hidden = true;
-  $("btn-enroll").hidden = true;
-  $("btn-identity-dash").hidden = false;
 }
 
-async function loadIdentityCard(): Promise<void> {
-  const card = $("identity-card");
-  card.hidden = false;
-  $("btn-identity-dash").addEventListener("click", () => {
-    void send({ kind: "openDashboard", view: "browser" }).then(() => window.close());
-  });
-  const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
-  if (res.ok && res.egress.enrolled && res.egress.address) {
-    renderEnrolled(res.egress.address, res.egress.fqdn, res.egress.rdapUrl, null);
-    // Verify keylessly in the background; upgrade the chip when it lands.
-    const v = await send<{ ok: true; verification: { isWhisperAgent: boolean; fqdn: string | null } | null }>({
-      kind: "verifyIdentity",
-      ip: res.egress.address,
-    });
-    if (v.ok && v.verification) {
-      renderEnrolled(
-        res.egress.address,
-        res.egress.fqdn ?? v.verification.fqdn,
-        res.egress.rdapUrl,
-        v.verification.isWhisperAgent,
-      );
-    }
+/**
+ * One status, one control, and never a dead end. The chip is what this
+ * browser IS on the network (an identity fact, which survives every routing
+ * failure); the line and the button are what it is DOING (a routing fact).
+ * Both are always shown, because collapsing them would hide a real state.
+ */
+function renderIdentity(s: EgressStatus): void {
+  const chip = $("identity-state");
+  const btn = $<HTMLButtonElement>("btn-protect");
+  const fix = $<HTMLButtonElement>("btn-route-fix");
+  btn.disabled = false;
+  btn.hidden = false;
+  fix.hidden = true;
+
+  if (!s.enrolled || !s.address) {
+    chip.className = "w-chip unknown";
+    chip.textContent = "NOT ENROLLED";
+    chip.title = "This browser has no Whisper identity yet.";
+    identityDetail(s);
+    routeLine(
+      "off",
+      "Not protected.",
+      "One click gives this browser its own routable Whisper IPv6 address and sends its traffic out through it. Anyone can check that address by RDAP.",
+    );
+    btn.className = "w-btn primary";
+    btn.textContent = "Protect this browser";
+    btn.onclick = protectThisBrowser;
+    setIdentityNote(s.error);
     return;
   }
-  // Not enrolled yet: the CTA is the card.
-  $("identity-pitch").hidden = false;
-  const btn = $<HTMLButtonElement>("btn-enroll");
-  btn.hidden = false;
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    btn.textContent = "Enrolling...";
-    const note = $("identity-note");
-    // Honest pending state: enrollment is a real control-plane round-trip
-    // (register + /128 allocation) that can take a few seconds.
-    note.hidden = false;
-    note.textContent = "Reserving this browser's identity (a few seconds)...";
-    const r = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({ kind: "enroll" });
-    if (r.ok) {
-      renderEnrolled(
-        r.enrollment.address,
-        r.enrollment.fqdn,
-        r.enrollment.rdapUrl,
-        r.enrollment.verification?.isWhisperAgent ?? null,
-      );
-      note.hidden = false;
-      note.textContent = "Enrolled. Routing stays off until you turn it on in the dashboard.";
-    } else {
-      btn.disabled = false;
-      btn.textContent = "Enroll this browser";
-      note.hidden = false;
-      note.textContent = r.error;
+
+  // Enrolled. The identity stands whatever routing does.
+  if (identityVerified === true) {
+    chip.className = "w-chip ok";
+    chip.textContent = "VERIFIED";
+    chip.title = "This address resolves as a Whisper endpoint via keyless RDAP verify-identity.";
+  } else {
+    chip.className = "w-chip accent";
+    chip.textContent = "ENROLLED";
+    chip.title =
+      identityVerified === false ? "Identity reserved; public verification pending." : "Identity reserved.";
+  }
+  identityDetail(s);
+
+  if (s.on) {
+    // The WebRTC half is stated either way. Chromium lets an extension pin
+    // the handling policy, so the claim "everything sources from the /128"
+    // is true there; Firefox exposes no such control, and a limit we cannot
+    // close is one we say out loud rather than leave the reader to assume.
+    const webrtc =
+      s.webrtcHardened === true
+        ? " WebRTC is hardened to proxied-only."
+        : " WebRTC cannot be pinned on this browser, so a peer connection can still reveal a local address.";
+    routeLine("on", "Protected.", `Every window in this profile leaves from this address.${webrtc}`);
+    btn.className = "w-btn small";
+    btn.textContent = "Turn routing off";
+    btn.onclick = unprotectThisBrowser;
+    setIdentityNote(s.error);
+    return;
+  }
+
+  btn.className = "w-btn primary";
+  btn.onclick = protectThisBrowser;
+  if (s.controlledByOther) {
+    // Named, not a bare "cannot": the identity is real, the verdicts still
+    // run, and the one thing that would let routing engage is spelled out.
+    routeLine(
+      "blocked",
+      "Not routed.",
+      "Another extension (a VPN or proxy manager) holds this browser's proxy setting. Your identity and site verdicts keep working. Turn that extension's proxy control off, then try again.",
+    );
+    btn.textContent = "Try again";
+    if (!IS_FIREFOX) {
+      fix.hidden = false;
+      fix.textContent = "Open the extensions page";
+      fix.onclick = () => {
+        chrome.tabs.create({ url: "chrome://extensions" }).catch(() => undefined);
+      };
     }
+    setIdentityNote(null);
+    return;
+  }
+  if (s.error) {
+    routeLine("blocked", "Not routed.", asSentence(s.error));
+    btn.textContent = "Turn routing on";
+    setIdentityNote(null);
+    return;
+  }
+  routeLine("off", "Identity reserved.", "This browser holds its address but does not route through it yet.");
+  btn.textContent = "Turn routing on";
+  setIdentityNote(null);
+}
+
+function setIdentityNote(text: string | null): void {
+  const note = $("identity-note");
+  note.hidden = text === null;
+  note.textContent = text ?? "";
+}
+
+/** Render a status, then upgrade the chip when keyless RDAP confirms it. */
+async function applyEgress(s: EgressStatus): Promise<void> {
+  renderIdentity(s);
+  if (!s.enrolled || !s.address) return;
+  const v = await send<{ ok: true; verification: IdentityVerification | null }>({
+    kind: "verifyIdentity",
+    ip: s.address,
   });
+  if (!v.ok || !v.verification) return;
+  identityVerified = v.verification.isWhisperAgent;
+  renderIdentity(s.fqdn ? s : { ...s, fqdn: v.verification.fqdn });
+}
+
+/**
+ * How long to wait for the browser's answer to the permission prompt before
+ * saying, honestly, that we do not have one.
+ *
+ * The request promise cannot be trusted to settle. On a real toolbar popup
+ * the prompt takes the focus and closes this page while the dialog is still
+ * up; in a headless browser the dialog never appears and the promise stays
+ * pending forever (measured, not assumed). So the browser's own permission
+ * STATE is polled alongside the promise, and whichever answers first wins.
+ */
+const ROUTING_PERMISSION_WAIT_MS = 12_000;
+const ROUTING_PERMISSION_POLL_MS = 400;
+
+async function routingPermissionAnswer(request: Promise<boolean>): Promise<boolean> {
+  const want = routingPermissions();
+  let settled: boolean | null = null;
+  void request.then(
+    (granted) => {
+      settled = granted;
+    },
+    () => {
+      settled = false;
+    },
+  );
+  const deadline = Date.now() + ROUTING_PERMISSION_WAIT_MS;
+  for (;;) {
+    // Already held is the common case on every click after the first, and it
+    // answers with no wait at all.
+    if (await ext.permissions.contains(want).catch(() => false)) return true;
+    if (settled !== null) return settled;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, ROUTING_PERMISSION_POLL_MS));
+  }
+}
+
+/**
+ * THE one control: reserve the identity AND route through it.
+ *
+ * Ordering is the whole design here.
+ *
+ *   - The permission request is the FIRST thing on the gesture. An await in
+ *     front of it and the browser drops the request as un-gestured.
+ *   - The identity is reserved by the BACKGROUND, and nothing waits on the
+ *     permission first. That call outlives this page, needs no permission of
+ *     any kind, and must not be downstream of a promise that may never
+ *     settle: a reader who refuses the prompt, or whose popup the prompt
+ *     closed, still ends up with the address they asked for.
+ *   - Routing comes last and is allowed to fail. When it does, the status
+ *     that comes back names what is in the way, and the panel shows it.
+ *
+ * Nothing here hands the reader to another page to finish the job.
+ */
+function protectThisBrowser(): void {
+  let request: Promise<boolean>;
+  try {
+    request = Promise.resolve(chrome.permissions.request(routingPermissions()));
+  } catch {
+    // Some engines throw for a set they will not offer rather than resolving
+    // false. Either way the identity half below still runs.
+    request = Promise.resolve(false);
+  }
+  const btn = $<HTMLButtonElement>("btn-protect");
+  btn.disabled = true;
+  btn.textContent = "Working...";
+  $("btn-route-fix").hidden = true;
+  setIdentityNote("Reserving this browser's identity. A few seconds.");
+  void runProtect(request);
+}
+
+async function runProtect(request: Promise<boolean>): Promise<void> {
+  const enrolled = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({
+    kind: "enroll",
+  });
+  if (!enrolled.ok) {
+    renderIdentity(await currentEgress());
+    setIdentityNote(enrolled.error);
+    return;
+  }
+  // The identity is real from here on. Show it before routing is even tried,
+  // so what the reader gets is never contingent on what happens next.
+  identityVerified = enrolled.enrollment.verification?.isWhisperAgent ?? null;
+  renderIdentity(await currentEgress());
+  const btn = $<HTMLButtonElement>("btn-protect");
+  btn.disabled = true;
+  btn.textContent = "Working...";
+  setIdentityNote("Identity reserved. Waiting for the browser's permission before routing.");
+
+  // The answer is waited for, not read: enabling re-checks the permission
+  // itself and reports the honest reason when it is missing, so there is one
+  // place that decides whether routing may engage rather than two that can
+  // disagree. All this wait buys is not asking before the reader answered.
+  await routingPermissionAnswer(request);
+  const res = await send<{ ok: true; egress: EgressStatus } | { ok: false; error: string }>({
+    kind: "egressEnable",
+  });
+  if (!res.ok) {
+    renderIdentity(await currentEgress());
+    setIdentityNote(res.error);
+    return;
+  }
+  await applyEgress(res.egress);
+}
+
+function unprotectThisBrowser(): void {
+  const btn = $<HTMLButtonElement>("btn-protect");
+  btn.disabled = true;
+  btn.textContent = "Turning off...";
+  void send<{ ok: true; egress: EgressStatus }>({ kind: "egressDisable" }).then(async (res) => {
+    if (res.ok) await applyEgress(res.egress);
+  });
+}
+
+async function currentEgress(): Promise<EgressStatus> {
+  const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
+  if (res.ok) return res.egress;
+  return {
+    on: false,
+    enrolled: false,
+    agent: null,
+    address: null,
+    label: null,
+    fqdn: null,
+    rdapUrl: null,
+    controlledByOther: false,
+    webrtcHardened: null,
+    error: null,
+  };
+}
+
+async function loadIdentity(): Promise<void> {
+  const s = await currentEgress();
+  $("identity-card").hidden = false;
+  await applyEgress(s);
 }
 
 // ----------------------------------------------------------- link sweep
+
+function chipClsForBand(band: string): string {
+  const b = band.toUpperCase();
+  if (b === "CRITICAL") return "crit";
+  if (b === "HIGH") return "high";
+  if (b === "MEDIUM") return "med";
+  if (b === "UNKNOWN") return "unknown";
+  return "ok";
+}
 
 function linkRow(host: string, band: string, links: number): HTMLElement {
   const row = document.createElement("div");
@@ -479,8 +798,9 @@ function renderLinkScan(scan: LinkScanResult): void {
   const risky = scan.hosts.filter((h) => h.band !== "NONE" && h.band !== "LOW" && h.band !== "INFO");
   const rows = risky.length > 0 && scan.hosts.length > 24 ? risky : scan.hosts;
   list.replaceChildren(...rows.slice(0, 80).map((h) => linkRow(h.host, h.band, h.links)));
-  $("linkscan-note").textContent =
-    "Only the link hostnames were checked, never the page, its text, or your history.";
+  const note = $("linkscan-note");
+  note.hidden = false;
+  note.textContent = "Only the link hostnames were checked, never the page, its text, or your history.";
 }
 
 // When the reader was blocked (the popup opened without host access to this
@@ -550,10 +870,10 @@ function wireLinkScan(): void {
   });
 }
 
-// ------------------------------------------------------------ daily wins
+// ------------------------------------------------------------- activity
 
 // One label per category, in both numbers: a tally that reads "1 risky
-// clicks" is a small lie about its own arithmetic, and this card is the
+// clicks" is a small lie about its own arithmetic, and this line is the
 // one place the count is ever shown.
 const WIN_LABEL: Record<WinCategory, { one: string; many: string }> = {
   preemptBlock: {
@@ -565,16 +885,16 @@ const WIN_LABEL: Record<WinCategory, { one: string; many: string }> = {
 };
 
 /**
- * The calm "today" card: one hero number, a small per-category
- * breakdown. Counted as categories only, never which sites, and shown
- * only here, on the user's own click; silent and ambient outcomes never
- * toast (the escalation ladder keeps the win moment silent).
+ * What Guard did today. Counted as categories only, never which sites, and
+ * shown only here, on the reader's own click. A zero gets a sentence rather
+ * than a number: a big 0 on a card is a stat about nothing.
  */
 async function loadToday(): Promise<void> {
   const res = await send<{ ok: true; wins: WinsToday }>({ kind: "getWins" });
   if (!res.ok) return;
   const w = res.wins;
   $("today-hero").textContent = String(w.total);
+  $("today-row").hidden = w.total === 0;
   const rows: HTMLElement[] = [];
   for (const c of WIN_CATEGORIES) {
     const n = w.counts[c];
@@ -588,34 +908,30 @@ async function loadToday(): Promise<void> {
   $("today-note").textContent =
     w.total === 0
       ? "Nothing needed your attention today; checks ran on every site."
-      : "Counted by category only, never which sites. The raw verdict for any site is right here.";
+      : "Counted by category only, never which sites.";
 }
 
-async function loadMiniDash(): Promise<void> {
+/** The last 24h in one line. The only number worth a reader's attention is
+ *  the flagged one, so that is the only one that gets emphasis. */
+async function loadBrowser24h(): Promise<void> {
   const res = await send<{ ok: true; report: BrowserReport }>({ kind: "getBrowserReport", limit: 200 });
   if (!res.ok) return;
   const t = res.report.totals;
-  const tiles: { n: number; l: string; hot?: boolean }[] = [
-    { n: t.destinations, l: "Destinations" },
-    { n: t.companies, l: "Companies" },
-    { n: t.countries, l: "Countries" },
-    { n: t.flagged, l: "Flagged", hot: t.flagged > 0 },
-  ];
-  $("mini-tiles").replaceChildren(
-    ...tiles.map((tile) => {
-      const box = document.createElement("div");
-      box.className = "mini-tile";
-      const n = document.createElement("div");
-      n.className = `n${tile.hot ? " hot" : ""}`;
-      n.textContent = String(tile.n);
-      const l = document.createElement("div");
-      l.className = "l";
-      l.textContent = tile.l;
-      box.append(n, l);
-      return box;
-    }),
-  );
+  const el = $("browser-24h");
+  if (t.destinations === 0) {
+    el.className = "w-note";
+    el.textContent = "No destinations recorded in this browser yet.";
+    return;
+  }
+  const d = `${t.destinations} destination${t.destinations === 1 ? "" : "s"}`;
+  el.className = t.flagged > 0 ? "w-note hot" : "w-note";
+  el.textContent =
+    t.flagged > 0
+      ? `${t.flagged} of ${d} flagged in the last 24h.`
+      : `${d} in the last 24h, none flagged.`;
 }
+
+// ---------------------------------------------------------- sign-in tier
 
 async function pollDeviceFlow(): Promise<void> {
   const el = $("device-status");
@@ -649,24 +965,23 @@ function wireSignin(): void {
   });
 }
 
+// ---------------------------------------------------------------- render
+
 function render(): void {
   if (!state) return;
   const s = state;
   const cloudCheck = settings?.cloudCheck ?? true;
 
-  $("signin-dot").classList.toggle("on", s.signedIn);
-  $("signin-dot").title = s.signedIn ? "signed in" : "not signed in";
-
-  void loadMiniDash();
   void loadToday();
+  void loadBrowser24h();
   $("btn-dashboard").addEventListener("click", () => {
     void send({ kind: "openDashboard" }).then(() => window.close());
   });
 
-  // Enrollment is front and center on every page, signed in or not:
-  // keyed users see their browser's identity (or the one-click enroll),
-  // keyless users see what signing in unlocks. Two tiers, both honest.
-  if (s.signedIn) void loadIdentityCard();
+  // This browser's protection is on every page, signed in or not: keyed
+  // readers get the one control, keyless readers get the one thing that
+  // unlocks it. Two tiers, both honest, one action either way.
+  if (s.signedIn) void loadIdentity();
   else wireSignin();
 
   // a session block must be discoverably clearable - list the hosts
@@ -705,13 +1020,8 @@ function render(): void {
     glyph.textContent = ui.glyph;
     chip.className = `w-chip ${ui.chipCls}`;
     chip.textContent = ui.chip;
-    note.textContent = s.verdict?.label ? `${ui.note} ${s.verdict.label}` : ui.note;
-    const cov = s.verdict?.coverage;
-    if (cov) {
-      const covChip = $("coverage-chip");
-      covChip.hidden = false;
-      covChip.textContent = `coverage: ${cov} (not a safety score)`;
-    }
+    note.textContent = verdictSentence(band, s.verdict?.label ?? null);
+    if (renderCoverage(s.verdict?.coverage ?? null)) $("protect-card").hidden = false;
     void loadProtection(host);
   } else if (cloudCheck) {
     glyph.className = "glyph unknown";
@@ -722,7 +1032,10 @@ function render(): void {
     void loadProtection(host);
   } else {
     glyph.className = "glyph signedout";
-    glyph.textContent = "⚿";
+    // A plain ring: no reading was taken. U+26BF has no glyph in a good many
+    // system font stacks and falls back to a tofu box, which reads as a
+    // rendering fault rather than a state.
+    glyph.textContent = "○";
     chip.className = "w-chip unknown";
     chip.textContent = "LIVE CHECK OFF";
     note.textContent = "On-device protection only. Turn the live check back on in settings.";
@@ -763,7 +1076,7 @@ function render(): void {
 
   if (s.graphError) {
     $("graph-error").hidden = false;
-    $("graph-error").textContent = `${s.graphError} Retry from the circular arrow below.`;
+    $("graph-error").textContent = `${s.graphError} Re-check with the arrow at the top.`;
   }
 
   // The analyst drawers ride the public tier: available keyless and keyed.
@@ -794,6 +1107,7 @@ function render(): void {
   }
 
   if (s.signedIn) {
+    $("footer-actions").hidden = false;
     $("btn-console").hidden = false;
     $("btn-console").addEventListener("click", () => {
       chrome.tabs.create({ url: "https://console.whisper.security" });

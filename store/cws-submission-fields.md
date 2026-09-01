@@ -34,7 +34,7 @@ Privacy is the product:
 - The bare hostname goes to exactly one endpoint to answer the safety check and is not retained to build a browsing profile. One switch turns the live check off, after which only the on-device detector runs and nothing leaves at all.
 - No telemetry, no analytics, no sync. Open source (MIT).
 
-Whisper also holds a click before it lands: following a link to another site, or submitting a form off-origin, pauses just long enough to check that destination's name, and an evidenced-malicious destination gets an inline panel with the verdict, the receipts, and both exits. The destination is never contacted and nothing you typed leaves the page. If Whisper is slow or unreachable the click simply proceeds. A calm card in the popup counts what was handled for you today, by category only, never which sites, and there is no toast or notification anywhere.
+Whisper also holds a click before it lands: following a link to another site, or submitting a form off-origin, pauses just long enough to check that destination's name, and an evidenced-malicious destination gets an inline panel with the verdict, the receipts, and both exits. The destination is never contacted and nothing you typed leaves the page. If Whisper is slow or unreachable the click simply proceeds. A calm line in the panel counts what was handled for you today, by category only, never which sites, and there is no toast or notification anywhere.
 
 Optional Active Shield adds a full-page stop before known credential-phishing pages, a caution when a password field gains focus on a flagged site, and an amber banner on look-alikes. It asks for the browser's own on-page permission only when you turn it on, and declining it keeps everything else working.
 

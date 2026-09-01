@@ -51,7 +51,7 @@ or submitting a form off-origin, pauses just long enough to check that
 destination's name, and an evidenced-malicious destination gets an inline
 panel with the verdict, the receipts, and both exits. The destination is never
 contacted and nothing you typed leaves the page. If Whisper is slow or
-unreachable the click simply proceeds. A calm card in the popup counts what
+unreachable the click simply proceeds. A calm line in the panel counts what
 was handled for you today, by category only, never which sites, and there is
 no toast or notification anywhere.
 
