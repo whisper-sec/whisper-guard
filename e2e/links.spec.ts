@@ -97,9 +97,24 @@ test("re-checking rides the verdict cache: no duplicate assess for the same host
   await popup.locator("#btn-linkscan").click();
   await expect(popup.locator("#linkscan-summary")).toContainText("destination", { timeout: 15_000 });
 
+  // Scoped to the LINK DESTINATIONS on purpose. Counting every assess call
+  // would fold in the one the page visit itself makes, which happens whether
+  // the sweep asked the graph anything or not, so the control below would hold
+  // on traffic that has nothing to do with the sweep.
   const assessCalls = (): number =>
-    net.requestsTo(GRAPH_READ_HOST).filter((r) => r.body.includes("whisper.assess")).length;
+    net
+      .requestsTo(GRAPH_READ_HOST)
+      .filter(
+        (r) =>
+          r.body.includes("whisper.assess") &&
+          (r.body.includes("evil-linked.com") || r.body.includes("good-linked.com")),
+      ).length;
   const before = assessCalls();
+  // CONTROL: the first sweep must have ASSESSED the destinations, or "the count
+  // did not change" is a statement about two zeroes and the cache, which is the
+  // whole subject here, is not what the second click proved.
+  expect(before, "the first sweep must have assessed the link destinations, or the invariance below is trivial")
+    .toBeGreaterThan(0);
   await popup.locator("#btn-linkscan").click();
   await expect(popup.locator("#linkscan-summary")).toContainText("destination");
   // All three destinations were cached by the first sweep.

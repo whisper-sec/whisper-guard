@@ -232,6 +232,13 @@ test("endpoint governor: preset, rule and country block write op:policy and rend
   // render from the engine's read-back, not from the click.
   await dash.locator(".preset-card", { hasText: "Standard" }).click();
   await expect(dash.locator("#g-status")).toContainText("applied", { timeout: 15_000 });
+  // CONTROL: each hasText filter must resolve to exactly ONE bundle row. A
+  // renamed or removed bundle makes the filter match nothing, and a negated
+  // state matcher on nothing is satisfied for free, so the not.toBeChecked
+  // below would keep passing over a control that no longer exists.
+  for (const label of ["Threat & sanctions", "Bulletproof", "Brand-new domains"]) {
+    await expect(dash.locator(".bundle", { hasText: label }), `one bundle row named ${label}`).toHaveCount(1);
+  }
   await expect(dash.locator(".bundle", { hasText: "Threat & sanctions" }).locator("input")).toBeChecked();
   await expect(dash.locator(".bundle", { hasText: "Bulletproof" }).locator("input")).toBeChecked();
   await expect(dash.locator(".bundle", { hasText: "Brand-new domains" }).locator("input")).not.toBeChecked();

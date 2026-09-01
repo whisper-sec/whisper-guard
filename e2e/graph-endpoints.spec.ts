@@ -254,12 +254,25 @@ test("no file names a graph host in a literal, or a credential prefix at all", (
   const here = dirname(fileURLToPath(import.meta.url));
   const root = resolve(here, "..");
 
-  const walk = (dir: string, out: string[] = []): string[] => {
+  // Generated trees and the git database, by name. This used to skip every
+  // dot-entry, which took .git and node_modules out (right) and .github out
+  // with them (wrong): the two workflow YAMLs are as public as any other file
+  // and a key pasted into one is as leaked.
+  const SKIP_DIRS = new Set([
+    ".git",
+    "node_modules",
+    "dist",
+    "e2e-report",
+    "e2e-artifacts",
+    "test-results",
+    "web-ext-artifacts",
+  ]);
+  const walk = (dir: string, match: RegExp, out: string[] = []): string[] => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
-      if (e.name === "node_modules" || e.name === "dist" || e.name.startsWith(".")) continue;
+      if (SKIP_DIRS.has(e.name)) continue;
       const full = join(dir, e.name);
-      if (e.isDirectory()) walk(full, out);
-      else if (/\.(ts|tsx|mjs|js)$/.test(e.name)) out.push(full);
+      if (e.isDirectory()) walk(full, match, out);
+      else if (match.test(e.name)) out.push(full);
     }
     return out;
   };
@@ -285,11 +298,43 @@ test("no file names a graph host in a literal, or a credential prefix at all", (
     ].map((r) => resolve(root, r)),
   );
 
-  const files = walk(root);
+  // The HOST rule reads code only: its detector strips comments, and comment
+  // syntax is a property of code. The CREDENTIAL rule reads code AND the text
+  // formats a key actually gets pasted into. Its comment said "anywhere in a
+  // public repository" while its walk said .ts/.tsx/.mjs/.js, so every store
+  // listing, the README, SECURITY.md, both manifests, both workflow YAMLs and
+  // every HTML page went unscanned. A key lands in a README far more often
+  // than in a spec, and a rule whose stated scope and actual scope disagree is
+  // the same defect class the rule exists to catch.
+  const files = walk(root, /\.(ts|tsx|mjs|js)$/);
+  const textFiles = walk(root, /\.(md|ya?ml|json|html)$/);
+  const credFiles = [...files, ...textFiles];
+
   // CONTROL: the walk must actually reach the tree it is auditing, or an
   // empty result would read as a clean one.
   expect(files.length).toBeGreaterThan(30);
   expect(files).toContain(resolve(root, "src/shared/config.ts"));
+
+  // CONTROL for the widened half, and it is NOT a count: a count drifts and
+  // then gets lowered. These are the specific files that once went unscanned,
+  // named one by one, so dropping any format from the walk fails here rather
+  // than quietly shrinking the guard.
+  for (const rel of [
+    "README.md",
+    "SECURITY.md",
+    "store/chrome-web-store.md",
+    "store/firefox-amo.md",
+    "store/cws-submission-fields.md",
+    "manifests/manifest.chromium.json",
+    "manifests/manifest.firefox.json",
+    "package.json",
+    ".github/workflows/ci.yml",
+    ".github/workflows/dep-audit.yml",
+    "src/popup/popup.html",
+    "src/pages/dashboard.html",
+  ]) {
+    expect(textFiles, `the credential walk must reach ${rel}`).toContain(resolve(root, rel));
+  }
 
   // A comment may discuss a hostname; a literal must not be one. Stripping
   // the comment is therefore the whole detector, and it has to strip ONLY a
@@ -340,11 +385,12 @@ test("no file names a graph host in a literal, or a credential prefix at all", (
 
   const offenders: string[] = [];
   const credOffenders: string[] = [];
-  for (const f of files) {
+  for (const f of credFiles) {
     const text = readFileSync(f, "utf8");
+    const isCode = files.includes(f);
     text.split("\n").forEach((line, i) => {
       const where = `${f.slice(root.length + 1)}:${i + 1}: ${line.trim()}`;
-      if (!allowed.has(f) && namesAHost(line)) offenders.push(where);
+      if (isCode && !allowed.has(f) && namesAHost(line)) offenders.push(where);
       if (namesACredPrefix(line)) credOffenders.push(where);
     });
   }

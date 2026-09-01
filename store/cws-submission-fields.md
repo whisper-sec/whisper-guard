@@ -100,7 +100,17 @@ personal communications, location, user activity, or website content. The
 on-device destination log never leaves the device; page content is never read.
 Web history is ticked because the current site's hostname is transmitted to the
 server for the live safety verdict, and Google counts any off-device
-transmission as "collection".)
+transmission as "collection".
+
+"Website content" stays unticked even though the scripting justification above
+says Guard reads the <a href> hostnames of the page. A reviewer diffing this
+listing against itself lands exactly there, so to pre-empt it: Google's
+"Website content" category enumerates hyperlinks, and what LEAVES the device is
+never a hyperlink. The link sweep runs on the user's click, takes each
+link's hostname on the device and reduces it to the registrable domain (the
+bare hostname when no domain can be derived), and sends only those. That is the
+same shape as the current site's hostname already covered by Web history. No
+href, no path, no query, no anchor text and no page text is transmitted.)
 
 --- Certify all three ---
 [x] I do not sell or transfer user data to third parties, outside of the approved use cases

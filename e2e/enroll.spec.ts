@@ -69,9 +69,17 @@ test.describe("enroll without egress", () => {
     // traffic does not flow through the egress endpoint.
     await expect(dash.locator("#egress-toggle")).toHaveText("Turn on");
     net.clearEgressLog();
+    net.clearLog(); // so the control below counts THIS navigation only
     const page = await ext.context.newPage();
     await page.goto("https://example-enroll-only.com/", { waitUntil: "domcontentloaded" }).catch(() => undefined);
     await page.waitForTimeout(400);
+    // CONTROL: goto's rejection is swallowed on the line above, so a page that
+    // never loaded gives the same zero as one that loaded directly. Prove the
+    // traffic happened before reading that it did not take the egress route.
+    expect(
+      net.requestsTo("example-enroll-only.com").length,
+      "the page must actually have loaded, or a zero egress count proves nothing",
+    ).toBeGreaterThan(0);
     expect(net.egressConnects("example-enroll-only.com")).toBe(0);
     await page.close();
 
@@ -87,6 +95,10 @@ test.describe("enroll without egress", () => {
 
   test("enrolling twice never duplicates the identity", async () => {
     const before = net.endpoints.filter((e) => e.label.includes("This browser")).length;
+    // CONTROL: "enrolling twice never duplicates" is trivially true when
+    // nothing enrolled once. This test builds on the enrolment the previous
+    // one made, so pin that it is there.
+    expect(before, "the previous test must have enrolled the browser, or duplication is untested").toBe(1);
     const dash = await openDashboard(ext, "browser");
     // Already enrolled: the CTA yields to the identity detail.
     await expect(dash.locator("#identity-detail")).toContainText("This browser's identity", {
