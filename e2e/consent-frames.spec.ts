@@ -65,6 +65,19 @@ const FRAME_PATH = "/w-frame";
  * order of magnitude a real consent platform takes.
  */
 const LATE_FRAME_MS = 4000;
+// The floor, enforced rather than described. 1200ms was measured green with the
+// fix removed, so anything near it turns this file's last test back into a test
+// that cannot fail, silently. A module-scope throw fails the whole spec loudly
+// instead, which is the only way a reader finds out.
+const LATE_FRAME_FLOOR_MS = 3000;
+if (LATE_FRAME_MS < LATE_FRAME_FLOOR_MS) {
+  throw new Error(
+    `LATE_FRAME_MS is ${LATE_FRAME_MS}ms, below the ${LATE_FRAME_FLOOR_MS}ms floor. ` +
+      "Below roughly 1200ms the nav-time allFrames pass wins the race, the late-frame " +
+      "path is never exercised, and 'a wall in a frame injected AFTER load' passes with " +
+      "armConsentFrame removed. Measured, not guessed.",
+  );
+}
 
 /** Any injected Guard UI mounts on a max-z-index host element. */
 const OVERLAY = "div[style*='2147483647']";
@@ -355,24 +368,35 @@ test("the click guard is armed in the top frame and in NO other", async () => {
 });
 
 /*
- * An OUTCOME test, and deliberately not sold as a guard.
+ * This DOES discriminate. Saying so matters, because the comment that shipped
+ * here said the opposite and invited the next reader to delete the test.
  *
  * The mechanism it exercises in production is armConsentFrame, which arms a
- * frame that commits after the page did. Remove that function and this test
- * still passes, because in this harness something reaches the frame anyway and
- * I could not identify what inside a reasonable budget. A test that passes
- * either way is not a regression guard, and saying so is cheaper than letting
- * the next person trust it.
+ * frame that commits after the page did. The replaced note reported that the
+ * test passed with that function removed. It does not, and LATE_FRAME_MS's own
+ * doc block above says why: at 1200ms the nav-time allFrames pass won the race
+ * and the mutation came back green, so the delay was raised to 4000. That fix
+ * landed and the note describing life before it did not move.
  *
- * The guard for that mechanism is the LIVE probe, e2e/consent-live.spec.ts,
- * which does discriminate and was mutation-proven against the real web:
- * 13/13 sub-frames armed with the fix, 7/13 without it, and the six it loses
- * are exactly the CMP frames (sourcepoint.theguardian.com, sp-spiegel-de,
- * consent-cdn.zeit.de, cmp.heise.de).
+ * Re-measured. Pin the nav pipeline's
+ * `armConsentFrame(details.tabId, details.frameId)` call out of
+ * background/index.ts, rebuild, and this test fails for exactly the right
+ * reason:
  *
- * What this one is still worth: it is the only place that asserts the whole
- * user-visible outcome for a late wall, from the frame appearing to the click
- * landing to the win counting once.
+ *     Error: expect(received).toBe(expected)
+ *     Expected: 2
+ *     Received: 1
+ *     Timeout 15000ms exceeded while waiting on the predicate
+ *       .poll(async () => (await frameArming(tabId)).consent.length)
+ *
+ * Restore it and the whole file is 6 passed in 10.4s.
+ *
+ * The LIVE probe, e2e/consent-live.spec.ts, is still the proof against the real
+ * web rather than a mock: 13/13 sub-frames armed with the fix, 7/13 without it,
+ * and the six it loses are exactly the CMP frames (sourcepoint.theguardian.com,
+ * sp-spiegel-de, consent-cdn.zeit.de, cmp.heise.de). This one is also the only
+ * place that asserts the whole user-visible outcome for a late wall, from the
+ * frame appearing to the click landing to the win counting once.
  */
 test("a wall in a frame injected AFTER load is declined too", async () => {
   const { page, tabId } = await visit(ext, `https://${TOP_L}/`);
