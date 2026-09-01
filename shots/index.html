@@ -114,15 +114,22 @@
 
   <h2>Before you click, before you type</h2>
   <div class="grid">
-    <figure>
-      <img src="precheck-keyless.png" alt="Pre-click check window, keyless">
-      <figcaption><strong>Pre-click check, keyless.</strong> Right-click any link: the destination
-      is vetted before anything loads. The truly pre-autofill surface.</figcaption>
+    <figure class="wide">
+      <img src="preempt-interstitial.png" alt="The pre-emptive interstitial holding a click to an evidenced-malicious host">
+      <figcaption><strong>The click is held, not mourned.</strong> A link leaving for another
+      registrable domain (or a form posting off-origin) is caught in the capture phase and the
+      target hostname is vetted first. On evidenced malice the page stops and shows its receipts;
+      the target was never contacted. Only the bare hostname was checked, and no broad host
+      permission is needed: the guard arms wherever the browser already lets Guard run, including
+      the one tab you invoked it on.</figcaption>
     </figure>
     <figure>
-      <img src="precheck-keyed.png" alt="Pre-click check window, keyed">
-      <figcaption><strong>Pre-click check, signed in.</strong> The live band joins the on-device
-      verdict on the same surface.</figcaption>
+      <img src="precheck-keyless.png" alt="Pre-click check window, signed out">
+      <figcaption><strong>Pre-click check.</strong> Right-click any link: the destination is
+      vetted before anything loads. The truly pre-autofill surface. This one shot serves for
+      signed-out and signed-in alike, because the graph band on this surface is keyless: the
+      capture run takes it both ways and the two are byte-identical, so showing it twice would
+      be claiming a difference that is not there.</figcaption>
     </figure>
     <figure class="wide">
       <img src="warning.png" alt="Full-page warning">
@@ -138,6 +145,19 @@
       <img src="field-guard.png" alt="Password-field caution on a flagged site">
       <figcaption><strong>The password-field caution.</strong> Focusing a password field on a
       flagged site draws one plain warning next to the field.</figcaption>
+    </figure>
+  </div>
+
+  <h2>What it handled, quietly</h2>
+  <div class="grid">
+    <figure>
+      <img src="popup-today.png" alt="The popup showing the session block ledger and the handled-quietly-today card">
+      <figcaption><strong>Counted, never announced.</strong> Held clicks, verified identities and
+      declined cookie prompts land in one calm card in the popup, shown on your own click. There is
+      no toast anywhere: the extension holds no notifications permission at all. The record is a
+      category and a count, keyed by today's date, so it resets on its own and can never learn a
+      site you visited. Above it, the host whose click was just held, listed with a one-click
+      clear so a session block is never a dead end.</figcaption>
     </figure>
   </div>
 

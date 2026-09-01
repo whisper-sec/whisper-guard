@@ -46,10 +46,19 @@ Privacy is the product:
   off, after which only the on-device detector runs and nothing leaves at all.
 - No telemetry, no analytics, no sync. Open source (MIT).
 
+Whisper also holds a click before it lands: following a link to another site,
+or submitting a form off-origin, pauses just long enough to check that
+destination's name, and an evidenced-malicious destination gets an inline
+panel with the verdict, the receipts, and both exits. The destination is never
+contacted and nothing you typed leaves the page. If Whisper is slow or
+unreachable the click simply proceeds. A calm card in the popup counts what
+was handled for you today, by category only, never which sites, and there is
+no toast or notification anywhere.
+
 Optional Active Shield adds a full-page stop before known credential-phishing
-pages and a caution when a password field gains focus on a flagged site. It
-asks for the browser's own on-page permission only when you turn it on, and
-declining it keeps everything else working.
+pages, a caution when a password field gains focus on a flagged site, and an
+amber banner on look-alikes. It asks for the browser's own on-page permission
+only when you turn it on, and declining it keeps everything else working.
 
 If Whisper is unreachable the extension fails open: browsing is never blocked
 and the on-device protection keeps running.
@@ -71,6 +80,11 @@ Use the gallery in `shots/` (regenerate with
 4. `toolbar-states.png` (the six states)
 5. `warning.png` (the full-page stop)
 
+The gallery also captures `preempt-interstitial.png` (a click held before it
+lands) and `popup-today.png` (the session block ledger plus what Guard handled
+quietly today). The listing submits the five above; those two carry the
+pre-emptive story on the docs page instead.
+
 ## Privacy practices tab (the exact answers)
 
 - **Single purpose:** Warns the user before phishing and look-alike websites
@@ -83,22 +97,37 @@ Use the gallery in `shots/` (regenerate with
     query, and content are discarded at parse time.
   - `storage`: local settings, the local verdict cache, the on-device
     destination log, and the sign-in credential. Nothing is synced.
-  - `scripting`: draws the Active Shield warning banner and password-field
-    caution on flagged sites (after the Shield opt-in), and, on the user's
-    click, reads only the `<a href>` HOSTNAMES of the current page for the
-    pre-click link sweep. Page text, paths and queries are never read.
-  - `declarativeNetRequest`: to block navigation to known credential-phishing
-    sites before the request leaves the browser (Active Shield).
+  - `scripting`: injects Whisper's own on-page code (never remote code) for
+    three things: the capture-phase click/form-submit hold that checks a
+    destination HOSTNAME before the action lands and draws the inline warning
+    panel; the optional cookie-consent decline, which inspects the page locally
+    for a consent banner and clicks that banner's own reject control at most
+    once per document, and which runs in a page's sub-frames as well as its
+    top document because that is where most large publishers render the wall,
+    under the same rules everywhere (so a page carrying both a top-level
+    banner and a framed consent wall may see one click in each); and, after
+    the Shield opt-in, the amber banner and password-field caution on flagged
+    sites. It also reads, on the user's click, only the `<a href>` HOSTNAMES
+    of the current page for the pre-click link sweep. Page text, paths,
+    queries and form values are never read and never transmitted; every panel
+    renders in a closed shadow root.
+  - `declarativeNetRequest`: to block navigation to evidenced-malicious sites
+    before the request leaves the browser: the full-page stop under Active
+    Shield, and a session-scoped rule for a single host whose click was just
+    held, so the same destination cannot slip through in another tab. Every
+    session block is listed in the popup with a one-click clear.
   - `contextMenus`: the "Check this link with Whisper" right-click action.
   - `alarms`: the daily signed brand-corpus update check and the fleet
     activity poll (signed-in dashboard).
   - `activeTab`: to act on the current tab when the user clicks the toolbar
     action.
   - Host permissions (`graph.whisper.online`, `console.whisper.security`,
-    `get.whisper.online`, `rdap.whisper.online`): the safety check +
-    destination enrichment (hostname only), the sign-in flow, corpus updates,
-    and public identity verification of the user's own endpoints (IP literals
-    only), respectively. No other host is ever contacted.
+    `get.whisper.online`, `rdap.whisper.online`): the graph, carrying both the
+    safety check + destination enrichment (hostname only) and the signed-in
+    control plane (the user's own fleet, always keyed, never a browsing
+    hostname); then the sign-in flow, corpus updates, and public identity
+    verification of the user's own endpoints (IP literals only).
+    No other host is ever contacted.
   - `proxy` (REQUIRED), `webRequest`, `webRequestAuthProvider`, `privacy`
     (OPTIONAL): power "Protect this browser", which routes this browser through
     Whisper egress so it becomes an endpoint on the user's account. `proxy`
@@ -112,12 +141,15 @@ Use the gallery in `shots/` (regenerate with
     Active Shield (warnings), the pre-click link sweep (this-site access,
     requested per site), or the browser-egress route. The default install has
     no broad host access.
-- **Data usage:** Website content: NOT collected. Web history: NOT collected
-  (the hostname of the current site is transmitted to answer the user's
-  safety check and enrich the dashboard; it is not retained to build a
-  profile, and the on-device destination list never leaves the device).
-  Personally identifiable information, financial, health, authentication,
-  communications, location, user activity: NOT collected.
+- **Data usage:** Web history: COLLECTED, and it is the only category ticked.
+  Google counts transmitting the current site's hostname off the device as
+  collection even though we do not retain it to build a profile, so the
+  honest answer is yes. Nothing else is collected: not website content, not
+  personally identifiable information, financial, health, authentication,
+  communications, location, or user activity. The on-device destination log
+  never leaves the device and page content is never read. The exact wording
+  for the form is in `cws-submission-fields.md`, which is the source of
+  truth for the answers typed into the console.
 - **Remote code:** none (MV3, all code in the package).
 
 ## After upload

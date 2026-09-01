@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: this workflow only ever reads the tree and uploads a build
+# artifact, so it has no business holding the default write-capable token.
+permissions:
+  contents: read
+
 jobs:
   build-and-e2e:
     runs-on: ubuntu-latest

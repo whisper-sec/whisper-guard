@@ -6,7 +6,7 @@ Whisper Guard is a security product, and we treat reports about it seriously.
 
 | Version | Supported |
 |---------|-----------|
-| 2.1.x   | yes       |
+| 2.3.x   | yes       |
 
 The latest published release is always the supported one.
 
@@ -30,7 +30,7 @@ unless you prefer to stay anonymous.
 
 This policy covers the Whisper Guard extension in this repository. The
 extension's only network endpoints are the public Whisper graph
-(`graph.whisper.online`), the sign-in console
-(`console.whisper.security`), and the brand-corpus host
-(`get.whisper.online`); reports about those services are welcome here and we
-will route them to the right team.
+(`graph.whisper.online`), the sign-in console (`console.whisper.security`),
+the brand-corpus host (`get.whisper.online`), and the public endpoint-identity
+lookup (`rdap.whisper.online`); reports about those services are welcome here
+and we will route them to the right team.

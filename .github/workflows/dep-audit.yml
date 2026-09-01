@@ -2,20 +2,35 @@ name: dep-audit
 
 # Continuous dependency-vulnerability audit.
 #
-# Gate scope = what SHIPS. Whisper Guard has no runtime dependencies
-# (package.json "dependencies": {}); the published extension is a self-contained
+# Gate scope = what SHIPS. Whisper Guard has no runtime dependencies at all
+# (package.json declares no "dependencies" key, and no file under src/ imports
+# anything non-relative); the published extension is a self-contained
 # esbuild bundle of our own source plus a Public Suffix List snapshot, so the
-# artifact users install and the stores review carries ZERO npm advisories. The
-# only devDependency chain with open advisories is web-ext (Mozilla's own Firefox
-# build/lint tool) and its transitive deps (shell-quote, brace-expansion,
-# addons-linter, fx-runner, ...) - they run at build time on our own machines,
-# are never shipped, and web-ext has no patched release to move to.
+# artifact users install and the stores review carries ZERO npm advisories.
+#
+# THE ACCEPTED EXCEPTION, named exactly, because an exception record that names
+# the wrong packages is a stale record rather than an accepted one.
+#
+# Open advisories, all HIGH, all one chain, all dev-only:
+#
+#   web-ext 10.6.0  ->  addons-linter 10.10.0  ->  image-size 2.0.2
+#     GHSA-w3rx-r6r6-pgpr  ICNS parser: denial of service via an infinite loop
+#     GHSA-5p2g-fcmc-qvqq  JXL and HEIF parsers: denial of service via infinite loops
+#
+# There is NO patched image-size: 2.0.2 is the current `latest` on npm and both
+# advisories say patched-version none. npm's only offered remedy is a
+# semver-MAJOR downgrade to web-ext 5.5.0, which would break the AMO lint and
+# signing gate, so taking it would trade a real capability for a vulnerability
+# we do not ship. web-ext is Mozilla's own Firefox build/lint tool: it runs at
+# build time on our own machines and no byte of it reaches a user.
 #
 # So the BLOCKING gate audits shipped (production) deps only and must stay 0
 # HIGH/CRITICAL. A second, non-blocking step still surfaces the full tree
 # (incl. dev tooling) for visibility - nothing is hidden, but dev-only tooling
 # advisories do not block a release of an artifact that provably contains none
-# of them. Accepted 2026-07-26 as a documented dev-only exception.
+# of them. Reviewed 2026-09-01; supersedes the 2026-07-26 record, which named a
+# different chain (shell-quote, brace-expansion, fx-runner) that has since been
+# cleared. Revisit when image-size publishes a fix or addons-linter moves off it.
 on:
   pull_request:
   push:
@@ -39,6 +54,9 @@ jobs:
       # BLOCKING: the shipped extension tree must have 0 HIGH/CRITICAL.
       - name: Audit shipped dependencies (blocking)
         run: npm audit --omit=dev --audit-level=high
-      # Visibility: surface the full tree incl. dev tooling; never hidden, non-blocking.
+      # Visibility: surface the full tree incl. dev tooling; never hidden, and
+      # non-blocking via the native mechanism rather than `|| true`, which would
+      # swallow the exit code and hide a genuine failure of the step itself.
       - name: Audit full tree incl. dev tooling (informational)
-        run: npm audit --audit-level=high || true
+        continue-on-error: true
+        run: npm audit --audit-level=high

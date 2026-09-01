@@ -31,14 +31,33 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 - Build from source: `npm ci && npm run build`; the Firefox package is
   `dist/firefox`. Node 22, esbuild; the build is deterministic and
   self-checking.
-- The network endpoints are: `graph.whisper.online` (the safety check +
-  destination enrichment, hostname only), `console.whisper.security` (RFC 8628
+- The network endpoints are: `graph.whisper.online` (both graph arms on one
+  host: the safety check + destination enrichment, hostname only, the only
+  thing a browsing hostname ever reaches; and the signed-in control plane,
+  the user's own fleet roster, enrollment and egress, always keyed and never
+  carrying a browsing hostname), `console.whisper.security` (RFC 8628
   device-flow sign-in, no browsing data), `get.whisper.online` (signed
   brand-corpus updates, no browsing data), and `rdap.whisper.online` (public
   identity verification of the user's own endpoints, IP literals only, no
   browsing hostname). The e2e suite (`e2e/mocked.spec.ts`) proves the
   hostname-only invariant with a full network capture.
 - No remote code, no analytics, no external scripts. All assets are bundled.
+- There is NO declared content script. `content.js` is injected programmatically
+  with `scripting.executeScript`, and only where the browser's own permission
+  model already allows it: on every eligible page under the optional
+  `<all_urls>` Active Shield grant, and otherwise on the one tab the user
+  invoked the add-on on (activeTab, via opening the popup). It carries the
+  capture-phase click and form-submit hold that checks a destination HOSTNAME
+  before the action lands, the local cookie-consent decline (which clicks a
+  consent banner's own reject control, at most once per document, and which
+  runs in a page's sub-frames as well as its top document, because that is
+  where most large publishers render the wall, under the same rules
+  everywhere, so a page carrying both a top-level banner and a framed consent
+  wall may see one click in each), and, under Active Shield, the amber banner
+  and the password-field caution. Everything it draws lives in a closed
+  shadow root. The only things it ever hands the background are a bare
+  hostname and a win category; it never reads or transmits page text, paths,
+  queries, or form values.
 - `proxy` is an OPTIONAL permission, requested only on a user click when the
   user turns on "Protect this browser" (routes this browser through Whisper
   egress so it becomes a first-class endpoint on the user's account). It is off

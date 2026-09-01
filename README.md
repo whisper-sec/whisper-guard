@@ -45,6 +45,37 @@ history.
   ledger that updates live per navigation. Zero extra permissions.
 - **Pre-click check.** Right-click any link and pick "Check this link with
   Whisper" to vet the destination before anything loads.
+- **Pre-emptive interruption.** A click on a link leaving for a different
+  registrable domain, or a form posting off-origin, is caught in the capture
+  phase and held while the destination's hostname is checked. On evidenced
+  malice an inline panel shows the verdict, the label, the coverage and the two
+  exits (go back, or proceed anyway); the target is never contacted and nothing
+  you typed leaves the page. Everything else resumes untouched, and so does
+  every click if the graph is slow or unreachable: the check has a hard budget
+  and fails open. Cached verdicts answer with no network at all. It needs no
+  broad host permission and no account: it arms wherever the browser already
+  lets Guard run, which is every page once Active Shield is on and otherwise
+  the one tab you open Guard on.
+- **Cookie prompts declined for you.** Where the on-page layer runs (the same
+  places as the pre-emptive guard above), a consent banner is answered with its
+  own reject control so the page starts in its most private configuration. It
+  is deliberately timid: it acts only on a known consent platform's own reject
+  control, or on a decline-labelled button inside a banner that says
+  cookie/consent/GDPR outright and offers an accept next to it. Anything less
+  certain is left alone and the whole thing runs on-device: nothing about the
+  page is sent anywhere. It reads each frame's own DOM, including the iframes
+  where most large publishers keep their wall, under exactly the same rules
+  everywhere: a frame is a smaller document, not a laxer one. A consent wall
+  inside a shadow root is still out of reach and is left untouched rather than
+  guessed at. However many walls a page turns out to have, the tally counts
+  the page once, because that is what was handled for you. Off with one
+  switch.
+- **A calm tally of what it handled.** One card in the popup counts today's
+  quiet wins by category (clicks held, identities verified, cookie prompts
+  declined) and nothing else: the record is a category, a count and today's
+  date, so it resets on its own and can never learn a site you visited. There
+  is no toast, no badge nag and no notification anywhere, because the extension
+  holds no notifications permission at all.
 
 **Signed in (free, one tap, no API key to handle):**
 
@@ -75,7 +106,27 @@ history.
   draw warnings: a full-page stop before known credential-phishing pages (with
   the feed-cited receipts), a slim amber banner on look-alikes, and a caution
   when a password field gains focus on a flagged site. Decline it and everything
-  else still works.
+  else still works, pre-emptive interruption included: that layer is arranged so
+  the browser's own permission model decides where it runs, so it reaches every
+  page under this grant and, without it, the tab you invoked Guard on.
+
+## How loud Guard is allowed to get
+
+One table decides, for every surface: silent, ambient (the toolbar mark and a
+single badge pulse), pre-emptive (hold the action you are taking and show the
+receipts first), conversational (a dismissible word on the page), blocking (the
+full-page stop). Most of the table is silent, and the whole no-evidence row is
+silent, which is where the overwhelming majority of browsing lands. Guard
+escalates only when the finding is urgent, actionable, and you are the right
+person to act on it. De-noising is never hiding: the raw verdict is always one
+popup click away, whatever the table decided.
+
+The table has a column per moment, and the moments are genuinely different.
+Answering the page verdict answers the page: click through a known-threat
+warning and Guard does not re-block it, re-banner it, or ask again. Typing a
+password into that site is a different moment with a different stake, so the
+caution at the password field still appears, once, dismissible, never a block.
+A softer verdict you waved through stays fully silent.
 
 ## Honest scope
 
@@ -95,6 +146,12 @@ public identity verification all work with no key.
   signed in. Extraction happens at parse time; path, query, fragment, page
   content, and form data are discarded before any network code runs. Your
   on-device navigation list and session allow-list never leave the device.
+- The same host also carries the keyed control plane: your fleet roster,
+  enrollment and egress, always with your key and never with a browsing
+  hostname. Signed out, that half is never called at all. The two are separate
+  calls with separate rules, and the rules are properties of the request, not
+  of the hostname: a read is keyless-capable and carries a bare hostname, a
+  control call is always keyed and carries no browsing datum.
 - `console.whisper.security` is contacted only during sign-in (no browsing
   data). `get.whisper.online` is contacted only for signed brand-corpus
   updates (no browsing data). `rdap.whisper.online` is contacted only to verify
@@ -189,15 +246,22 @@ justifications, and reviewer notes live in [`store/`](store/).
 ```
 src/
   shared/      config, types, messages, the offline Public Suffix List,
-               and the hostname chokepoint (the one place URLs are parsed)
+               the hostname chokepoint (the one place URLs are parsed), and
+               the escalation ladder (the one place loudness is decided)
   detector/    the on-device engine: punycode decode, confusable skeleton,
                the bundled brand corpus, candidate generation
   background/  MV3 service worker: navigation pipeline, verdict cache,
                per-tab icon state, graph client (assess/explain/identify/
                submit), RFC 8628 device flow, context menu, corpus updater,
-               Active Shield (DNR rules + injection)
-  content/     the on-page guard, injected only on flagged hosts after the
-               Active Shield opt-in
+               Active Shield (DNR rules + injection), the pre-emptive target
+               check, and the local daily-wins tally
+  content/     the on-page layers, injected programmatically (there is no
+               declared content script) and only where the browser's own
+               permission model already allows it: the pre-emptive click and
+               form-submit guard plus the cookie-consent decline on any
+               eligible page, the amber banner and the password-field caution
+               only on flagged hosts and only after the Active Shield opt-in.
+               Everything is drawn inside closed shadow roots
   popup/       the click panel
   options/     settings, sign-in, privacy panel
   pages/       full-page warning + pre-click check result
@@ -206,10 +270,13 @@ icons/         pre-rendered PNG state sets (built from the brand mark in assets/
 ```
 
 Default permissions are deliberately minimal: `activeTab`, `webNavigation`,
-`storage`, `scripting`, `contextMenus`, `declarativeNetRequest`, `alarms`, and
-host access to the three Whisper endpoints above. There is no `<all_urls>`
-grant and no standing content script; broad host access exists only as the
-optional, revocable Active Shield permission, requested at runtime.
+`storage`, `scripting`, `contextMenus`, `declarativeNetRequest`, `alarms`,
+`proxy`, and host access to the four Whisper endpoints above. `proxy` is
+declared but inert: Chrome does not allow it to be optional, and Guard never
+touches the browser's proxy setting until you turn routing on (in Firefox it is
+genuinely optional and requested on that click). There is no `<all_urls>` grant
+and no standing content script; broad host access exists only as the optional,
+revocable Active Shield permission, requested at runtime.
 
 ## Browser support
 
