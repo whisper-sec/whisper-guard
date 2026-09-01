@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// Browser-as-endpoint (WB6), hermetic Chromium proof. This is the hard
+// Browser-as-endpoint, hermetic Chromium proof. This is the hard
 // e2e the design demands, not a structural pass: flip the toggle and prove
 //   (a) the browser is actually routed through the Whisper egress endpoint
 //       (its own registered identity), captured on the proxy;
@@ -19,10 +19,8 @@
 // routed-traffic assertion here is Chromium, where Playwright can drive it.
 
 import { test, expect } from "@playwright/test";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import { launchExtension, makeEgressDist, openDashboard, setKey, type Extension } from "./helpers/extension";
-
-const MOCK_KEY = "whisper_e2e_mock_key_0000000000000000";
 
 let net: E2ENetwork;
 let ext: Extension;

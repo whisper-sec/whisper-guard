@@ -11,11 +11,11 @@
 // page (shots/index.html) references these files.
 
 import { test, expect } from "@playwright/test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
   makeShieldDist,
@@ -32,7 +32,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SHOTS = resolve(HERE, "../shots");
 const ICONS = resolve(HERE, "../icons");
 
-const MOCK_KEY = "whisper_e2e_mock_key_0000000000000000";
 const LOOKALIKE = "paypa1-secure-login.com";
 
 let net: E2ENetwork;
@@ -211,8 +210,21 @@ test("pre-click check window, keyless and keyed", async () => {
   await w2.setViewportSize({ width: 420, height: 560 });
   await w2.goto(`chrome-extension://${ext.id}/check-link.html?host=${LOOKALIKE}`);
   await expect(w2.locator("#band-tag")).toHaveText("CRITICAL");
-  await w2.screenshot({ path: join(SHOTS, "precheck-keyed.png"), fullPage: true });
+  const keyed = await w2.screenshot({ fullPage: true });
   await w2.close();
+
+  // The gallery used to ship this twice, captioned "keyless" and "signed in,
+  // the live band joins the on-device verdict". The two files were always
+  // byte-identical, because the band on this surface is KEYLESS: signing in
+  // adds nothing here. That was a documented sample claiming a difference it
+  // never had. The gallery now shows one shot and says so, and this asserts
+  // the reason, so if the keyed view ever does diverge the caption goes red
+  // instead of quietly becoming true again.
+  const keyless = readFileSync(join(SHOTS, "precheck-keyless.png"));
+  expect(
+    Buffer.compare(keyed, keyless),
+    "the keyed pre-click view now differs from the keyless one; the gallery caption says they are identical and needs updating",
+  ).toBe(0);
 });
 
 test("full-page warning", async () => {
@@ -235,14 +247,29 @@ test("first-run", async () => {
 });
 
 test("settings (no key anywhere on screen)", async () => {
-  await setKey(ext, null);
   await setSettings(ext, { shield: false });
+
+  // The claim is that the options page never PUTS the credential on screen,
+  // so it has to be asserted while a credential exists. Clearing the key
+  // first and then asserting its absence proves nothing at all: there was
+  // nothing to render, and the assertion would survive the deletion of every
+  // masking guarantee in the page.
+  await setKey(ext, MOCK_KEY);
+  const keyed = await ext.context.newPage();
+  await keyed.goto(`chrome-extension://${ext.id}/options.html`);
+  // CONTROL: the signed-in branch really rendered, so "the key is absent" is
+  // a statement about a page that had one to show.
+  await expect(keyed.locator("#account-signedin")).toBeVisible({ timeout: 10_000 });
+  expect(await keyed.content()).not.toContain(MOCK_KEY);
+  await keyed.close();
+
+  // The shot itself is of the signed-out page, which is what a new user sees.
+  await setKey(ext, null);
   const page = await ext.context.newPage();
   await page.setViewportSize({ width: 900, height: 1100 });
   await page.goto(`chrome-extension://${ext.id}/options.html`);
   await page.waitForTimeout(300);
-  const content = await page.content();
-  expect(content).not.toContain(MOCK_KEY);
+  expect(await page.content()).not.toContain(MOCK_KEY);
   await page.screenshot({ path: join(SHOTS, "settings.png"), fullPage: true });
   await page.close();
 });
@@ -280,7 +307,11 @@ test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () =
   await ep.setViewportSize({ width: 1180, height: 1600 });
   await expect(ep.locator("#e-address")).not.toBeEmpty({ timeout: 15_000 });
   // Open a destination's receipts (co-hosting from the graph) for the shot.
-  await ep.locator("#e-hosts .w-ledger-row", { hasText: LOOKALIKE }).first().click().catch(() => undefined);
+  // No swallowed failure here: this capture becomes a published figure, so a
+  // click that silently missed would ship a screenshot without the receipts
+  // panel and nothing would go red. Assert the panel actually filled.
+  await ep.locator("#e-hosts .w-ledger-row", { hasText: LOOKALIKE }).first().click();
+  await expect(ep.locator("#e-drill-body")).toContainText("Co-hosted", { timeout: 15_000 });
   await ep.waitForTimeout(800);
   await ep.screenshot({ path: join(SHOTS, "dashboard-endpoint.png"), fullPage: true });
   await ep.close();
@@ -323,4 +354,114 @@ test("on-page amber banner and password-field caution (Active Shield)", async ()
   await page.screenshot({ path: join(SHOTS, "field-guard.png") });
   await page.close();
   await setSettings(ext, { shield: false });
+});
+
+test("pre-emptive interruption: the inline interstitial that holds a click", async () => {
+  // The flagship of E4: a real capture of a real held click. The page is
+  // served by the hermetic mock, the target verdict comes from the mock
+  // graph, and the overlay in the shot is the extension's own closed
+  // shadow root - nothing here is drawn for the camera.
+  await setKey(ext, null);
+  await setSettings(ext, { shield: true, cloudCheck: true });
+  const HOST = "daily-reading-example.com";
+  net.setVerdict(HOST, { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.setPage(
+    HOST,
+    `<!doctype html>
+<html><head><title>${HOST}</title><meta charset="utf-8"></head>
+<body style="margin:0;font:16px/1.6 system-ui,sans-serif;background:#FAFAF9;color:#1C1917">
+  <div style="max-width:640px;margin:56px auto;padding:0 24px">
+    <p style="color:#78716C;font-size:13px;letter-spacing:.08em;text-transform:uppercase">Inbox</p>
+    <h1 style="font-size:26px;margin:.2em 0 .6em">Your parcel could not be delivered</h1>
+    <p>We tried to deliver your parcel today and could not reach you. Confirm
+    your address and the redelivery fee to release the shipment.</p>
+    <p style="margin:28px 0">
+      <a id="lure" href="https://${LOOKALIKE}/redelivery/confirm?ref=8812"
+         style="background:#0F766E;color:#fff;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:600">
+        Confirm my address</a>
+    </p>
+  </div>
+</body></html>`,
+  );
+  const { page, tabId } = await visit(ext, `https://${HOST}/`);
+  await waitForIcon(ext, tabId, ["benign"]);
+  await page.setViewportSize({ width: 1100, height: 620 });
+  net.clearLog();
+  await page.click("#lure");
+  await expect
+    .poll(async () => page.locator("div[style*='2147483647']").count(), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+  // Held: the tab never moved and the target was never contacted.
+  expect(page.url()).toBe(`https://${HOST}/`);
+  expect(net.requestsTo(LOOKALIKE).filter((r) => r.scheme === "https")).toHaveLength(0);
+  await page.screenshot({ path: join(SHOTS, "preempt-interstitial.png") });
+  await page.keyboard.press("Escape");
+  await page.close();
+  await setSettings(ext, { shield: false });
+});
+
+test("cookie-consent auto-decline on a real-shaped banner", async () => {
+  // The second half of the "handled quietly today" card, earned the same
+  // way as the first: a real banner, really declined by the content module,
+  // no seeded record. The page is served by the hermetic mock and the click
+  // is the module's own - nothing here is staged for the camera.
+  await setKey(ext, null);
+  await setSettings(ext, { shield: true, cookieDecline: true, cloudCheck: true });
+  const HOST = "recipes-weekly-example.com";
+  net.setVerdict(HOST, { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.setPage(
+    HOST,
+    `<!doctype html>
+<html><head><title>${HOST}</title><meta charset="utf-8"></head>
+<body style="margin:0;font:16px/1.6 system-ui,sans-serif;background:#FAFAF9;color:#1C1917">
+  <div style="max-width:640px;margin:56px auto;padding:0 24px">
+    <h1 style="font-size:26px;margin:.2em 0 .6em">Sunday bread, four ways</h1>
+    <p>A slow ferment, a hot oven, and not much else.</p>
+  </div>
+  <div id="cookie-bar" role="dialog" aria-label="Cookie notice"
+       style="position:fixed;bottom:0;left:0;right:0;background:#292524;color:#F5F5F4;padding:16px 24px;display:flex;gap:12px;align-items:center">
+    <span style="flex:1">We use cookies and similar technologies for analytics and advertising.</span>
+    <button id="c-manage">Manage preferences</button>
+    <button id="c-accept">Accept all</button>
+    <button id="c-reject">Reject all</button>
+  </div>
+  <script>
+    document.getElementById("c-reject").addEventListener("click", () => {
+      document.getElementById("cookie-bar").remove();
+    });
+  </script>
+</body></html>`,
+  );
+  const { page, tabId } = await visit(ext, `https://${HOST}/`);
+  await waitForIcon(ext, tabId, ["benign"]);
+  // CONTROL: the fixture really is the banner page. Without this, a page that
+  // fell through to the default mock HTML has no #cookie-bar either, and
+  // "the banner is gone" would be true of a banner that never existed.
+  await expect(page.locator("h1")).toContainText("Sunday bread");
+  // The module clicked the site's own reject control, so the banner is gone.
+  await expect(page.locator("#cookie-bar")).toHaveCount(0, { timeout: 15_000 });
+  await page.close();
+  await setSettings(ext, { shield: false });
+});
+
+test("popup: the calm 'handled quietly today' card, with the counts that interrupt earned", async () => {
+  // Counts come from the two captures above - the held click (preemptBlock)
+  // and the declined banner (cookieDecline). Real wins from real protection,
+  // not a seeded record.
+  await setKey(ext, null);
+  const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  const popup = await openPopup(ext, tabId);
+  await popup.setViewportSize({ width: 380, height: 650 });
+  // Pinned to the exact number, not merely "not 0". A negated matcher is
+  // satisfied by a missing element, so not.toHaveText("0") would survive the
+  // hero being deleted outright, and this caption quotes that number.
+  await expect(popup.locator("#today-hero")).toHaveText("2");
+  // Both categories are in the shot, so the caption the docs page carries
+  // ("a risky click held and a cookie prompt declined") is what is on screen.
+  await expect(popup.locator("#today-breakdown")).toContainText("risky click stopped");
+  await expect(popup.locator("#today-breakdown")).toContainText("cookie prompt declined");
+  await popup.screenshot({ path: join(SHOTS, "popup-today.png"), fullPage: true });
+  await popup.close();
+  await page.close();
 });

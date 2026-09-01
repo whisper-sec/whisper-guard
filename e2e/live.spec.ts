@@ -129,7 +129,7 @@ test.describe("live graph, real key", () => {
     evidence(``);
     evidence(`- run: ${new Date().toISOString()}`);
     evidence(`- key: whisper-****************************************************(redacted)`);
-    evidence(`- graph endpoint: graph.whisper.online (production)`);
+    evidence(`- graph endpoint: graph.whisper.online (production reads)`);
     evidence(`- evidenced-malicious host under test: ${badHost} (DNS pinned to a local harmless page; verdict is the real graph's)`);
     evidence(`- baseline assess row: ${JSON.stringify(badVerdict)}`);
   });

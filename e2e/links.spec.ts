@@ -13,7 +13,7 @@
 // (chrome.scripting.executeScript into the tab) is the real one either way.
 
 import { test, expect } from "@playwright/test";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, GRAPH_READ_HOST } from "./helpers/servers";
 import { launchExtension, makeShieldDist, openPopup, visit, waitForIcon, type Extension } from "./helpers/extension";
 
 let net: E2ENetwork;
@@ -72,7 +72,7 @@ test("one click verdicts every linked destination before any visit, keyless", as
   // THE PRIVACY INVARIANT, asserted on the capture proxy's complete log:
   // the graph saw registrable hostnames and nothing else of the page.
   const graphBodies = net
-    .requestsTo("graph.whisper.online")
+    .requestsTo(GRAPH_READ_HOST)
     .map((r) => r.body)
     .join("\n");
   expect(graphBodies).toContain("evil-linked.com");
@@ -98,7 +98,7 @@ test("re-checking rides the verdict cache: no duplicate assess for the same host
   await expect(popup.locator("#linkscan-summary")).toContainText("destination", { timeout: 15_000 });
 
   const assessCalls = (): number =>
-    net.requestsTo("graph.whisper.online").filter((r) => r.body.includes("whisper.assess")).length;
+    net.requestsTo(GRAPH_READ_HOST).filter((r) => r.body.includes("whisper.assess")).length;
   const before = assessCalls();
   await popup.locator("#btn-linkscan").click();
   await expect(popup.locator("#linkscan-summary")).toContainText("destination");

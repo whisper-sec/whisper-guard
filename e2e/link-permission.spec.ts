@@ -13,7 +13,7 @@
 // the real one under test.
 
 import { test, expect } from "@playwright/test";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, GRAPH_READ_HOST } from "./helpers/servers";
 import { launchExtension, openPopup, visit, waitForIcon, type Extension } from "./helpers/extension";
 
 let net: E2ENetwork;
@@ -51,6 +51,22 @@ test("link sweep without host access degrades to an honest 'allow this page', no
   await expect(popup.locator("#btn-linkscan")).toHaveText("Allow this page & check");
 
   // Nothing was navigated, and the privacy model held: no page content leaked.
+  //
+  // The leak this excludes would go to the GRAPH, not to the linked site.
+  // Nothing in the product ever fetches a link destination, and on this path
+  // the sweep never even ran, so counting requests to linked-a.com counts a
+  // quantity that is empty by construction and would stay empty with the
+  // whole permission guard deleted. The real assertion is that no link
+  // hostname reached the graph, carried by a log that is proven non-empty.
+  const graphReqs = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
+  // CONTROL: the navigation assess for the page itself IS on the wire, so an
+  // empty offender list below means "no link leaked", not "nothing recorded".
+  expect(graphReqs.length).toBeGreaterThan(0);
+  expect(graphReqs.some((r) => r.body.includes("fixture-noperm.com"))).toBe(true);
+  for (const r of graphReqs) {
+    expect(r.body).not.toContain("linked-a.com");
+    expect(r.body).not.toContain("linked-b.com");
+  }
   expect(net.requestsTo("linked-a.com").length).toBe(0);
 
   await popup.close();

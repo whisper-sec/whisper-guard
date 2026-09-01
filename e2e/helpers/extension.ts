@@ -40,6 +40,8 @@ export interface Extension {
   context: BrowserContext;
   sw: Worker;
   id: string;
+  /** The profile directory, for a same-profile relaunch (restart tests). */
+  userDataDir: string;
   close(): Promise<void>;
 }
 
@@ -50,6 +52,10 @@ export interface LaunchOptions {
   /** Additional unpacked extensions to load NEXT TO Whisper Guard (they
    *  install after it, so e.g. a proxy holder wins the proxy setting). */
   extraExtensions?: string[];
+  /** Reuse an existing profile (after close()): chrome.storage.local
+   *  persists, in-memory worker state does not: the deterministic way to
+   *  exercise a service-worker restart end to end. */
+  userDataDir?: string;
 }
 
 /**
@@ -58,7 +64,7 @@ export interface LaunchOptions {
  */
 export async function launchExtension(opts: LaunchOptions = {}): Promise<Extension> {
   const dist = opts.dist ?? DIST_CHROMIUM;
-  const userDataDir = mkdtempSync(join(tmpdir(), "whisper-guard-profile-"));
+  const userDataDir = opts.userDataDir ?? mkdtempSync(join(tmpdir(), "whisper-guard-profile-"));
   const allDists = [dist, ...(opts.extraExtensions ?? [])].join(",");
   const args = [
     `--disable-extensions-except=${allDists}`,
@@ -96,10 +102,48 @@ export async function launchExtension(opts: LaunchOptions = {}): Promise<Extensi
     if (isGuardSw(next)) sw = next;
   }
   const id = new URL(sw.url()).host;
+
+  // Settle the first-run page's live sample before handing the extension
+  // over. On install the background opens firstrun.html, which assesses one
+  // real host (github.com) to show a working verdict. That request is
+  // asynchronous and slow relative to test setup, so under load it lands
+  // AFTER a test's net.clearLog() and inside a window the test believes is
+  // its own. Every "exactly one graph request" and "reads[0] is mine"
+  // assertion in the suite is then measuring someone else's traffic.
+  //
+  // visit() already knows about this tab for tab-identification; its network
+  // is the same race one layer down. Waiting for the sample to finish is the
+  // fix, rather than teaching each assertion to ignore one hostname.
+  //
+  // The signal is the sample's own chip, which starts at "CHECKING" and is
+  // replaced on BOTH outcomes (a verdict or UNAVAILABLE), so this waits for
+  // the request to be finished rather than for it to have succeeded.
+  //
+  // Bounded and non-fatal: if a future build drops the first-run sample there
+  // is no such page and nothing to wait for, and a suite that then sees no
+  // stray request is correct anyway. What must not happen is waiting forever.
+  // The background opens that tab asynchronously, so look for it for a beat
+  // before deciding it is not coming.
+  let firstrun: Page | undefined;
+  const appearBy = Date.now() + 5_000;
+  while (Date.now() < appearBy) {
+    firstrun = context.pages().find((p) => p.url().includes("firstrun.html"));
+    if (firstrun) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (firstrun) {
+    await firstrun
+      .locator("#sample-chip")
+      .filter({ hasNotText: "CHECKING" })
+      .waitFor({ timeout: 15_000 })
+      .catch(() => undefined);
+  }
+
   return {
     context,
     sw,
     id,
+    userDataDir,
     close: async () => {
       await context.close();
     },
@@ -121,6 +165,44 @@ export function makeShieldDist(): string {
   manifest.host_permissions = [...manifest.host_permissions, "<all_urls>"];
   writeFileSync(mpath, JSON.stringify(manifest, null, 2));
   return dir;
+}
+
+/**
+ * A dist WITHOUT any broad grant but WITH a scoped host permission for
+ * the given hosts only: the faithful stand-in for an activeTab
+ * invocation, whose grant gesture (a real toolbar click) cannot be
+ * automated: activeTab is, mechanically, a temporary scoped host grant
+ * for the one invoked tab. <all_urls> is absent everywhere (the optional
+ * route is deleted too), so every code path under test is the
+ * no-broad-grant one: scripting succeeds ONLY on the named hosts, and
+ * anything DNR does for other hosts provably needs no host permission.
+ */
+export function makeScopedDist(hosts: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "whisper-guard-scoped-dist-"));
+  cpSync(DIST_CHROMIUM, dir, { recursive: true });
+  const mpath = join(dir, "manifest.json");
+  const manifest = JSON.parse(readFileSync(mpath, "utf8"));
+  manifest.host_permissions = [
+    ...manifest.host_permissions,
+    ...hosts.map((h) => `https://${h}/*`),
+  ];
+  delete manifest.optional_host_permissions;
+  writeFileSync(mpath, JSON.stringify(manifest, null, 2));
+  return dir;
+}
+
+/**
+ * A REAL background-service-worker restart, delivered the deterministic
+ * way: close the browser and relaunch it on the SAME profile with the
+ * SAME dist. chrome.storage.local persists on disk; every scrap of the
+ * old worker's in-memory state is gone, a strict superset of the MV3
+ * idle-eviction event. Returns the fresh Extension (new context, new
+ * worker, same extension id since the id derives from the dist path).
+ */
+export async function restartExtension(ext: Extension, opts: LaunchOptions): Promise<Extension> {
+  const profile = ext.userDataDir;
+  await ext.close();
+  return launchExtension({ ...opts, userDataDir: profile });
 }
 
 /**
@@ -269,7 +351,22 @@ export async function visit(ext: Extension, url: string): Promise<{ page: Page; 
   const before = new Set(await tabIds(ext));
   const page = await ext.context.newPage();
   const after = await tabIds(ext);
-  const created = after.filter((id) => !before.has(id));
+  let created = after.filter((id) => !before.has(id));
+  if (created.length > 1) {
+    // A fresh install can race its firstrun tab into the diff window. The
+    // extension always sees its OWN pages' URLs (no "tabs" permission
+    // needed for its origin), so extension-page tabs are dropped here.
+    const own = await ext.sw.evaluate(async (ids: number[]) => {
+      const tabs = await chrome.tabs.query({});
+      return tabs
+        .filter(
+          (t) =>
+            t.id !== undefined && ids.includes(t.id) && (t.url ?? t.pendingUrl ?? "").startsWith("chrome-extension://"),
+        )
+        .map((t) => t.id as number);
+    }, created);
+    created = created.filter((id) => !own.includes(id));
+  }
   if (created.length !== 1) {
     await page.close();
     throw new Error(`expected exactly one new tab, saw ${created.length}`);

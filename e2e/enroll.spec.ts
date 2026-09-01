@@ -16,7 +16,7 @@
 //      words with a way forward, instead of failing with a bare "cannot".
 
 import { test, expect } from "@playwright/test";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
   makeEgressDist,
@@ -25,8 +25,6 @@ import {
   setKey,
   type Extension,
 } from "./helpers/extension";
-
-const MOCK_KEY = "whisper_e2e_mock_key_0000000000000000";
 
 test.describe("enroll without egress", () => {
   let net: E2ENetwork;

@@ -15,7 +15,7 @@
 //   amber       look-alikes never block: banner + password-field caution
 
 import { test, expect } from "@playwright/test";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
   makeShieldDist,
@@ -26,8 +26,6 @@ import {
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
-
-const MOCK_KEY = "whisper_e2e_mock_key_0000000000000000";
 
 let net: E2ENetwork;
 let ext: Extension;
@@ -40,6 +38,8 @@ const EVIL = {
   cont: "evil-continue-guard-e2e.com",
   goback: "evil-goback-guard-e2e.com",
   popup: "evil-popup-guard-e2e.com",
+  ledger: "evil-ledger-guard-e2e.com",
+  credential: "evil-credential-guard-e2e.com",
 };
 
 test.beforeAll(async () => {
@@ -153,6 +153,38 @@ test("amber: a look-alike never blocks; banner and password-field caution appear
   await page.close();
 });
 
+test("credential moment: clicking through a known-threat warning still cautions at the password field", async () => {
+  // The ladder's credential column, live. The page moment for evidenced
+  // malice is BLOCKING and the human answered it - so no re-block, no
+  // banner, no second warning. But the credential cell for that same
+  // evidence is CONVERSATIONAL, and this is the moment it speaks: a
+  // dismissible word when a password field takes focus on a site the graph
+  // calls malicious. Before this, clicking through produced LESS credential
+  // protection than a mere look-alike, because the amber path was the only
+  // thing that ever armed the field guard.
+  const page = await ext.context.newPage();
+  await page.goto(`https://${EVIL.credential}/`, { waitUntil: "commit" });
+  await page.waitForURL((u) => u.href.includes("warning.html"), { timeout: 15_000 });
+  await page.locator("#btn-continue").click();
+  await page.waitForURL(`https://${EVIL.credential}/`, { timeout: 15_000 });
+  await expect(page.locator("h1")).toContainText(EVIL.credential);
+
+  // The page verdict stays answered: nothing is injected until the human
+  // reaches for a credential.
+  await page.waitForTimeout(1500);
+  expect(await page.locator("div[style*='2147483647']").count()).toBe(0);
+
+  await page.locator("input[type=password]").focus();
+  await expect
+    .poll(async () => page.locator("div[style*='2147483647']").count(), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+  const cdp = await ext.context.newCDPSession(page);
+  const tree = JSON.stringify(await cdp.send("Accessibility.getFullAXTree"));
+  expect(tree).toContain("You continued past a known-threat warning");
+  await cdp.detach();
+  await page.close();
+});
+
 test("warning page: ONE Back-to-safety returns to the last safe page (novel-bad history replaced)", async () => {
   const page = await ext.context.newPage();
   await page.goto("https://safe-start-guard-e2e.com/", { waitUntil: "domcontentloaded" });
@@ -181,4 +213,33 @@ test("popup on a blocked-warning tab stays coherent", async () => {
   await expect(popup.locator("#privacy-line")).toContainText("nothing was sent");
   await popup.close();
   await page.close();
+});
+
+test("a session-blocked host is listed in the popup and clearable in-flow", async () => {
+  // Prime a block: an evidenced-malicious host installs the DNR block rule AND
+  // the session block ledger the popup reads.
+  const prime = await ext.context.newPage();
+  await prime.goto(`https://${EVIL.ledger}/`, { waitUntil: "commit" });
+  await prime.waitForURL((u) => u.href.includes("warning.html"), { timeout: 15_000 });
+  await prime.close();
+
+  // On a plain benign tab (not the blocked host), the popup still lists the
+  // session block - the list is session-wide, so it is discoverable from
+  // anywhere, never only from the dead-end block page.
+  const { page, tabId } = await visit(ext, "https://benign-ledger-guard-e2e.com/");
+  const popup = await openPopup(ext, tabId);
+  await expect(popup.locator("#blocked-card")).toBeVisible();
+  await expect(popup.locator("#blocked-body")).toContainText(EVIL.ledger);
+
+  // Clear it: the DNR block is lifted and the row disappears - never a dead end.
+  await popup.locator(".blocked-item", { hasText: EVIL.ledger }).locator(".blocked-clear").click();
+  await expect(popup.locator("#blocked-body")).not.toContainText(EVIL.ledger, { timeout: 10_000 });
+  await popup.close();
+  await page.close();
+
+  // Proof the block is really gone: the host now loads instead of redirecting.
+  const after = await ext.context.newPage();
+  await after.goto(`https://${EVIL.ledger}/`, { waitUntil: "domcontentloaded" });
+  await expect(after.locator("h1")).toContainText(EVIL.ledger);
+  await after.close();
 });

@@ -15,7 +15,7 @@
 // All two-tier: the keyless half works with NO key; the key unlocks the rest.
 
 import { test, expect } from "@playwright/test";
-import { E2ENetwork } from "./helpers/servers";
+import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
   makeEgressDist,
@@ -27,8 +27,6 @@ import {
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
-
-const MOCK_KEY = "whisper_e2e_mock_key_0000000000000000";
 
 let net: E2ENetwork;
 let ext: Extension;
@@ -92,7 +90,7 @@ test.beforeEach(() => {
   net.clearLog();
 });
 
-// ----------------------------------------------- WB2: composed protection
+// --------------------------------------------------- composed protection
 
 test("protection: keyless composed verdict cites feeds, owner, and age; popularity feeds excluded", async () => {
   await setKey(ext, null);
@@ -116,7 +114,7 @@ test("protection: keyless composed verdict cites feeds, owner, and age; populari
   await page.close();
 });
 
-// ------------------------------------------ WB3: "This browser" (keyless)
+// ------------------------------------------------ "This browser" (keyless)
 
 test("this-browser dashboard renders enriched destinations from on-device navigation, no key", async () => {
   await setKey(ext, null);
@@ -162,7 +160,7 @@ test("fleet + endpoint views are locked without a key, unlocked with one", async
   await dash.close();
 });
 
-// -------------------------------------- WB4: keyed fleet + per-endpoint
+// -------------------------------------------- keyed fleet + per-endpoint
 
 test("fleet view renders the roster and merged, enriched destinations", async () => {
   await setKey(ext, MOCK_KEY);
@@ -220,7 +218,7 @@ test("per-endpoint view shows counters, health, constellation and a destination 
   await dash.close();
 });
 
-// ------------------------------------------- WB5: the governor half
+// ------------------------------------------------- the governor half
 
 test("endpoint governor: preset, rule and country block write op:policy and render the read-back", async () => {
   await setKey(ext, MOCK_KEY);

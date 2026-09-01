@@ -26,6 +26,8 @@ export interface CapturedRequest {
   host: string;
   path: string;
   body: string;
+  /** The X-API-Key that rode along, or null for a keyless request. */
+  key: string | null;
   at: number;
 }
 
@@ -35,7 +37,37 @@ export interface Verdict {
   label: string | null;
 }
 
-export type GraphMode = "mock" | "down" | "http500" | "slow";
+export type GraphMode = "mock" | "down" | "http500" | "slow" | "keylessShed";
+
+/**
+ * The graph hostname, once per purpose. Reads (everything that carries a
+ * browsing hostname) go to GRAPH_READ_HOST; the keyed control plane goes to
+ * GRAPH_CONTROL_HOST. Both name the same host, so the two constants record
+ * what a call site MEANS rather than where it lands.
+ *
+ * Every spec addresses a graph host through these and never through a literal.
+ * A literal left behind after a rename does not fail: `requestsTo("the old
+ * name")` returns an empty array and every `toHaveLength(0)` on it passes for
+ * the wrong reason. The constant cannot go stale that way.
+ */
+export const GRAPH_READ_HOST = "graph.whisper.online";
+export const GRAPH_CONTROL_HOST = "graph.whisper.online";
+// The same reasoning covers the other three endpoints. Each one is the
+// subject of a "nothing browsing-related reached it" assertion somewhere, and
+// every one of those assertions is a toHaveLength(0) or a not.toContain that
+// a stale literal would satisfy silently.
+export const CONSOLE_HOST = "console.whisper.security";
+export const RDAP_HOST = "rdap.whisper.online";
+export const CORPUS_HOST = "get.whisper.online";
+
+/**
+ * The mock API key every spec signs in with. Deliberately NOT in the shape of
+ * a real credential: the client treats the key as opaque and never parses it,
+ * so nothing is lost by keeping the production prefix out of a public
+ * repository. Shared for the same reason the hosts are: seven specs asserting
+ * the same literal is seven chances for one of them to drift.
+ */
+export const MOCK_API_KEY = "e2e-mock-key-not-a-credential";
 
 interface DeviceFlowMockState {
   pollsUntilApproved: number;
@@ -101,7 +133,7 @@ export class E2ENetwork {
   readonly device: DeviceFlowMockState = {
     pollsUntilApproved: 2,
     polls: 0,
-    apiKey: "whisper_e2e_mock_key_0000000000000000",
+    apiKey: MOCK_API_KEY,
     approveVisited: false,
   };
 
@@ -111,13 +143,14 @@ export class E2ENetwork {
   proxyPort = 0;
 
   // A faithful local stand-in for the Whisper HTTPS-CONNECT egress endpoint:
-  // it demands Proxy-Authorization (Basic w:et_…), records every CONNECT it
-  // carries, and tunnels to the same mock TLS terminator so pages still load.
-  // op:connect hands the extension THIS proxy's address, so turning the
-  // browser-as-endpoint toggle on genuinely routes traffic through it.
+  // it demands Proxy-Authorization (Basic, using the egressToken below),
+  // records every CONNECT it carries, and tunnels to the same mock TLS
+  // terminator so pages still load. op:connect hands the extension THIS
+  // proxy's address, so turning the browser-as-endpoint toggle on genuinely
+  // routes traffic through it.
   private egressProxy!: http.Server;
   egressPort = 0;
-  readonly egressToken = "et_e2emocktoken000";
+  readonly egressToken = "e2e-mock-egress-token-not-a-credential";
   readonly egressLog: { host: string; at: number }[] = [];
   readonly egressAttempts: { host: string; authed: boolean }[] = [];
 
@@ -153,6 +186,14 @@ export class E2ENetwork {
   /** Serve custom HTML for one fake site (e.g. a page full of links). */
   setPage(host: string, html: string): void {
     this.pages.set(host.toLowerCase(), html);
+  }
+  /**
+   * A page served at one PATH on a host, so a site can frame itself
+   * same-origin without recursing into its own document. The
+   * host-wide page above stays the fallback for every other path.
+   */
+  setPagePath(host: string, path: string, html: string): void {
+    this.pages.set(`${host.toLowerCase()}${path}`, html);
   }
   addEndpoint(e: MockEndpoint): void {
     this.endpoints.push(e);
@@ -206,8 +247,8 @@ export class E2ENetwork {
     });
     this.proxy.on("connect", (req, clientSocket, head) => {
       const host = (req.url ?? "").split(":")[0].toLowerCase();
-      this.log.push({ scheme: "connect", method: "CONNECT", host, path: "", body: "", at: Date.now() });
-      if (this.graphMode === "down" && host === "graph.whisper.online") {
+      this.log.push({ scheme: "connect", method: "CONNECT", host, path: "", body: "", key: null, at: Date.now() });
+      if (this.graphMode === "down" && (host === GRAPH_READ_HOST || host === GRAPH_CONTROL_HOST)) {
         clientSocket.destroy();
         return;
       }
@@ -274,12 +315,28 @@ export class E2ENetwork {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     const body = Buffer.concat(chunks).toString("utf8");
-    this.log.push({ scheme, method: req.method ?? "GET", host, path, body, at: Date.now() });
+    const rawKey = req.headers["x-api-key"];
+    const key = typeof rawKey === "string" && rawKey !== "" ? rawKey : null;
+    this.log.push({ scheme, method: req.method ?? "GET", host, path, body, key, at: Date.now() });
 
-    if (host === "graph.whisper.online") return this.serveGraph(path, body, res);
-    if (host === "console.whisper.security") return this.serveConsole(path, body, res);
-    if (host === "rdap.whisper.online") return this.serveRdap(path, res);
-    if (host === "get.whisper.online") {
+    if (host === GRAPH_READ_HOST || host === GRAPH_CONTROL_HOST) {
+      // A graph that answers KEYED requests but sheds every KEYLESS one.
+      // Guard's whole public tier rides the keyless arm, so the behaviour
+      // that matters is that a shed degrades HONESTLY, to unknown and never
+      // to a false clean. This is the fixture that can produce the false
+      // clean, so a client that let an error stand in for an answer fails
+      // here rather than in someone's browser.
+      if (this.graphMode === "keylessShed" && key === null) {
+        res
+          .writeHead(504, { "content-type": "application/json" })
+          .end('{"error":"graph_timeout","detail":"the graph could not answer right now - retry shortly"}');
+        return;
+      }
+      return this.serveGraph(path, body, res);
+    }
+    if (host === CONSOLE_HOST) return this.serveConsole(path, body, res);
+    if (host === RDAP_HOST) return this.serveRdap(path, res);
+    if (host === CORPUS_HOST) {
       res.writeHead(404, { "content-type": "text/plain" }).end("no corpus published in e2e");
       return;
     }
@@ -581,7 +638,7 @@ export class E2ENetwork {
   // ------------------------------------------------------------- fake web
 
   private serveFakeSite(host: string, path: string, res: http.ServerResponse): void {
-    const custom = this.pages.get(host);
+    const custom = this.pages.get(host + path.split("?")[0]) ?? this.pages.get(host);
     if (custom !== undefined) {
       res.writeHead(200, { "content-type": "text/html" }).end(custom);
       return;
