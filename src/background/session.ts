@@ -53,3 +53,50 @@ export async function allowForSession(host: string): Promise<void> {
     // best-effort
   }
 }
+
+/*
+ * The session BLOCK ledger. A session block rule's id is a
+ * non-reversible hash of its host, so the hosts cannot be read back out of the
+ * rules themselves and this list is the only way back to them. Every writer of
+ * such a rule marks here (addBlockRule for the Active-Shield redirect flavor,
+ * addPreemptBlock for the no-grant BLOCK flavor) and removeBlockRule unmarks,
+ * so the popup can show a "blocked this session" list and offer a per-host
+ * clear. A session block must be discoverably reversible, and the no-grant
+ * flavor most of all, because there it is a bare ERR_BLOCKED_BY_CLIENT with no
+ * page to carry the way out.
+ * Keyless, storage.session (worker-wake-durable, cleared with the session), the
+ * exact shape as the allowed list above.
+ */
+
+/** Hosts blocked for this session by an evidenced pre-emptive interrupt. */
+export async function sessionBlockedHosts(): Promise<string[]> {
+  try {
+    const stored = (await chrome.storage.session.get("blocked"))["blocked"];
+    return Array.isArray(stored) ? (stored as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function markBlocked(host: string): Promise<void> {
+  const h = host.toLowerCase();
+  try {
+    const list = await sessionBlockedHosts();
+    if (!list.includes(h)) {
+      list.push(h);
+      await chrome.storage.session.set({ blocked: list });
+    }
+  } catch {
+    // best-effort: the DNR rule is still installed; the list is only the UI mirror.
+  }
+}
+
+export async function unmarkBlocked(host: string): Promise<void> {
+  const h = host.toLowerCase();
+  try {
+    const list = (await sessionBlockedHosts()).filter((x) => x !== h);
+    await chrome.storage.session.set({ blocked: list });
+  } catch {
+    // best-effort
+  }
+}

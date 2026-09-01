@@ -73,6 +73,10 @@ export interface Settings {
   nearMiss: boolean;
   corpusAutoUpdate: boolean;
   allowlist: string[];
+  // Cookie-consent auto-decline: where Guard's on-page layer runs,
+  // click a banner's REJECT / "necessary only" control automatically.
+  // Entirely on-device, never an accept, and one switch turns it off.
+  cookieDecline: boolean;
   // The live graph check (hostname only, to one endpoint), on by default
   // and honest about itself; one switch turns it off and Guard falls back
   // to on-device checks alone.
@@ -86,8 +90,27 @@ export const DEFAULT_SETTINGS: Settings = {
   nearMiss: false,
   corpusAutoUpdate: true,
   allowlist: [],
+  cookieDecline: true,
   cloudCheck: true,
 };
+
+// ------------------------------------------------------------- daily wins
+
+/**
+ * The countable categories of quiet protection. POLICY EVENTS, NOT
+ * BROWSING: a win is only ever a category name plus a count. No URL, no
+ * domain, no hostname is ever attached to one.
+ */
+export const WIN_CATEGORIES = ["preemptBlock", "identityVerified", "cookieDecline"] as const;
+export type WinCategory = (typeof WIN_CATEGORIES)[number];
+
+/** Today's tally: date-keyed so it resets daily on its own. */
+export interface WinsToday {
+  /** Local calendar date the tally belongs to (YYYY-MM-DD). */
+  date: string;
+  total: number;
+  counts: Record<WinCategory, number>;
+}
 
 export interface CorpusBrand {
   name: string;

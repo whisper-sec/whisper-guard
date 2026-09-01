@@ -7,6 +7,7 @@
 // band joins when signed in.
 
 import { send, type CheckHostResult } from "../shared/messages";
+import { GRAPH_HOST } from "../shared/config";
 
 const params = new URLSearchParams(window.location.search);
 const host = (params.get("host") ?? "").toLowerCase();
@@ -73,7 +74,7 @@ async function init(): Promise<void> {
   // the check was on-device only (live check switched off).
   $("privacy").textContent =
     c.verdict || c.graphError
-      ? `Privacy: only "${host}" was sent, to graph.whisper.online.`
+      ? `Privacy: only "${host}" was sent, to ${GRAPH_HOST}.`
       : `Privacy: nothing left your browser. The check ran on-device.`;
 
   $("btn-copy").addEventListener("click", async () => {

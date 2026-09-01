@@ -16,6 +16,7 @@
 
 import { ext } from "../shared/api";
 import { NAV_DEBOUNCE_MS } from "../shared/config";
+import { atLeast, decide } from "../shared/escalation";
 import { extractHostname } from "../shared/hostname";
 import { registrableDomain } from "../shared/psl";
 import type { BgRequest, BgResponse, CheckHostResult, EndpointDetail } from "../shared/messages";
@@ -39,9 +40,10 @@ import { installContextMenu, onMenuClicked } from "./context-menu";
 import { CORPUS_ALARM, scheduleCorpusUpdates, updateCorpusNow } from "./corpus-updater";
 import { explainHost, identifyHost, reportHost } from "./cognition";
 import { getSettings, setSettings } from "./settings";
-import { allowForSession, recordRisk, sessionAllowed, sessionRisks } from "./session";
-import { addBlockRule, injectGuard, redirectToWarning, removeBlockRule, shieldGranted } from "./shield";
-import { isBlocking, protectHost, variantNeighborhood } from "./protect";
+import { allowForSession, recordRisk, sessionAllowed, sessionBlockedHosts, sessionRisks } from "./session";
+import { addBlockRule, armConsent, armConsentFrame, armPreempt, injectGuard, redirectToWarning, removeBlockRule, shieldGranted } from "./shield";
+import { preemptCheck } from "./preempt";
+import { protectHost, variantNeighborhood } from "./protect";
 import { getDestinations, onNavRecorded, recordNav } from "./navlog";
 import { enrichDestinations } from "./enrich";
 import { COHOST_QUERY } from "../shared/config";
@@ -60,11 +62,31 @@ import { egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentit
 import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
 import { scanTabLinks } from "./link-scan";
 import { rdapIpUrl, verifyIdentity } from "./rdap";
+import { getWins, recordWin, recordWinOnce } from "./wins";
 
 // ---------------------------------------------------------------- tab state
 
 const tabs = new Map<number, TabState>();
 const debounce = new Map<number, ReturnType<typeof setTimeout>>();
+/**
+ * The page a tab's cookie-decline win has already been counted for.
+ *
+ * Since the consent pass runs in every frame, one page can produce more than
+ * one decline: the publisher's own banner in the top document and a CMP wall
+ * in an iframe, or two walls in two frames. Each is a real decline and each is
+ * worth making, but the tally counts what Guard HANDLED FOR YOU, and a person
+ * who saw one prompt disappear did not have two handled. A per-frame count
+ * would inflate the only number this feature ever shows.
+ *
+ * Keyed by tab, valued by the URL that was armed, so re-arming the same page
+ * (the nav pipeline is debounced and can evaluate a URL more than once) does
+ * not re-open the count, while a genuine navigation does. The URL never leaves
+ * the background and is never sent anywhere; it is the page identity the
+ * background already holds, which is exactly why the de-duplication lives here
+ * and not in the content script, where a frame knows nothing of its siblings.
+ */
+const consentArmedUrl = new Map<number, string>();
+const consentCountedUrl = new Map<number, string>();
 // Last committed URL per tab, learned from webNavigation (the extension has
 // no "tabs" permission, so tabs.query cannot see URLs; this map is what
 // lets sign-in/sign-out repaint already-open tabs).
@@ -131,12 +153,21 @@ async function evaluate(tabId: number, url: string): Promise<void> {
   }
   state.verdict = verdict;
 
-  // 3) Fold the tiers into one icon. The filled red plate is reserved for
-  // the blocking gate (CRITICAL / HIGH / labelled malicious); a look-alike
-  // hit or a MEDIUM band is an amber nudge.
-  if (verdict && isBlocking(verdict)) {
+  // 3) ONE calm-escalation ladder decides how loudly this sighting
+  // may speak; the icon art then encodes the class it landed in. The
+  // filled red plate is reserved for the blocking rung; the conversational
+  // rung reads as the amber nudge. De-noising stays transparent and
+  // reversible: the RAW verdict rides TabState verbatim and is one click
+  // away in the popup, never hidden.
+  const signal = {
+    band: verdict?.band ?? null,
+    label: verdict?.label ?? null,
+    lookalike: state.detector !== null,
+  };
+  const rung = decide(signal, "page");
+  if (rung === "blocking") {
     state.icon = "malicious";
-  } else if ((verdict && verdict.band === "MEDIUM") || state.detector) {
+  } else if (atLeast(rung, "ambient")) {
     state.icon = "suspicious";
   } else if (verdict) {
     state.icon = bandToIcon(verdict.band);
@@ -146,8 +177,9 @@ async function evaluate(tabId: number, url: string): Promise<void> {
   tabs.set(tabId, state);
   await paintIcon(tabId, state.icon);
 
-  // 4) Session log + one-time pulse for risky sightings.
-  if (state.icon === "malicious" || state.icon === "suspicious") {
+  // 4) Ambient rung and up: session log + one-time badge pulse. Below it,
+  // silence: the network/verdict layer already handled the outcome.
+  if (atLeast(rung, "ambient")) {
     const reason =
       state.icon === "malicious"
         ? (verdict?.label ?? "known threat")
@@ -158,24 +190,78 @@ async function evaluate(tabId: number, url: string): Promise<void> {
     if (first) await pulseBadge(tabId, state.icon === "malicious" ? "#DC2626" : "#F59E0B");
   }
 
-  // 5) Active Shield (opt-in): full-page warning behind the blocking gate,
-  // banner + password-field guard for amber. Never for benign/unknown.
-  if (state.shieldOn && !(await sessionAllowed(hostname))) {
-    if (state.icon === "malicious") {
-      await addBlockRule(hostname, state.detector);
-      await redirectToWarning(tabId, hostname, state.detector);
-    } else if (state.icon === "suspicious" && (settings.amberBanner || settings.fieldGuard)) {
+  // 5) The page layer delivers the two loud rungs, and ONLY under the
+  // user's Active-Shield opt-in; without it the ambient icon carries the
+  // signal and the popup carries the receipts. Never for silent rungs.
+  if (state.shieldOn) {
+    if (!(await sessionAllowed(hostname))) {
+      if (rung === "blocking") {
+        await addBlockRule(hostname, state.detector);
+        await redirectToWarning(tabId, hostname, state.detector);
+      } else if (rung === "conversational" && (settings.amberBanner || settings.fieldGuard)) {
+        await injectGuard(tabId, {
+          host: hostname,
+          severity: state.detector?.severity ?? "medium",
+          brand: state.detector?.brand ?? null,
+          brandDomain: state.detector?.brandDomain ?? null,
+          banner: settings.amberBanner,
+          fieldGuard: settings.fieldGuard,
+          band: verdict?.band ?? null,
+          graphLabel: verdict?.label ?? null,
+        });
+      }
+    } else if (
+      settings.fieldGuard &&
+      rung === "blocking" &&
+      atLeast(decide(signal, "credential"), "conversational")
+    ) {
+      // 5b) The CREDENTIAL moment, the ladder's own column and the
+      // one place a session-allow does not silence Guard. Both halves of
+      // this condition come from the table, not from a private threshold:
+      // the page moment rang BLOCKING and the human clicked through it,
+      // and the credential cell for that same evidence still says
+      // conversational - a dismissible word, never a block. The page
+      // verdict stays answered (no re-block, no banner, no second
+      // warning); only the credential moment speaks, because typing a
+      // password into a site the graph calls malicious is a different
+      // moment with a different actor. Without it, the loudest verdict
+      // Guard has produced LESS credential protection than a mere
+      // look-alike does, since the amber path above was the only thing
+      // that ever armed the field guard. A softer page verdict the user
+      // waved through stays fully silent: they said the site is fine, and
+      // on a look-alike that is much likelier to be true.
       await injectGuard(tabId, {
         host: hostname,
-        severity: state.detector?.severity ?? "medium",
+        severity: "high",
         brand: state.detector?.brand ?? null,
         brandDomain: state.detector?.brandDomain ?? null,
-        banner: settings.amberBanner,
-        fieldGuard: settings.fieldGuard,
+        banner: false,
+        fieldGuard: true,
         band: verdict?.band ?? null,
         graphLabel: verdict?.label ?? null,
+        afterAllow: true,
       });
     }
+  }
+
+  // 6) The pre-emptive rung, armed on EVERY eligible page
+  // (benign included): the risk it guards against lives in the target of
+  // a click, not the page itself. A blocking-rung page was already moved
+  // to the warning above; skip it. Arming needs NO broad grant: under the
+  // Active-Shield opt-in it lands everywhere; without any grant the
+  // attempt succeeds exactly where the user's own activeTab invocation
+  // (or a scoped grant) allows, and fails silently elsewhere. A user who
+  // holds the broad grant but switched Active Shield OFF opted the page
+  // layer out: no automatic injection for them (popup-open arming still
+  // works, being an explicit invocation).
+  if (rung !== "blocking" && (state.shieldOn || !(await shieldGranted()))) {
+    await armPreempt(tabId, hostname);
+    // The cookie-consent auto-decline rides the same arming moment
+    // and capability model; its own opt-out is honored inside armConsent.
+    // Remember which page was armed so the win can be counted once for it
+    // however many frames it turns out to have.
+    consentArmedUrl.set(tabId, url);
+    await armConsent(tabId);
   }
 }
 
@@ -194,7 +280,23 @@ function scheduleEvaluate(tabId: number, url: string): void {
 // ------------------------------------------------------------- wiring
 
 ext.webNavigation.onCommitted.addListener((details) => {
-  if (details.frameId !== 0) return;
+  if (details.frameId !== 0) {
+    // A SUB-frame committed. The consent pass is injected once at nav
+    // time, which reaches the frames that exist then and nothing that arrives
+    // later, and later is exactly when a consent platform injects its wall.
+    // Measured on the real internet: theguardian.com's Sourcepoint frame and
+    // spiegel.de's equivalent both reported the pass unarmed after a 12 second
+    // settle, while every frame that existed at nav time was armed. A one-shot
+    // was always going to miss the frame that matters.
+    //
+    // Gated on the page having been armed at all, so this decides nothing on
+    // its own: it extends an eligibility the nav pipeline already granted to
+    // the frames that showed up afterwards.
+    if (consentArmedUrl.has(details.tabId)) {
+      armConsentFrame(details.tabId, details.frameId).catch(() => undefined);
+    }
+    return;
+  }
   lastUrl.set(details.tabId, details.url);
   scheduleEvaluate(details.tabId, details.url);
 });
@@ -208,6 +310,10 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 ext.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
   lastUrl.delete(tabId);
+  // the per-page consent ledger is per tab, so it goes with the tab.
+  // Left behind it would be an unbounded map keyed by ids that never repeat.
+  consentArmedUrl.delete(tabId);
+  consentCountedUrl.delete(tabId);
   forgetTab(tabId);
   const t = debounce.get(tabId);
   if (t) {
@@ -346,7 +452,7 @@ function nokeyResponse(e: unknown): BgResponse | null {
   return null;
 }
 
-async function handle(msg: BgRequest): Promise<BgResponse> {
+async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Promise<BgResponse> {
   switch (msg.kind) {
     case "getTabState": {
       const state = tabs.get(msg.tabId) ?? blankState();
@@ -539,8 +645,111 @@ async function handle(msg: BgRequest): Promise<BgResponse> {
             : "could not reach Whisper for the link sweep; try again",
         };
       }
-    case "verifyIdentity":
-      return { ok: true, verification: await verifyIdentity(msg.ip) };
+    case "verifyIdentity": {
+      const verification = await verifyIdentity(msg.ip);
+      // A confirmed Whisper endpoint identity is a countable quiet win, but
+      // this handler also runs at DISPLAY time (every popup open and every
+      // dashboard chip refresh re-verifies the same identity), so it counts
+      // at most once per day: the first confirmation is the day's win, and a
+      // re-render of the same fact is not another one. Category and count
+      // only, the address is never stored.
+      if (verification?.isWhisperAgent === true) await recordWinOnce("identityVerified");
+      return { ok: true, verification };
+    }
+    case "preemptCheck":
+      return { ok: true, preempt: await preemptCheck(msg.host) };
+    case "preemptArm": {
+      // Popup-open arming: opening the popup is a real extension
+      // invocation, so activeTab makes THIS tab scriptable even without
+      // the broad Active-Shield grant. Arm the pre-emptive guard there; a
+      // page we still cannot script fails silently (nothing to lose). A
+      // blocking-rung page is not armed: the warning layer owns it.
+      const st = tabs.get(msg.tabId);
+      if (st?.eligible && st.hostname && st.icon !== "malicious") {
+        await armPreempt(msg.tabId, st.hostname);
+        await armConsent(msg.tabId);
+      }
+      return { ok: true };
+    }
+    case "getWins":
+      return { ok: true, wins: await getWins() };
+    case "listBlocked":
+      // the hosts blocked this session, so the popup can list them and
+      // clear per-host (clear is the existing allowHost{session:true} = unblock).
+      return { ok: true, hosts: await sessionBlockedHosts() };
+    case "consentDeclined": {
+      // Cookie-consent auto-decline: the content module clicked a
+      // banner's decline control. On the calm ladder this is a WIN
+      // moment, and the win row is silent at every severity, so there is
+      // nothing to raise: no toast, no badge, no notification (the
+      // extension holds no notifications permission at all). The COUNT is
+      // not a surface and is therefore not gated on the rung: the ladder
+      // decides how loudly Guard may speak, never whether the tally is
+      // kept. Gating it would mean a future ladder edit silently empties
+      // the popup card instead of quieting it, and would make this
+      // category behave differently from the other two, which count
+      // unconditionally (preempt.ts, verifyIdentity). The message carries
+      // no host or URL by construction: category and count, nothing else.
+      //
+      // Once per PAGE, not once per frame. The consent pass runs in
+      // every frame now, so a page whose publisher banner sits in the top
+      // document and whose CMP wall sits in an iframe can legitimately
+      // decline twice. Both declines are worth making; only one prompt was
+      // handled from where the person is sitting. The page identity comes
+      // from the background's own arming record, so nothing new is read from
+      // the page and the message still carries neither host nor URL.
+      const declTab = sender?.tab?.id;
+      if (declTab !== undefined) {
+        const page = consentArmedUrl.get(declTab);
+        if (page !== undefined && consentCountedUrl.get(declTab) === page) {
+          return { ok: true }; // a sibling frame already counted this page
+        }
+        if (page !== undefined) consentCountedUrl.set(declTab, page);
+      }
+      await recordWin("cookieDecline");
+      return { ok: true };
+    }
+    case "preemptAllow":
+      // Proceed on the inline interstitial: the same honest one-click-
+      // through as the full-page warning, allowed for this session only,
+      // and any lingering DNR block rule for the target is lifted so the
+      // resumed navigation is not re-blocked.
+      // Future: route Proceed through the per-device policy decision before
+      // honoring it. The hook belongs here rather than in govern.ts, which
+      // stays untouched until that decision is wired.
+      await allowForSession(msg.host);
+      await removeBlockRule(msg.host);
+      return { ok: true };
+    case "preemptOpen": {
+      // Resume of a held middle-/modifier-click: a synthetic click
+      // cannot carry the user's modifiers (untrusted events never trigger
+      // modified navigation) and window.open always FOREGROUNDS, so the
+      // faithful resume is opened here with the native disposition: a
+      // genuine background tab for middle/Ctrl/Cmd, foreground with Shift
+      // added, a new window for Shift alone. The URL is consumed by
+      // tabs.create / windows.create on this machine only; nothing beyond
+      // the bare hostname (preemptCheck) ever went to the network.
+      if (!/^https?:\/\//i.test(msg.url)) {
+        return { ok: false, error: "only http(s) destinations can be resumed" };
+      }
+      if (msg.disposition === "window") {
+        await ext.windows.create({ url: msg.url });
+        return { ok: true };
+      }
+      const active = msg.disposition === "foreground-tab";
+      const opener = sender?.tab;
+      try {
+        await ext.tabs.create(
+          opener?.id !== undefined
+            ? { url: msg.url, active, openerTabId: opener.id, index: opener.index + 1 }
+            : { url: msg.url, active },
+        );
+      } catch {
+        // The opener tab vanished mid-flight: still honor the intent.
+        await ext.tabs.create({ url: msg.url, active });
+      }
+      return { ok: true };
+    }
     case "allowHost": {
       await allowForSession(msg.host);
       await removeBlockRule(msg.host);
@@ -562,8 +771,8 @@ async function handle(msg: BgRequest): Promise<BgResponse> {
   }
 }
 
-ext.runtime.onMessage.addListener((msg: BgRequest, _sender, sendResponse: (r: BgResponse) => void) => {
-  handle(msg)
+ext.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse: (r: BgResponse) => void) => {
+  handle(msg, sender)
     .then(sendResponse)
     .catch((e) => sendResponse({ ok: false, error: String(e instanceof Error ? e.message : e) }));
   return true; // async response

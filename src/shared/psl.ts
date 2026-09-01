@@ -5,7 +5,10 @@
 // full wildcard (*.foo) and exception (!bar.foo) rule support, from the
 // vendored snapshot. No network, ever.
 
-import pslData from "./psl-data.json";
+// The `with { type: "json" }` attribute keeps this importable BOTH ways it
+// is consumed: bundled by esbuild (background/content) and loaded directly
+// by Node's ESM loader (the Playwright unit spec for the decision core).
+import pslData from "./psl-data.json" with { type: "json" };
 
 const exact = new Set<string>();
 const wildcard = new Set<string>();

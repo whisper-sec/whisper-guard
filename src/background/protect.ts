@@ -18,6 +18,7 @@
 // Every part fails open independently: a slow graph never blocks browsing
 // and a missing part renders as absent, never invented.
 
+import { decide } from "../shared/escalation";
 import {
   ENRICH_GEO_QUERY,
   ENRICH_KEYED_QUERY,
@@ -37,11 +38,11 @@ import { graphQuery, hasKey } from "./graph-client";
 
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 
-/** The block/warn gate: CRITICAL / HIGH bands or an explicit malicious label. */
+/** The block/warn gate: the calm ladder's blocking rung: CRITICAL /
+ *  HIGH bands or an explicit malicious label, decided in ONE place. */
 export function isBlocking(verdict: AssessVerdict | null): boolean {
   if (!verdict) return false;
-  if (verdict.band === "CRITICAL" || verdict.band === "HIGH") return true;
-  return (verdict.label ?? "").toLowerCase() === "malicious";
+  return decide({ band: verdict.band, label: verdict.label }, "page") === "blocking";
 }
 
 /** Assess with the shared cache (the same rows the nav pipeline painted). */

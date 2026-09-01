@@ -2,13 +2,22 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The single network client for the Whisper graph. Every request is a
-// POST { query, parameters } to graph.whisper.online/api/query, with the
-// user's key as X-API-Key when one exists. The public tier (assess,
-// identify, explain, variants, history, shallow enrichment) answers
-// keyless; the key unlocks the control plane and deep traversals. The ONLY
-// caller-controlled value on the wire is a bound Cypher parameter, never
-// string-concatenated; the only browsing datum that ever appears in a
-// parameter is a hostname.
+// POST { query, parameters } to /api/query, with the user's key as
+// X-API-Key when one exists. The public tier (assess, identify, explain,
+// variants, history, shallow enrichment) answers keyless; the key unlocks
+// the control plane and deep traversals. The ONLY caller-controlled value
+// on the wire is a bound Cypher parameter, never string-concatenated; the
+// only browsing datum that ever appears in a parameter is a hostname.
+//
+// One host, two purposes (see shared/config.ts):
+// graph READS - everything carrying a browsing hostname - go to
+// GRAPH_QUERY_URL; the keyed control plane (whisper.agents) goes to
+// CONTROL_QUERY_URL. Both name graph.whisper.online today, and the split is
+// kept in the code because the RULES differ even where the host does not: a
+// read is keyless-capable and carries a bare hostname, a control call is
+// always keyed and carries no browsing datum. A caller picks with
+// opts.endpoint; the default is the read endpoint, so a browsing hostname
+// cannot reach the control path by omission.
 //
 // Response parsing is liberal (rows as objects keyed by column), errors are
 // typed and helpful, and the body read is size-capped.
@@ -44,14 +53,22 @@ export async function graphQuery(
   query: string,
   parameters: Record<string, unknown>,
   timeoutMs = GRAPH_TIMEOUT_MS,
+  opts: { keyless?: boolean; endpoint?: string } = {},
 ): Promise<Record<string, unknown>[]> {
-  const key = await getKey();
+  // keyless: force the public tier even when a key exists (the pre-emptive
+  // click check runs keyless by design: a public verdict, nothing tied to
+  // the account rides along with a browsing hostname).
+  const key = opts.keyless ? null : await getKey();
+  // Default to the READ endpoint: a caller that forgets to choose sends its
+  // hostname to the host that is allowed to see one, never to the control
+  // plane.
+  const url = opts.endpoint ?? GRAPH_QUERY_URL;
 
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(GRAPH_QUERY_URL, {
+    res = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",

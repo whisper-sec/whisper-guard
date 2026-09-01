@@ -29,6 +29,7 @@ async function refresh(): Promise<void> {
   check("opt-shield").checked = res.settings.shield && granted;
   check("opt-banner").checked = res.settings.amberBanner;
   check("opt-fieldguard").checked = res.settings.fieldGuard;
+  check("opt-cookiedecline").checked = res.settings.cookieDecline;
   check("opt-nearmiss").checked = res.settings.nearMiss;
   check("opt-corpusupdate").checked = res.settings.corpusAutoUpdate;
   check("opt-cloudcheck").checked = res.settings.cloudCheck;
@@ -61,6 +62,7 @@ function wire(): void {
   for (const [id, key] of [
     ["opt-banner", "amberBanner"],
     ["opt-fieldguard", "fieldGuard"],
+    ["opt-cookiedecline", "cookieDecline"],
     ["opt-nearmiss", "nearMiss"],
     ["opt-corpusupdate", "corpusAutoUpdate"],
     ["opt-cloudcheck", "cloudCheck"],

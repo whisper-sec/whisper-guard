@@ -21,9 +21,11 @@ import type {
   SessionRisk,
   Settings,
   TabState,
+  WinsToday,
 } from "./types";
 import type { EndpointHealth, ReportHost, ReportTotals } from "./report";
 import type { DevicePolicy, RevokeResult } from "./policy";
+import type { PreemptDecision, PreemptDisposition } from "./preempt";
 
 export type BgRequest =
   | { kind: "getTabState"; tabId: number }
@@ -57,7 +59,34 @@ export type BgRequest =
   | { kind: "egressDisable" }
   | { kind: "enroll" }
   | { kind: "scanLinks"; tabId: number }
-  | { kind: "verifyIdentity"; ip: string };
+  | { kind: "verifyIdentity"; ip: string }
+  // Pre-emptive click/submit interruption: the content script asks
+  // about a held action's TARGET (bare hostname only, ever), and reports
+  // the user's honest one-click-through.
+  | { kind: "preemptCheck"; host: string }
+  | { kind: "preemptAllow"; host: string }
+  // Resume of a held middle-/modifier-click: a synthetic click cannot
+  // carry the user's modifiers, so the background opens the destination
+  // with the NATIVE disposition (middle/Ctrl = background tab, +Shift =
+  // foreground, Shift = window). The URL is consumed by tabs.create /
+  // windows.create on this machine only; it never goes to the network.
+  | { kind: "preemptOpen"; url: string; disposition: PreemptDisposition }
+  // Popup-open arming: opening the popup is a real extension
+  // invocation, so activeTab makes the CURRENT tab scriptable even
+  // without the broad Active-Shield grant; the background arms the
+  // pre-emptive guard there. Carries a tab id and nothing else.
+  | { kind: "preemptArm"; tabId: number }
+  // Cookie-consent auto-decline: the content module reports ONE
+  // successful decline. The message carries a category and nothing else:
+  // no host, no URL, nothing read from the page, so the wins record
+  // (category + count) could not learn a site even if it wanted to.
+  | { kind: "consentDeclined" }
+  // Today's quiet-wins tally: categories + counts only, ever.
+  | { kind: "getWins" }
+  // the hosts blocked for this session (the DNR rule ids are hashes, so
+  // the popup asks the background for the mirrored ledger) - so a session block
+  // is discoverably clearable, never a bare ERR_BLOCKED_BY_CLIENT.
+  | { kind: "listBlocked" };
 
 export interface CheckHostResult {
   host: string;
@@ -123,6 +152,9 @@ export type BgResponse =
   | { ok: true; enrollment: Enrollment }
   | { ok: true; scan: LinkScanResult }
   | { ok: true; verification: IdentityVerification | null }
+  | { ok: true; preempt: PreemptDecision }
+  | { ok: true; wins: WinsToday }
+  | { ok: true; hosts: string[] } // the session block ledger (listBlocked)
   | { ok: true }
   | { ok: false; error: string; nokey?: boolean; nohost?: boolean };
 

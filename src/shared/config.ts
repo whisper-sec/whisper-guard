@@ -4,12 +4,45 @@
 // All endpoints and tunables in one place. Four Whisper endpoints exist,
 // each with one narrow purpose; browsing hostnames go to exactly ONE of them:
 //
-//   graph.whisper.online    the safety check + enrichment (hostname only, keyed or not)
+//   graph.whisper.online      the graph front door. Two arms on one host: the
+//                             safety check + enrichment (hostname only, keyed
+//                             or not), which is the ONLY thing a browsing
+//                             hostname ever reaches, and the keyed control
+//                             plane (whisper.agents) for the fleet roster,
+//                             enrollment and egress, which is never called
+//                             without a key and never carries a hostname
 //   console.whisper.security  sign-in only (RFC 8628 device flow, no browsing data)
 //   get.whisper.online        detector corpus updates only (no browsing data)
 //   rdap.whisper.online       public endpoint-identity verification (IP literals only)
+//
+// One graph host, two arms. graph.whisper.online answers both the keyless
+// read arm and the keyed control arm, so Guard needs one host permission,
+// one privacy sentence and one endpoint to explain to a user.
+//
+// The two constants below therefore name the same host, and that is
+// deliberate rather than redundant: the RULES differ even where the host
+// does not. A read is keyless-capable and carries a bare hostname; a control
+// call is always keyed and carries no browsing datum. Those are properties
+// of the REQUEST, not of the hostname, which is why they are worth naming
+// separately and why graphQuery defaults to the READ endpoint, so a browsing
+// hostname cannot reach the control path by omission.
+//
+// Both invariants are pinned from the outside in e2e/graph-endpoints.spec.ts,
+// together with the one that matters most to a signed-out user: when the
+// graph cannot answer a keyless read, the verdict degrades to UNKNOWN and
+// never to a false clean.
 
+/** Graph READS: assess, identify, explain, variants, history, submit, enrichment. */
 export const GRAPH_QUERY_URL = "https://graph.whisper.online/api/query";
+/** The keyed CONTROL plane (whisper.agents). Never carries a browsing hostname. */
+export const CONTROL_QUERY_URL = "https://graph.whisper.online/api/query";
+/**
+ * The bare graph hostname, for the privacy sentences the UI shows. Derived
+ * from the URL above rather than written twice, because a promise about where
+ * a hostname went is only worth anything if it cannot drift from where it
+ * actually goes.
+ */
+export const GRAPH_HOST = new URL(GRAPH_QUERY_URL).hostname;
 export const CONSOLE_URL = "https://console.whisper.security";
 export const CORPUS_URL = "https://get.whisper.online/guard/corpus.v1.json";
 export const CONSOLE_KEYS_URL = "https://console.whisper.security/settings";
@@ -79,7 +112,7 @@ export const COHOST_QUERY =
 
 // Graph call budget. If the graph is slower than this we fail open.
 export const GRAPH_TIMEOUT_MS = 4000;
-// Control-plane ops traverse warm storage and can be slower; still bounded.
+// Control-plane ops do more work than a read and can be slower; still bounded.
 export const CONTROL_TIMEOUT_MS = 8000;
 // Provisioning ops (register a device + allocate its /128, connect + set up
 // egress) do real work on the control plane and legitimately take several
@@ -103,6 +136,22 @@ export const EGRESS_REQUEST = {
 
 // Per-tab navigation debounce (SPA route bursts, redirect chains).
 export const NAV_DEBOUNCE_MS = 150;
+
+// Pre-emptive click/form-submit interruption. A held click must
+// resolve fast, so the background's keyless assess gets a tighter budget
+// than the nav pipeline's; the content script adds a belt-and-braces cap
+// after which the original action proceeds untouched (fail open: a slow or
+// dead graph never blocks the user).
+export const PREEMPT_ASSESS_TIMEOUT_MS = 2000;
+export const PREEMPT_DECIDE_TIMEOUT_MS = 2600;
+
+// Cookie-consent auto-decline. Most CMPs mount their banner within
+// a few seconds of load; the MutationObserver watching for a late banner
+// disconnects after this window (or on the first successful decline), so
+// the module never lingers on long-lived pages. Rescans after a DOM burst
+// are debounced so a busy page costs one bounded scan, not one per node.
+export const CONSENT_SCAN_WINDOW_MS = 15_000;
+export const CONSENT_RESCAN_DEBOUNCE_MS = 250;
 
 // Verdict cache TTLs by band, in milliseconds.
 export const TTL_BENIGN_MS = 6 * 3600_000;

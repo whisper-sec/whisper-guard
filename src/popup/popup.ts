@@ -9,19 +9,23 @@
 // what was sent.
 
 import { send, type BrowserReport } from "../shared/messages";
-import type {
-  CandidateVerdict,
-  EgressStatus,
-  Enrollment,
-  ExplainResult,
-  GraphBand,
-  LinkScanResult,
-  Protection,
-  Settings,
-  TabState,
-  WhyFactor,
+import {
+  WIN_CATEGORIES,
+  type CandidateVerdict,
+  type EgressStatus,
+  type Enrollment,
+  type ExplainResult,
+  type GraphBand,
+  type LinkScanResult,
+  type Protection,
+  type Settings,
+  type TabState,
+  type WhyFactor,
+  type WinCategory,
+  type WinsToday,
 } from "../shared/types";
 import { CATEGORY_LABEL, flagEmoji, type ReportCategory } from "../shared/report";
+import { GRAPH_HOST } from "../shared/config";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -158,6 +162,68 @@ async function loadSession(): Promise<void> {
       }),
     );
   }
+}
+
+/**
+ * The session block ledger. Lists the hosts this session's pre-emptive
+ * guard blocked, each with a one-click Clear (the existing session-allow +
+ * unblock), so a block is never a dead end. When THIS tab is a blocked host (the
+ * bare ERR_BLOCKED_BY_CLIENT page, no Whisper page to explain it), a banner names
+ * it and Clear reloads the now-unblocked page. Keyless; no new permission.
+ */
+async function loadBlocked(activeHost: string): Promise<void> {
+  const res = await send<{ ok: true; hosts: string[] }>({ kind: "listBlocked" });
+  if (!res.ok) return;
+  const hosts = res.hosts;
+  const active = (activeHost ?? "").toLowerCase();
+  const activeBlocked = hosts.includes(active);
+  const card = $("blocked-card");
+  if (hosts.length === 0) {
+    // Cleared the last one: hide the card AND empty the list + banner, so no
+    // stale row lingers in the DOM after an in-place refresh.
+    card.hidden = true;
+    $("blocked-banner").hidden = true;
+    $("blocked-body").replaceChildren();
+    return;
+  }
+  card.hidden = false;
+
+  const banner = $("blocked-banner");
+  if (activeBlocked) {
+    banner.hidden = false;
+    banner.textContent = `Whisper blocked ${activeHost} this session. Evidenced malicious. Clear it below to proceed, or keep it blocked.`;
+  } else {
+    banner.hidden = true;
+  }
+
+  const body = $("blocked-body");
+  body.replaceChildren(
+    ...hosts.map((h) => {
+      const row = document.createElement("div");
+      row.className = "blocked-item" + (h === active ? " blocked-active" : "");
+      const name = document.createElement("span");
+      name.className = "blocked-host";
+      name.textContent = h;
+      const clear = document.createElement("button");
+      clear.className = "blocked-clear";
+      clear.textContent = "Clear";
+      clear.title = `Unblock ${h} for this session`;
+      clear.addEventListener("click", async () => {
+        clear.disabled = true;
+        clear.textContent = "Clearing…";
+        // Clear = the interstitial's Proceed: allow-for-session + lift the DNR block.
+        await send({ kind: "allowHost", host: h, session: true });
+        if (h === active) {
+          // The active tab is the opaque block page: navigate it to the now-open host.
+          chrome.tabs.update(tabId, { url: `https://${h}/` }).then(() => window.close());
+          return;
+        }
+        void loadBlocked(activeHost); // refresh the list in place
+      });
+      row.append(name, clear);
+      return row;
+    }),
+  );
 }
 
 function protectKv(k: string, v: string): HTMLElement {
@@ -484,6 +550,47 @@ function wireLinkScan(): void {
   });
 }
 
+// ------------------------------------------------------------ daily wins
+
+// One label per category, in both numbers: a tally that reads "1 risky
+// clicks" is a small lie about its own arithmetic, and this card is the
+// one place the count is ever shown.
+const WIN_LABEL: Record<WinCategory, { one: string; many: string }> = {
+  preemptBlock: {
+    one: "risky click stopped before anything loaded",
+    many: "risky clicks stopped before anything loaded",
+  },
+  identityVerified: { one: "endpoint identity verified", many: "endpoint identities verified" },
+  cookieDecline: { one: "cookie prompt declined", many: "cookie prompts declined" },
+};
+
+/**
+ * The calm "today" card: one hero number, a small per-category
+ * breakdown. Counted as categories only, never which sites, and shown
+ * only here, on the user's own click; silent and ambient outcomes never
+ * toast (the escalation ladder keeps the win moment silent).
+ */
+async function loadToday(): Promise<void> {
+  const res = await send<{ ok: true; wins: WinsToday }>({ kind: "getWins" });
+  if (!res.ok) return;
+  const w = res.wins;
+  $("today-hero").textContent = String(w.total);
+  const rows: HTMLElement[] = [];
+  for (const c of WIN_CATEGORIES) {
+    const n = w.counts[c];
+    if (n <= 0) continue;
+    const line = document.createElement("div");
+    line.className = "today-line";
+    line.textContent = `${n} ${n === 1 ? WIN_LABEL[c].one : WIN_LABEL[c].many}`;
+    rows.push(line);
+  }
+  $("today-breakdown").replaceChildren(...rows);
+  $("today-note").textContent =
+    w.total === 0
+      ? "Nothing needed your attention today; checks ran on every site."
+      : "Counted by category only, never which sites. The raw verdict for any site is right here.";
+}
+
 async function loadMiniDash(): Promise<void> {
   const res = await send<{ ok: true; report: BrowserReport }>({ kind: "getBrowserReport", limit: 200 });
   if (!res.ok) return;
@@ -551,6 +658,7 @@ function render(): void {
   $("signin-dot").title = s.signedIn ? "signed in" : "not signed in";
 
   void loadMiniDash();
+  void loadToday();
   $("btn-dashboard").addEventListener("click", () => {
     void send({ kind: "openDashboard" }).then(() => window.close());
   });
@@ -561,12 +669,26 @@ function render(): void {
   if (s.signedIn) void loadIdentityCard();
   else wireSignin();
 
+  // a session block must be discoverably clearable - list the hosts
+  // blocked this session and, when THIS tab is one (the opaque
+  // ERR_BLOCKED_BY_CLIENT page), explain it and offer a one-click clear. The
+  // list is session-wide, not tab-scoped, so it runs BEFORE the eligibility
+  // gate: even on an ineligible tab (a browser page, or the block page itself)
+  // a session block stays visible and clearable, never a silent dead end.
+  void loadBlocked(s.hostname ?? "");
+
   if (!s.eligible || !s.hostname) {
     $("ineligible").hidden = false;
     $("privacy-line").textContent = "Privacy: nothing was sent.";
     return;
   }
   const host = s.hostname;
+
+  // opening the popup is a real invocation of Guard on this tab, so
+  // arm the pre-emptive click/submit guard here: under activeTab this
+  // works even without the broad Active-Shield grant. Fire-and-forget;
+  // the background fails silently where the page is not scriptable.
+  void send({ kind: "preemptArm", tabId });
 
   $("host-row").hidden = false;
   $("hostname").textContent = host;
@@ -705,7 +827,7 @@ function render(): void {
   }
 
   $("privacy-line").textContent = cloudCheck
-    ? `Privacy: only "${host}" was sent, to graph.whisper.online. Never the page, path, or your history.`
+    ? `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`
     : s.detector
       ? `Privacy: nothing left your browser. The look-alike check ran on-device.`
       : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`;

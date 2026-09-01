@@ -2,13 +2,15 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The typed caller for the Whisper control plane: ONE Cypher verb,
-// CALL whisper.agents({op:'...', args:{...}}), keyed only. Args are
+// CALL whisper.agents({op:'...', args:{...}}), keyed only, on its own named
+// endpoint (CONTROL_QUERY_URL) so that a control call is never reachable
+// from the read path by omission. Args are
 // rendered as Cypher literals with airtight escaping (ported from the
 // platform's reference serializer); the single envelope row
 // {op, ok, status, result, error, retry_after} is unwrapped into either a
 // column-keyed result set or a typed ControlError. Callers fail open.
 
-import { CONTROL_TIMEOUT_MS } from "../shared/config";
+import { CONTROL_QUERY_URL, CONTROL_TIMEOUT_MS } from "../shared/config";
 import { GraphError, graphQuery, hasKey } from "./graph-client";
 
 export class ControlError extends Error {
@@ -107,7 +109,12 @@ export async function controlCall(
   timeoutMs: number = CONTROL_TIMEOUT_MS,
 ): Promise<ControlResult> {
   if (!(await hasKey())) throw new GraphError("nokey", "sign in to use your fleet");
-  const rows = await graphQuery(buildAgentsCall(op, args), {}, timeoutMs);
+  // The one caller that uses the control endpoint. Always keyed, and it
+  // never carries a browsing hostname; every other call in the extension
+  // takes the read endpoint by default.
+  const rows = await graphQuery(buildAgentsCall(op, args), {}, timeoutMs, {
+    endpoint: CONTROL_QUERY_URL,
+  });
   const envelope = rows[0];
   if (!envelope) throw new ControlError(0, "the control plane returned no envelope");
   if (envelope["ok"] !== true) {

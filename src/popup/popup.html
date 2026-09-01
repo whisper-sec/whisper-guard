@@ -31,6 +31,14 @@
       </div>
     </section>
 
+    <!-- hosts blocked this session, each clearable in-flow (never a dead-end
+         ERR_BLOCKED_BY_CLIENT). Shown only when the ledger is non-empty. -->
+    <section id="blocked-card" class="w-card crit" hidden>
+      <div id="blocked-banner" class="blocked-banner" hidden></div>
+      <div class="blocked-title">Blocked this session</div>
+      <div id="blocked-body" class="blocked-body"></div>
+    </section>
+
     <section id="protect-card" class="w-card" hidden>
       <div id="protect-rows" class="protect-rows"></div>
       <div id="why-panel" hidden>
@@ -80,6 +88,17 @@
         <button id="btn-identity-dash" class="w-btn small" hidden>Identity &amp; routing</button>
       </div>
       <div id="identity-note" class="w-note" hidden></div>
+    </section>
+
+    <section id="today-card" class="w-card">
+      <div class="mini-head">
+        <span class="w-label">Handled quietly today</span>
+      </div>
+      <div class="today-row">
+        <div id="today-hero" class="today-hero">0</div>
+        <div id="today-breakdown" class="today-breakdown"></div>
+      </div>
+      <div id="today-note" class="w-note"></div>
     </section>
 
     <section id="mini-dash" class="w-card">
