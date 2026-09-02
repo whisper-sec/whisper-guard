@@ -4,6 +4,7 @@
 // Typed runtime messages between the popup / options / pages and the
 // background service worker. One discriminated union each way.
 
+import type { PageScanResult } from "../background/page-scan";
 import type {
   ActivityRow,
   CandidateVerdict,
@@ -64,6 +65,7 @@ export type BgRequest =
   | { kind: "egressDisable" }
   | { kind: "enroll" }
   | { kind: "scanLinks"; tabId: number }
+  | { kind: "scanIocs"; tabId: number; ignore?: string[] }
   | { kind: "verifyIdentity"; ip: string }
   // Pre-emptive click/submit interruption: the content script asks
   // about a held action's TARGET (bare hostname only, ever), and reports
@@ -171,7 +173,7 @@ export type BgResponse =
   | { ok: true; drill: DestinationDrill }
   | { ok: true; egress: EgressStatus }
   | { ok: true; enrollment: Enrollment }
-  | { ok: true; scan: LinkScanResult }
+  | { ok: true; scan: LinkScanResult | PageScanResult }
   | { ok: true; verification: IdentityVerification | null }
   | { ok: true; preempt: PreemptDecision }
   | { ok: true; chain: SiteChain }
