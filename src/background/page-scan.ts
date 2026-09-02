@@ -22,23 +22,34 @@
 //
 // See extractIocs for why defanged forms are the point rather than a nicety.
 
-import { LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP, VULN_POSTURE_QUERY } from "../shared/config";
+import { LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP } from "../shared/config";
 import { isPrivateHost } from "../shared/hostname";
 import { applyIgnoreList, extractIocs, type Ioc } from "../shared/ioc";
 import type { GraphBand } from "../shared/types";
 import { assessHosts } from "./assess";
-import { graphQuery } from "./graph-client";
+import { explainHost } from "./cognition";
 import { cacheGet, cachePut } from "./cache";
 
-/** A host's open-CVE posture. `coverage` is load-bearing, see VULN_POSTURE_QUERY. */
-export interface VulnPosture {
-  openCveCount: number;
-  kevCount: number;
-  ransomwareCount: number;
-  maxCvss: number;
-  maxEpss: number;
-  /** "partial" / "unsupported-spec" / etc. NEVER render this as a clean result. */
-  coverage: string | null;
+/**
+ * The graph's own account of ONE indicator, from whisper.explain. This is the
+ * answer the competing tool cannot give: not a score, a sentence plus the named
+ * factors and the named feeds behind it.
+ *
+ * explain auto-detects the indicator TYPE, so a hash, a CVE, an ip and a domain
+ * all go through one call and come back labelled. That single fact is why this
+ * replaced a hand-rolled assess-plus-vulnPosture pair: fewer calls, more answer,
+ * and no type dispatch of our own to get wrong.
+ */
+export interface IocExplain {
+  /** What the graph decided this indicator IS: hash / cve / ip / domain / url. */
+  type: string | null;
+  level: string | null;
+  /** A human sentence, e.g. "... is a CISA known-exploited vulnerability (KEV)". */
+  explanation: string | null;
+  /** Named, weighted reasons. Not a score - the reasons behind one. */
+  factors: string[];
+  /** The feeds that said so, by name. */
+  sources: string[];
 }
 
 /** One extracted indicator plus whatever the graph could say about it. */
@@ -49,8 +60,8 @@ export interface IocRow {
   /** UNKNOWN when the graph holds nothing; null when we did not ask (hash/CVE). */
   band: GraphBand | null;
   label: string | null;
-  /** Present only for a host we asked about and that answered. */
-  vuln?: VulnPosture;
+  /** Present when the graph had an account of this indicator to give. */
+  why?: IocExplain;
 }
 
 export interface PageScanResult {
@@ -139,48 +150,74 @@ export async function scanTabIocs(
     }
   }
 
-  // #1205 item 5. A per-CVE lookup is what the competing tool does; we do the
-  // question a graph is actually for - the posture of a host that appeared on
-  // this page. Bounded to the hosts we already assessed, one call each, and any
-  // failure is simply an absent posture rather than a failed scan.
-  const posture = new Map<string, VulnPosture>();
-  for (const host of hosts.slice(0, LINK_SCAN_BATCH)) {
-    try {
-      const rows = await graphQuery(VULN_POSTURE_QUERY, { h: host }, undefined, { keyless: true });
-      const r = rows[0];
-      if (!r) continue;
-      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-      const open = num(r["openCveCount"]);
-      const cov = typeof r["coverage"] === "string" ? (r["coverage"] as string) : null;
-      // Nothing open AND nothing to say is not worth a row; an unsupported or
-      // partial coverage IS worth saying, because it is not the same as clean.
-      if (open === 0 && (cov === null || cov === "none")) continue;
-      posture.set(host, {
-        openCveCount: open,
-        kevCount: num(r["kevCount"]),
-        ransomwareCount: num(r["ransomwareCount"]),
-        maxCvss: num(r["maxCvss"]),
-        maxEpss: num(r["maxEpss"]),
-        coverage: cov,
-      });
-    } catch {
-      // A posture read is enrichment. It never fails the scan.
-    }
+  // #1205 items 2 and 5, and the reason this is one block rather than two.
+  //
+  // whisper.explain takes ANY indicator and tells you what it decided the thing
+  // IS, plus a human sentence, the named factors and the named feeds. A hash
+  // comes back type "hash" and joins the known-bad corpus and the NSRL
+  // known-good set - the same join the sensor's exec-hash bridge uses. A CVE id
+  // comes back type "cve": CVE-2021-44228 answers CRITICAL, score 10.0, "a CISA
+  // known-exploited vulnerability (KEV), with known ransomware-campaign use",
+  // over seven named sources. Keyless, so it rides the public tier.
+  //
+  // I built an assess-plus-vulnPosture pair first, having concluded from two
+  // probes that no hash surface existed. It did; I had not read the sensor,
+  // which calls exactly this. Recorded because the lesson is the method, not
+  // the fact: absence from a narrow probe is not absence.
+  //
+  // Bounded to the cap and taken in appearance order, so a long page costs a
+  // predictable number of calls. Any failure is an absent account, never a
+  // failed scan.
+  const why = new Map<string, IocExplain>();
+  const strArr = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v
+          .map((x) =>
+            typeof x === "string"
+              ? x
+              : x && typeof x === "object" && typeof (x as { source?: unknown }).source === "string"
+                ? ((x as { source: string }).source)
+                : null,
+          )
+          .filter((x): x is string => !!x)
+      : [];
+  for (const i of rows0.slice(0, LINK_SCAN_BATCH)) {
+    const subject = i.host ?? i.value;
+    if (!subject || why.has(subject)) continue;
+    const r = await explainHost(subject);
+    if (!r.ok || !r.rows.length) continue;
+    const row = r.rows[0] as Record<string, unknown>;
+    if (row["found"] !== true) continue; // "not found" is not an account
+    why.set(subject, {
+      type: typeof row["type"] === "string" ? row["type"] : null,
+      level: typeof row["level"] === "string" ? row["level"] : null,
+      explanation: typeof row["explanation"] === "string" ? row["explanation"] : null,
+      factors: strArr(row["factors"]),
+      sources: strArr(row["sources"]),
+    });
   }
 
   const rows: IocRow[] = rows0.map((i) => {
     if (!i.host || isPrivateHost(i.host)) {
-      return { kind: i.kind, value: i.value, host: i.host, band: null, label: null };
+      const w0 = why.get(i.host ?? i.value);
+      return {
+        kind: i.kind,
+        value: i.value,
+        host: i.host,
+        band: null,
+        label: null,
+        ...(w0 ? { why: w0 } : {}),
+      };
     }
     const v = verdicts.get(i.host);
-    const p = posture.get(i.host);
+    const w = why.get(i.host);
     return {
       kind: i.kind,
       value: i.value,
       host: i.host,
       band: v ? v.band : "UNKNOWN",
       label: v ? v.label : null,
-      ...(p ? { vuln: p } : {}),
+      ...(w ? { why: w } : {}),
     };
   });
 
