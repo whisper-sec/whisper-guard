@@ -37,6 +37,7 @@ import {
   makeProxyHolderExt,
   openPopup,
   setKey,
+  settlePopup,
   visit,
   waitForIcon,
   type Extension,
@@ -45,12 +46,11 @@ import {
 const SHOTS = resolve(dirname(fileURLToPath(import.meta.url)), "../shots");
 const CLEAN = "intranet-tools-vendor.com";
 
-/** Capture the panel exactly as a reader in that colour scheme sees it. */
+/** Capture the panel exactly as a reader in that colour scheme sees it,
+ *  with every animated value settled (see settlePopup). */
 async function shot(popup: Page, file: string, scheme: "dark" | "light" = "dark"): Promise<void> {
   mkdirSync(SHOTS, { recursive: true });
-  await popup.emulateMedia({ colorScheme: scheme });
-  await popup.setViewportSize({ width: 390, height: 700 });
-  await popup.waitForTimeout(250);
+  await settlePopup(popup, { colorScheme: scheme, width: 400, height: 700 });
   await popup.screenshot({ path: join(SHOTS, file), fullPage: true });
 }
 

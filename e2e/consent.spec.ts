@@ -375,9 +375,28 @@ test("the feature puts NOTHING on the wire: hostname-only capture invariant stay
     ...Object.values(SITE),
     GRAPH_READ_HOST,
     "get.whisper.online",
+    // The public statistics document, read so the surfaces can show the live
+    // size of the graph instead of a constant baked into the build. Allowed
+    // here only because of the assertion immediately below.
+    "nic.whisper.online",
   ];
   for (const host of net.contactedHosts()) {
     expect(allowed, `unexpected destination on the wire: ${host}`).toContain(host);
+  }
+
+  // 1b) And the statistics read really is what it claims: a bare GET of one
+  //     public path, with no query string and no body. That is the entire
+  //     privacy argument for the host permission, so it is asserted rather
+  //     than asserted-in-a-comment. Widening an allowlist without pinning the
+  //     reason is how an allowlist stops meaning anything.
+  // The proxy records the CONNECT that opens the tunnel as well as the
+  // request inside it; the request is the one carrying anything.
+  const statsReads = net.log.filter((r) => r.host === "nic.whisper.online" && r.method !== "CONNECT");
+  expect(statsReads.length, "the statistics document was never actually read").toBeGreaterThan(0);
+  for (const r of statsReads) {
+    expect(r.method, "the statistics document is only ever read").toBe("GET");
+    expect(r.path, "the statistics read carries no query string").toBe("/stats/data.json");
+    expect(r.body, "the statistics read carries no body").toBe("");
   }
 
   // 2) No captured request (method, path, or body) carries a word of the

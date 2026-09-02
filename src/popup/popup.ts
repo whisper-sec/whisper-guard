@@ -27,15 +27,19 @@ import {
   type ExplainResult,
   type GraphBand,
   type LinkScanResult,
+  type GraphScale,
   type Protection,
   type Settings,
+  type SiteChain,
   type TabState,
   type WhyFactor,
   type WinCategory,
   type WinsToday,
 } from "../shared/types";
-import { CATEGORY_LABEL, flagEmoji, type ReportCategory } from "../shared/report";
 import { CONSOLE_URL, GRAPH_HOST } from "../shared/config";
+import { renderChain, renderChainPending } from "../shared/chain-view";
+import { compact, countUp, sparkline } from "../shared/spark";
+import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
 import { CANVAS_MONO, onThemeChange, themeColor } from "../shared/theme";
 
@@ -284,19 +288,6 @@ async function loadBlocked(activeHost: string): Promise<void> {
   );
 }
 
-function protectKv(k: string, v: string): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "protect-kv";
-  const kEl = document.createElement("span");
-  kEl.className = "k";
-  kEl.textContent = k;
-  const vEl = document.createElement("span");
-  vEl.className = "v";
-  vEl.textContent = v;
-  row.append(kEl, vEl);
-  return row;
-}
-
 /** One named weighted factor row: dot + name + weight, colored by kind. */
 function factorRow(f: WhyFactor): HTMLElement {
   const row = document.createElement("div");
@@ -376,37 +367,21 @@ function renderCoverage(coverage: string | null): boolean {
   return true;
 }
 
-/** The composed picture: who runs it, where, how old, why flagged. */
+/**
+ * WHY the verdict says what it says: the graph's score and the named,
+ * weighted factors behind it.
+ *
+ * Who runs it, where it sits and how old the name is used to live here as
+ * three detached rows. They are all ON THE CHAIN now, said better there as
+ * rungs of one walk. Keeping both was the panel telling the reader the same
+ * thing twice in two vocabularies, which is how a surface starts to read as
+ * padding, and it left two places for the same fact to disagree.
+ */
 async function loadProtection(host: string): Promise<void> {
   const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
   if (!res.ok) return;
   const p = res.protection;
   const why = renderWhy(p);
-  const rows: HTMLElement[] = [];
-  if (p.who) {
-    // The owner chain falls back to the registrable domain when the graph
-    // has no organization and no canonical name for the host, so "Who:
-    // example.com" is the shape of "not known" wearing the shape of an
-    // answer. Say the unknown out loud instead: on a security panel, "we
-    // could not identify who runs this" is information, and echoing the
-    // hostname back at the reader is not.
-    const fallback = (state?.registrable ?? "").toLowerCase();
-    const named = p.who.toLowerCase() !== fallback && p.who.toLowerCase() !== host.toLowerCase();
-    const category =
-      p.category && p.category in CATEGORY_LABEL ? CATEGORY_LABEL[p.category as ReportCategory] : null;
-    const known = category && category !== CATEGORY_LABEL.unresolved ? category : null;
-    if (named) rows.push(protectKv("Who", known ? `${p.who} · ${known}` : p.who));
-    else rows.push(protectKv("Who", known ? `not identified · ${known}` : "not identified in the graph"));
-  }
-  if (p.where && (p.where.city || p.where.country)) {
-    const flag = flagEmoji(p.where.country ?? undefined);
-    rows.push(protectKv("Where", `${p.where.city ?? p.where.country}${flag ? ` ${flag}` : ""}`));
-  }
-  if (p.ageDays !== null) {
-    const label =
-      p.ageDays < 32 ? `${p.ageDays} days (new domains deserve suspicion)` : p.ageDays < 366 ? `${Math.round(p.ageDays / 30.4)} months` : `${Math.floor(p.ageDays / 365.25)} years`;
-    rows.push(protectKv("Age", label));
-  }
   const card = $("protect-card");
   const whyBox = $("why-chips");
   // p.why[0] is a summary we synthesise of the very factors listed directly
@@ -424,10 +399,7 @@ async function loadProtection(host: string): Promise<void> {
       return line;
     }),
   );
-  if (rows.length > 0 || prose.length > 0 || why.shown) {
-    card.hidden = false;
-    $("protect-rows").replaceChildren(...rows);
-  }
+  if (prose.length > 0 || why.shown) card.hidden = false;
 }
 
 // ---------------------------------------- this browser: the ONE control
@@ -655,6 +627,93 @@ function wireSignin(): void {
   });
 }
 
+// ------------------------------------------------------- the live scale
+//
+// The masthead says how big the graph behind the verdict actually is, read
+// from the public stats endpoint on every open. It is never a constant in
+// this build: a figure about our own coverage is stale the day after it is
+// written, and quoting a stale one is worse than quoting none. When the
+// endpoint cannot be read the readout stays hidden rather than showing a
+// remembered number.
+
+async function loadScale(): Promise<void> {
+  const res = await send<{ ok: true; scale: GraphScale | null }>({ kind: "getScale" });
+  if (!res.ok || !res.scale) return;
+  const sc = res.scale;
+  const box = $("scale");
+  box.hidden = false;
+
+  const nodes = $("scale-nodes");
+  countUp(nodes, sc.nodes, compact);
+
+  // The tooltip carries the full picture, so the masthead can stay a
+  // glance: exact figures, the resolvers' window, and when it was measured.
+  const measured = new Date(sc.updated);
+  const lat = sc.p50Us !== null ? `, p50 ${Math.round(sc.p50Us)}us` : "";
+  box.title =
+    `${sc.nodes.toLocaleString("en")} nodes and ${sc.edges.toLocaleString("en")} edges. ` +
+    `${sc.queries.toLocaleString("en")} DNS questions answered in the last ${sc.windowHours}h${lat}. ` +
+    `Read live at ${measured.toLocaleTimeString()}${sc.degraded ? " (the endpoint reports degraded input)" : ""}.`;
+
+  // The pulse: the resolvers' own trailing window. A shape, not a chart,
+  // and it refuses to draw at all when there is nothing to show.
+  const spark = sparkline(sc.pulse.slice(-48), {
+    width: 44,
+    height: 14,
+    fill: 0.16,
+    head: true,
+    title: `DNS questions answered per 5 minutes over the last ${sc.windowHours} hours`,
+  });
+  if (spark) $("scale-pulse").replaceChildren(spark);
+}
+
+// ------------------------------------------------------------- the chain
+//
+// The join path behind the name. This is the section that needs a graph
+// rather than a feed, and it is the reason the panel is worth opening on a
+// site that turns out to be fine.
+
+async function loadChain(host: string): Promise<void> {
+  const card = $("chain-card");
+  card.hidden = false;
+  renderChainPending($("chain-mount"));
+  const res = await send<{ ok: true; chain: SiteChain }>({ kind: "getChain", host });
+  const note = $("chain-note");
+  if (!res.ok) {
+    // The transport failed, which is a different fact from "the graph knows
+    // nothing", and the panel has to say which one happened.
+    card.hidden = true;
+    return;
+  }
+  renderChain($("chain-mount"), res.chain);
+  if (res.chain.unavailable > 0) {
+    note.hidden = false;
+    note.textContent =
+      `${res.chain.unavailable} step${res.chain.unavailable === 1 ? "" : "s"} of the walk could not be read just now. ` +
+      "Those are unknown, not clear.";
+  } else if (res.chain.live <= 2) {
+    note.hidden = false;
+    note.textContent =
+      "The graph holds almost nothing about this name. That is common for a name registered days ago.";
+  } else {
+    note.hidden = true;
+  }
+}
+
+// -------------------------------------------------------- the keyless tier
+//
+// One implementation (shared/tier.ts), mounted here and on the dashboard.
+
+async function loadTier(): Promise<void> {
+  await mountTierMeter({
+    root: $("tier-meter"),
+    label: $("tier-label"),
+    count: $("tier-count"),
+    fill: $("tier-fill"),
+    note: $("tier-note"),
+  });
+}
+
 // ---------------------------------------------------------------- render
 
 function render(): void {
@@ -662,6 +721,7 @@ function render(): void {
   const s = state;
   const cloudCheck = settings?.cloudCheck ?? true;
 
+  void loadScale();
   void loadToday();
   void loadBrowser24h();
   $("btn-dashboard").addEventListener("click", () => {
@@ -672,7 +732,10 @@ function render(): void {
   // readers get the one control, keyless readers get the one thing that
   // unlocks it. Two tiers, both honest, one action either way.
   if (s.signedIn) void loadIdentity();
-  else wireSignin();
+  else {
+    wireSignin();
+    void loadTier();
+  }
 
   // a session block must be discoverably clearable - list the hosts
   // blocked this session and, when THIS tab is one (the opaque
@@ -697,16 +760,24 @@ function render(): void {
 
   $("host-row").hidden = false;
   $("hostname").textContent = host;
-  if (cloudCheck) wireLinkScan();
+  if (cloudCheck) {
+    wireLinkScan();
+    // The chain is the keyless payload and does not wait on a verdict:
+    // whether the name is flagged or unremarkable, the path behind it is
+    // the thing the panel was opened to see.
+    void loadChain(host);
+  }
 
   const band: GraphBand | null = s.verdict?.band ?? null;
   const glyph = $("band-glyph");
+  const rail = $("band-rail");
   const chip = $("band-chip");
   const note = $("band-note");
 
   if (band) {
     const ui = BAND_UI[band];
     glyph.className = `glyph ${ui.glyphCls}`;
+    rail.className = `band-rail ${ui.glyphCls}`;
     glyph.textContent = ui.glyph;
     chip.className = `w-chip ${ui.chipCls}`;
     chip.textContent = ui.chip;
@@ -715,6 +786,7 @@ function render(): void {
     void loadProtection(host);
   } else if (cloudCheck) {
     glyph.className = "glyph unknown";
+    rail.className = "band-rail unknown";
     glyph.textContent = "?";
     chip.className = "w-chip unknown";
     chip.textContent = "UNKNOWN";
@@ -722,6 +794,7 @@ function render(): void {
     void loadProtection(host);
   } else {
     glyph.className = "glyph signedout";
+    rail.className = "band-rail";
     // A plain ring: no reading was taken. U+26BF has no glyph in a good many
     // system font stacks and falls back to a tofu box, which reads as a
     // rendering fault rather than a state.

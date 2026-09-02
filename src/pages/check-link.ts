@@ -34,8 +34,24 @@ async function init(): Promise<void> {
   $("host").textContent = host;
   ($("btn-open") as HTMLAnchorElement).href = `https://${host}/`;
 
-  const res = await send<{ ok: true; check: CheckHostResult }>({ kind: "checkHost", host });
-  if (!res.ok) return;
+  // A failure HERE is the transport, not the graph: the background did not
+  // answer at all. Returning quietly left the one window whose entire job is
+  // to answer "is this link safe?" showing a hostname, no verdict, no
+  // privacy line, and a live "Open anyway" button - which reads exactly like
+  // a clean result. An error that renders as an empty state is the worst
+  // shape this product has, and this was one.
+  const res = await send<{ ok: true; check: CheckHostResult } | { ok: false; error: string }>({
+    kind: "checkHost",
+    host,
+  }).catch((e: unknown) => ({ ok: false as const, error: String(e instanceof Error ? e.message : e) }));
+  if (!res.ok) {
+    $("result").hidden = false;
+    $("error-note").hidden = false;
+    $("error-note").textContent =
+      "Whisper Guard could not run the check just now. That is not a clean result: this link is unchecked.";
+    $("privacy").textContent = "Privacy: nothing was sent.";
+    return;
+  }
   const c = res.check;
   $("result").hidden = false;
 

@@ -24,9 +24,12 @@ $("detail").textContent = host
     : `${host} is flagged as a known threat in the Whisper security graph. It was blocked before any credentials could be entered.`
   : "This page was flagged as a known threat.";
 
+// Never an empty privacy line. When the page arrived without a host the
+// honest sentence is that nothing was checked, not silence: silence on a
+// privacy line is indistinguishable from a promise that was not kept.
 $("privacy").textContent = host
   ? `Privacy: only "${host}" was checked. Your browsing stays yours.`
-  : "";
+  : "Privacy: nothing was sent. This page carries no host to check.";
 
 function backToSafety(): void {
   if (window.history.length > 1) window.history.back();
@@ -45,18 +48,44 @@ if (brandDomain) {
   real.href = `https://${brandDomain}/`;
 }
 
-$("btn-continue").addEventListener("click", async () => {
-  if (host === "") return;
-  await send({ kind: "allowHost", host, session: true });
-  window.location.href = `https://${host}/`;
-});
+// "Continue anyway" without a host used to be a control that did nothing at
+// all when pressed: no navigation, no message, no feedback. A button that
+// silently ignores a click on a page whose whole purpose is to stop someone
+// is worse than an absent one, because the reader concludes the product is
+// broken and goes around it. Without a host there is nothing to continue TO,
+// so the control says so and offers the way out that does work.
+const continueBtn = $("btn-continue");
+if (host === "") {
+  continueBtn.textContent = "There is no destination to continue to";
+  (continueBtn as HTMLButtonElement).disabled = true;
+} else {
+  continueBtn.addEventListener("click", async () => {
+    continueBtn.textContent = "Continuing...";
+    await send({ kind: "allowHost", host, session: true }).catch(() => undefined);
+    window.location.href = `https://${host}/`;
+  });
+}
 
 // The receipts: feed citations, who runs it, domain age. Best-effort; the
 // warning stands on its own if the graph is unreachable.
 async function loadReceipts(): Promise<void> {
   if (host === "") return;
-  const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
-  if (!res.ok) return;
+  const res = await send<{ ok: true; protection: Protection } | { ok: false; error: string }>({
+    kind: "getProtection",
+    host,
+  }).catch(() => ({ ok: false as const, error: "unreachable" }));
+  if (!res.ok) {
+    // The warning stands on its own, but "we could not fetch the receipts"
+    // and "there are no receipts" are different facts and the box must not
+    // render the first as the second.
+    const box = $("receipts");
+    box.hidden = false;
+    const note = document.createElement("div");
+    note.className = "w-note";
+    note.textContent = "The supporting detail could not be loaded. The block itself still stands.";
+    box.replaceChildren(note);
+    return;
+  }
   const p = res.protection;
   const box = $("receipts");
   const rows: HTMLElement[] = [];

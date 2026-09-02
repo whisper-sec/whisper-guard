@@ -85,7 +85,11 @@ function fleet(net: E2ENetwork): void {
 
 async function shot(page: Page, name: string, scheme: "dark" | "light", w = 390, h = 760): Promise<void> {
   mkdirSync(OUT, { recursive: true });
-  await page.emulateMedia({ colorScheme: scheme });
+  await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+  // Same reason as settlePopup: a sticky masthead stitches into the middle
+  // of a full-page capture of a page taller than the viewport, which is
+  // every panel with its drawers open.
+  await page.addStyleTag({ content: "header { position: static !important; }" }).catch(() => undefined);
   await page.setViewportSize({ width: w, height: h });
   await page.waitForTimeout(350);
   await page.screenshot({ path: join(OUT, `${name}-${scheme}.png`), fullPage: true });

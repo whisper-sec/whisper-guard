@@ -24,7 +24,7 @@ import type { AssessVerdict, TabState } from "../shared/types";
 import { computeEndpointHealth, isFlagged, reportTotals } from "../shared/report";
 import { detect } from "../detector/detector";
 import { assessHost } from "./assess";
-import { cacheGet, cachePut } from "./cache";
+import { cacheClear, cacheGet, cachePut } from "./cache";
 import {
   cancelDeviceFlow,
   deviceFlowState,
@@ -43,6 +43,9 @@ import { getSettings, setSettings } from "./settings";
 import { allowForSession, recordRisk, sessionAllowed, sessionBlockedHosts, sessionRisks } from "./session";
 import { addBlockRule, armConsent, armConsentFrame, armPreempt, injectGuard, redirectToWarning, removeBlockRule, shieldGranted } from "./shield";
 import { preemptCheck } from "./preempt";
+import { chainFor, resetChainCache, rungDetailFor } from "./chain-cache";
+import { graphScale } from "./scale";
+import { graphQuota, resetQuotaCache } from "./quota";
 import { protectHost, variantNeighborhood } from "./protect";
 import { getDestinations, onNavRecorded, recordNav } from "./navlog";
 import { enrichDestinations } from "./enrich";
@@ -210,17 +213,22 @@ async function evaluate(tabId: number, url: string): Promise<void> {
           graphLabel: verdict?.label ?? null,
         });
       }
-    } else if (
-      settings.fieldGuard &&
-      rung === "blocking" &&
-      atLeast(decide(signal, "credential"), "conversational")
-    ) {
+    } else if (settings.fieldGuard && rung === "blocking") {
       // 5b) The CREDENTIAL moment, the ladder's own column and the
-      // one place a session-allow does not silence Guard. Both halves of
-      // this condition come from the table, not from a private threshold:
-      // the page moment rang BLOCKING and the human clicked through it,
-      // and the credential cell for that same evidence still says
-      // conversational - a dismissible word, never a block. The page
+      // one place a session-allow does not silence Guard: the page moment
+      // rang BLOCKING and the human clicked through it, and the credential
+      // cell for that same evidence still says conversational - a
+      // dismissible word, never a block.
+      //
+      // The condition used to also test atLeast(decide(signal,"credential"),
+      // "conversational"), which reads like the table being consulted and is
+      // not: rung === "blocking" can only come from severity "evidenced",
+      // and that row's credential cell IS "conversational", so the second
+      // half was true whenever the first was. It looked like a guard, it
+      // tested nothing, and a test asserting "the credential column is
+      // consulted here" would have passed against a build that had deleted
+      // the column. The invariant is now pinned where it belongs, on the
+      // ladder itself (e2e/escalation-decision.spec.ts). The page
       // verdict stays answered (no re-block, no banner, no second
       // warning); only the credential moment speaks, because typing a
       // password into a site the graph calls malicious is a different
@@ -341,6 +349,14 @@ ext.contextMenus.onClicked.addListener((info) => onMenuClicked(info));
 // Sign-in / sign-out repaints every open http(s) tab right away: the keyed
 // tier lights up the moment the console approves, no re-navigation needed.
 onAuthChanged(() => {
+  // Drop every cached answer first. A keyless verdict and a keyed one are
+  // answers from different tiers of the graph, and re-evaluating without
+  // clearing simply re-read the same cached rows: signing in lit up the
+  // chrome and changed none of the verdicts until each TTL expired, up to
+  // twenty-four hours later. The chain and the quota are tier-shaped too.
+  cacheClear();
+  resetChainCache();
+  resetQuotaCache();
   for (const [tabId, url] of lastUrl) {
     if (/^https?:/i.test(url)) scheduleEvaluate(tabId, url);
   }
@@ -455,7 +471,10 @@ function nokeyResponse(e: unknown): BgResponse | null {
 async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Promise<BgResponse> {
   switch (msg.kind) {
     case "getTabState": {
-      const state = tabs.get(msg.tabId) ?? blankState();
+      // A COPY. Writing signedIn through to the stored object made the
+      // answer to a read mutate the thing being read, so a later paint could
+      // observe a field this handler set rather than one evaluate() decided.
+      const state = { ...(tabs.get(msg.tabId) ?? blankState()) };
       state.signedIn = await hasKey();
       return { ok: true, tabState: state };
     }
@@ -668,9 +687,32 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       if (st?.eligible && st.hostname && st.icon !== "malicious") {
         await armPreempt(msg.tabId, st.hostname);
         await armConsent(msg.tabId);
+        // RECORD THE PAGE. The consent pass runs in every frame, so the win
+        // tally de-duplicates a decline once per PAGE using this map. Arming
+        // from the popup without writing to it meant every decline on a
+        // popup-armed page took the "no page known" path and skipped the
+        // de-duplication entirely - the exact per-frame inflation the map
+        // exists to prevent, on the one arming route that has no other.
+        const url = lastUrl.get(msg.tabId);
+        if (url !== undefined) consentArmedUrl.set(msg.tabId, url);
       }
       return { ok: true };
     }
+    // The join path behind one hostname. Built on the reader's ask, never
+    // on navigation: the public tier allows a hundred graph calls an hour
+    // from one address, the chain costs seven of them, and browsing must
+    // not spend the budget that the verdict needs.
+    case "getChain":
+      return { ok: true, chain: await chainFor(msg.host) };
+    case "getRungDetail":
+      return { ok: true, detail: await rungDetailFor(msg.host, msg.rung) };
+    // The live scale, and the live pulse. null when the endpoint could not
+    // be read, which the surface renders as "unavailable" rather than as a
+    // remembered figure.
+    case "getScale":
+      return { ok: true, scale: await graphScale() };
+    case "getQuota":
+      return { ok: true, quota: await graphQuota() };
     case "getWins":
       return { ok: true, wins: await getWins() };
     case "listBlocked":
@@ -767,6 +809,17 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
     case "updateCorpusNow": {
       const r = await updateCorpusNow();
       return r.updated ? { ok: true } : { ok: false, error: r.reason };
+    }
+    default: {
+      // Falling off the end called sendResponse(undefined), which is not a
+      // BgResponse at all: a stale content script from a previous version,
+      // or another extension probing, got a shape no caller can narrow. Say
+      // so instead, and say what would help.
+      const unknown = msg as { kind?: unknown };
+      return {
+        ok: false,
+        error: `Whisper Guard does not handle "${String(unknown.kind)}". This usually means a page is running an older content script; reload the tab.`,
+      };
     }
   }
 }

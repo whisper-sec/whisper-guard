@@ -10,7 +10,7 @@
 // FIREFOX_BIN overrides the binary; otherwise the system firefox is used,
 // falling back to Playwright's bundled build.
 
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, execSync, spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,6 +58,37 @@ if (!firefox) {
 }
 console.log(`gate 2: temporary-install into headless Firefox (${firefox}) ...`);
 
+/**
+ * Every Firefox from THIS install that is already running, before we start
+ * one of our own.
+ *
+ * The teardown reaps the difference. web-ext starts Firefox as its own
+ * child and that child escapes both `child.kill()` and a process-group
+ * signal, so without this the browser simply stays running: five orphans
+ * were found on this machine, the oldest two days and five hours old, one
+ * of them holding a profile lock inside the browser INSTALL directory,
+ * which then made every later Playwright launch of that same Firefox fail
+ * with a bare ENOENT on the lock path.
+ *
+ * A before/after difference is the precise way to do this. It cannot touch
+ * a browser that was already running, which on a shared machine is somebody
+ * else's, and it needs nothing from web-ext, whose own --firefox-profile is
+ * ignored for the temporary-install flow.
+ */
+const firefoxPids = () => {
+  try {
+    return new Set(
+      execSync(`pgrep -f ${JSON.stringify(firefox)} || true`, { encoding: "utf8" })
+        .split("\n")
+        .map((x) => Number(x.trim()))
+        .filter((n) => Number.isInteger(n) && n > 0),
+    );
+  } catch {
+    return new Set();
+  }
+};
+const preexisting = firefoxPids();
+
 const child = spawn(
   WEB_EXT,
   [
@@ -68,22 +99,66 @@ const child = spawn(
     "--no-input",
     "--arg=-headless",
   ],
-  { stdio: ["ignore", "pipe", "pipe"] },
+  // OWN PROCESS GROUP. web-ext spawns Firefox as its own child, so killing
+  // web-ext alone leaves a headless Firefox running forever: one was found
+  // still alive two days and five hours after the run that started it,
+  // holding a profile lock in the browser install directory that then broke
+  // every later attempt to launch that same Firefox. Detaching lets the
+  // teardown below signal the whole group and reap the grandchild too.
+  { stdio: ["ignore", "pipe", "pipe"], detached: true },
 );
 
 let out = "";
 let done = false;
+/**
+ * Reap this run's browser, and only this run's.
+ *
+ * Three steps, cheapest first: the child, then its process group, then any
+ * Firefox still holding OUR profile directory. The third is the one that
+ * actually catches it, and it is safe precisely because the profile path is
+ * ours and unique - it can never match a browser someone else is running.
+ */
+const killTree = (signal) => {
+  try {
+    child.kill(signal);
+  } catch {
+    // already gone
+  }
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // no group, or already gone
+  }
+  for (const pid of firefoxPids()) {
+    if (preexisting.has(pid) || pid === process.pid) continue;
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // gone between listing and signalling
+    }
+  }
+};
+
 const finish = (ok, msg) => {
   if (done) return;
   done = true;
   console.log(msg);
-  child.kill("SIGTERM");
-  setTimeout(() => {
-    child.kill("SIGKILL");
+  killTree("SIGTERM");
+  const bail = () => {
+    killTree("SIGKILL");
     process.exit(ok ? 0 : 1);
-  }, 3000).unref();
-  setTimeout(() => process.exit(ok ? 0 : 1), 5000);
+  };
+  setTimeout(bail, 3000).unref();
+  setTimeout(bail, 5000);
 };
+
+// A Ctrl-C or a killed CI job must not leave the browser behind either.
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    killTree("SIGKILL");
+    process.exit(1);
+  });
+}
 
 const watch = (chunk) => {
   out += chunk.toString();

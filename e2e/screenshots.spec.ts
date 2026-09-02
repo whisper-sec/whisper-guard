@@ -24,6 +24,7 @@ import {
   openDashboard,
   openPopup,
   setKey,
+  settlePopup,
   setSettings,
   visit,
   waitForIcon,
@@ -82,7 +83,7 @@ test.beforeAll(async () => {
     ["ads.tracker-vendor.com", { ip: "192.0.2.9", city: "Ashburn, US", country: "US", asn: "AS64520", owner: "Tracky Ads Inc.", asnName: "TRACKY - Tracky Ads Inc.", verdict: "NONE", prefix: "192.0.2.0/24" }, "ads", "Tracky Ads"],
     ["searchy-vendor.com", { ip: "203.0.113.30", city: "Dublin, IE", country: "IE", asn: "AS64530", owner: "Searchy Ltd.", asnName: "SEARCHY - Searchy Ltd.", verdict: "NONE", prefix: "203.0.113.0/24" }, "search", "Searchy"],
     ["news.mediaco-vendor.com", { ip: "198.51.100.40", city: "London, GB", country: "GB", asn: "AS64540", owner: "MediaCo plc", asnName: "MEDIACO - MediaCo plc", verdict: "NONE", prefix: "198.51.100.0/24" }, "media", "MediaCo"],
-    [LOOKALIKE, { ip: "192.0.2.66", city: "Montreal, CA", country: "CA", asn: "AS64550", owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC", verdict: "CRITICAL", prefix: "192.0.2.0/24" }, "unresolved", "Bad Hosting"],
+    [LOOKALIKE, { ip: "192.0.2.66", city: "Montreal, CA", country: "CA", asn: "AS64550", owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC", verdict: "CRITICAL", prefix: "192.0.2.0/24", threatNeighbors: 9 }, "unresolved", "Bad Hosting"],
   ];
   for (const [host, enrich, cat, name] of dests) {
     net.setEnrich(host, enrich);
@@ -117,6 +118,13 @@ test.beforeAll(async () => {
     ],
   });
   net.setCohost(LOOKALIKE, { ip: "192.0.2.66", cohosted: 37, prefix: "192.0.2.0/24", threatNeighbors: 9 });
+  // The chain's own inputs for the gallery. Without these the published
+  // figure shows a walk that stops three rungs early, which is a picture of
+  // the fixture rather than of the product.
+  net.setPresence("AS64550", { facilities: ["Example Colo MTL1"], exchanges: [], facilityCount: 1 });
+  net.setPresence("AS64540", { facilities: ["Example Carrier Hotel LON1", "Example Colo LON2"], exchanges: ["Example Exchange LON"], facilityCount: 14, exchangeCount: 4 });
+  net.setDensity("AS64550", { listedIps: 412, announcedIpv4: 1024, routedPrefixes: 4 });
+  net.setHistory(LOOKALIKE, [{ createDate: "2026-08-19T00:00:00Z", updateDate: "2026-08-19T00:00:00Z" }]);
   ext = await launchExtension({ proxyPort: net.proxyPort, dist: makeShieldDist() });
 });
 
@@ -209,9 +217,7 @@ async function popupShot(tabId: number, file: string, prep?: (p: import("@playwr
   // dark and carries a light capture of each surface beside it, so the claim
   // is shown rather than asserted; the panel's own protection states are
   // captured in both by e2e/protect.spec.ts.
-  await popup.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await popup.setViewportSize({ width: 380, height: 650 });
-  await popup.waitForTimeout(400);
+  await settlePopup(popup, { colorScheme: "dark", width: 400, height: 700 });
   if (prep) await prep(popup);
   await assertScheme(popup, "dark", file);
   await popup.screenshot({ path: join(SHOTS, file), fullPage: true });

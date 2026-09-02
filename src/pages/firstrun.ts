@@ -7,6 +7,8 @@
 // everywhere else). "Not now" is a first-class choice.
 
 import { send, type CheckHostResult } from "../shared/messages";
+import type { GraphScale } from "../shared/types";
+import { compact } from "../shared/spark";
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
@@ -28,7 +30,20 @@ async function loadSample(): Promise<void> {
   chip.textContent = good ? "NO KNOWN THREAT" : band;
   note.textContent = res.check.verdict.coverage ? `coverage: ${res.check.verdict.coverage}` : "";
 }
+/**
+ * How big the graph is, read live. The claim is only made when it was
+ * measured: an unreachable endpoint leaves the sentence standing without a
+ * number rather than falling back to one somebody typed here once.
+ */
+async function loadScaleClaim(): Promise<void> {
+  const res = await send<{ ok: true; scale: GraphScale | null }>({ kind: "getScale" });
+  if (!res.ok || !res.scale) return;
+  $("scale-claim").textContent =
+    `, ${compact(res.scale.nodes)} nodes and ${compact(res.scale.edges)} edges of internet ground truth`;
+}
+
 void loadSample();
+void loadScaleClaim();
 
 $("btn-later").addEventListener("click", () => {
   window.close();

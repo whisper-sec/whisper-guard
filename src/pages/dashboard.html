@@ -27,6 +27,36 @@
 
   <!-- ================================================== This browser -->
   <main id="view-browser" class="view">
+    <!-- The scale band. How big the graph behind every verdict on this page
+         actually is, and how hard the resolvers in front of it are working,
+         both read live from the public statistics endpoint on every load.
+         Never a figure written into this build: one about our own coverage
+         is stale the day after it ships. When the endpoint cannot be read
+         the band says so and shows nothing rather than a remembered number. -->
+    <section id="scale-band" class="scale-band" hidden>
+      <div class="sb-figures">
+        <div class="sb-fig">
+          <span id="sb-nodes" class="sb-num">-</span>
+          <span class="sb-cap">nodes in the graph</span>
+        </div>
+        <div class="sb-fig">
+          <span id="sb-edges" class="sb-num">-</span>
+          <span class="sb-cap">edges joining them</span>
+        </div>
+        <div class="sb-fig">
+          <span id="sb-identities" class="sb-num">-</span>
+          <span class="sb-cap">identities on the network</span>
+        </div>
+      </div>
+      <div class="sb-pulse">
+        <div class="sb-pulse-head">
+          <span class="w-label">Resolver pulse</span>
+          <span id="sb-pulse-note" class="w-note"></span>
+        </div>
+        <div id="sb-pulse-chart" class="sb-chart"></div>
+      </div>
+    </section>
+
     <!-- ONE control, the same one the panel offers, from the same module.
          It reserves this browser's routable Whisper identity AND routes
          through it, asking for the permission routing needs at the moment
@@ -36,6 +66,17 @@
          below is the record of where this browser has been. -->
     <section class="w-card" id="egress-card">
       <div id="identity-control"></div>
+      <!-- Signed out, the card still says something true and measured: where
+           this reader stands on the public tier and what an account changes.
+           Same meter the panel mounts, from shared/tier.ts. -->
+      <div id="tier-meter" class="tier" hidden>
+        <div class="tier-head">
+          <span id="tier-label" class="tier-label"></span>
+          <span id="tier-count" class="tier-count"></span>
+        </div>
+        <div class="tier-track"><span id="tier-fill" class="tier-fill"></span></div>
+        <div id="tier-note" class="w-note"></div>
+      </div>
     </section>
 
     <section class="tiles" id="b-tiles"></section>
@@ -51,6 +92,10 @@
       <div class="w-card">
         <div class="w-label">By company</div>
         <div id="b-owners" class="bars"></div>
+      </div>
+      <div class="w-card">
+        <div class="w-label">By network</div>
+        <div id="b-networks" class="bars"></div>
       </div>
       <div class="w-card">
         <div class="w-label">By country <span class="hint">(network jurisdiction; anycast-fuzzy)</span></div>
@@ -105,6 +150,10 @@
         <div class="w-card">
           <div class="w-label">By company</div>
           <div id="f-owners" class="bars"></div>
+        </div>
+        <div class="w-card">
+          <div class="w-label">By network</div>
+          <div id="f-networks" class="bars"></div>
         </div>
         <div class="w-card">
           <div class="w-label">By country <span class="hint">(network jurisdiction; anycast-fuzzy)</span></div>

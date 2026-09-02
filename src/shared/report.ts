@@ -65,7 +65,6 @@ export interface ReportHost {
   asn?: string;
   asnName?: string;
   /** Announcing prefix (the keyless network signal when no ASN is visible). */
-  prefix?: string;
   /** Owner label, always set: inference chain, falling back to the domain. */
   owner: string;
   category: ReportCategory;
@@ -341,7 +340,7 @@ export interface NetworkRow {
 export function tallyNetwork(hosts: ReportHost[]): NetworkRow[] {
   const by = new Map<string, { owner: string; count: number }>();
   for (const h of hosts) {
-    const net = h.asn ?? h.prefix;
+    const net = h.asn;
     if (!net) continue;
     const cur = by.get(net) ?? { owner: h.owner, count: 0 };
     cur.count += 1;
@@ -373,7 +372,7 @@ export interface ReportTotals {
 export function reportTotals(hosts: ReportHost[]): ReportTotals {
   const companies = new Set(hosts.map((h) => shortOwner(h.owner)));
   const countries = new Set(hosts.map((h) => h.country).filter(Boolean));
-  const networks = new Set(hosts.map((h) => h.asn ?? h.prefix).filter(Boolean));
+  const networks = new Set(hosts.map((h) => h.asn).filter(Boolean));
   return {
     destinations: hosts.length,
     companies: companies.size,

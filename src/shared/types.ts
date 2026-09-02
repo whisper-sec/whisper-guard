@@ -310,3 +310,152 @@ export interface LinkScanResult {
   /** True when the page held more unique destinations than the scan cap. */
   truncated: boolean;
 }
+
+// ------------------------------------------------------------------ the chain
+
+/**
+ * One rung of the join path behind a name. The rung is the unit of the
+ * moat: any product can look a name up, and only a graph that joins the
+ * layers can say which building the network that announces the prefix
+ * that holds the address that the name resolves to is present in.
+ */
+export type ChainRungKind =
+  | "name"
+  | "vendor"
+  | "address"
+  | "prefix"
+  | "network"
+  | "operator"
+  | "presence";
+
+export interface ChainRung {
+  kind: ChainRungKind;
+  /** The eyebrow, e.g. "PREFIX". */
+  label: string;
+  /** The measured value, or the words for "the graph holds nothing here". */
+  value: string | null;
+  /** The right-hand fact: a count, a confidence, a country. */
+  fact: string | null;
+  /**
+   * THREE outcomes, never conflated:
+   *   live         the graph answered and holds a value
+   *   empty        the graph answered and holds nothing about this rung
+   *   unavailable  the call did not come back, so we do not know
+   * An error that renders as an empty state is the defect this refuses.
+   */
+  state: "live" | "empty" | "unavailable";
+  /** Set when the rung itself carries risk (a prefix full of listed hosts). */
+  tone: "neutral" | "warn" | "hot";
+  /**
+   * What the walk already knows about this rung beyond the one line: the
+   * other addresses, the roles, the rest of the buildings. Free, because it
+   * came back with the walk, so it costs a click and no request.
+   */
+  detail: string[];
+  /**
+   * True when MORE is fetchable on demand (the network's threat density,
+   * the names sharing this address). Deliberately lazy: the public tier
+   * allows a hundred calls an hour, and a reader who never expands a rung
+   * should not spend one.
+   */
+  drillable: boolean;
+}
+
+/** The answer to expanding one rung. */
+export interface RungDetail {
+  kind: ChainRungKind;
+  lines: string[];
+  /** A measured ratio worth drawing as a bar: listed of announced. */
+  ratio: { label: string; part: number; whole: number } | null;
+  /** Set when the read did not come back, so "nothing" is never silent. */
+  error: string | null;
+}
+
+export interface SiteChain {
+  host: string;
+  rungs: ChainRung[];
+  /** How many rungs the graph could actually answer. */
+  live: number;
+  /** How many rungs could not be read at all. */
+  unavailable: number;
+  /** The graph's own words for how it attributed the vendor. */
+  evidence: string[];
+  facilities: string[];
+  exchanges: string[];
+
+  // The same facts in structured form, so the composed verdict
+  // (background/protect.ts) can read them off this ONE walk instead of
+  // asking the graph the same questions again. Cheaper, and it makes it
+  // impossible for the panel to show an owner that disagrees with its own
+  // OPERATOR rung.
+  owner: string | null;
+  country: string | null;
+  /** The city the representative address sits in, when the graph has one. */
+  city: string | null;
+  asn: string | null;
+  /** False when the enrich call did not come back, so a null owner above
+   *  means "not read" rather than "not known". */
+  asnOk: boolean;
+  ip: string | null;
+  vendor: string | null;
+  /** The graph's host class (multi_tenant_user_content, cdn, ...). */
+  vendorCategory: string | null;
+  /** The graph's own category for the vendor (saas, cdn, ...). */
+  identifyCategory: string | null;
+  roles: string[];
+  ageDays: number | null;
+  prefix: string | null;
+  threatNeighbors: number | null;
+
+  at: number;
+}
+
+// ----------------------------------------------------------- the graph scale
+
+/**
+ * The live size of the graph the verdicts come from, read from the public
+ * stats endpoint every time and never from a constant in this repo. A
+ * hardcoded figure is stale the day after it is written, and a security
+ * product quoting a stale figure about its own coverage is worse than one
+ * quoting none.
+ */
+export interface GraphScale {
+  nodes: number;
+  edges: number;
+  objects: number;
+  /** Identities live on the Whisper network right now. */
+  identities: number;
+  /** DNS questions the resolvers answered in the trailing window. */
+  queries: number;
+  /** The trailing window those queries were counted over. */
+  windowHours: number;
+  /** Resolver answer latency, microseconds. */
+  p50Us: number | null;
+  p99Us: number | null;
+  /** 5-minute query buckets, oldest first: the pulse the header draws. */
+  pulse: number[];
+  /** When the endpoint says it computed this. */
+  updated: number;
+  /** True when the endpoint itself declares degraded input. */
+  degraded: boolean;
+}
+
+// ------------------------------------------------------------------- quota
+
+/**
+ * The keyless budget, read from the graph rather than guessed. This is the
+ * two-tier boundary made visible: a signed-out reader gets a real number
+ * and a real reset time instead of a pitch, and can see exactly what an
+ * account changes.
+ */
+export interface GraphQuota {
+  plan: string;
+  anonymous: boolean;
+  hourlyLimit: number | null;
+  hourlyRemaining: number | null;
+  dailyLimit: number | null;
+  dailyRemaining: number | null;
+  /** The join depth this tier allows. The whole reason the chain is built
+   *  in two rounds rather than one query. */
+  maxDepth: number | null;
+}

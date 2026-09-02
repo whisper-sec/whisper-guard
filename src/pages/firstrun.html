@@ -20,8 +20,13 @@
 
     <section class="card">
       <h2>See it work</h2>
-      <p>Every site you visit is checked live against the Whisper security graph,
-      7.4 billion nodes of internet ground truth. Here is a real verdict, fetched
+      <!-- The graph's size is READ, never written here. A figure typed into
+           this page is stale the day after it ships, and a security product
+           quoting a stale number about its own coverage is worse than one
+           quoting none. When the endpoint cannot be reached the sentence
+           simply does not claim a size. -->
+      <p>Every site you visit is checked live against the Whisper security
+      graph<span id="scale-claim"></span>. Here is a real verdict, fetched
       just now:</p>
       <div id="sample" class="sample">
         <span id="sample-host" class="w-host">github.com</span>

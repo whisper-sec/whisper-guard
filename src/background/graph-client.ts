@@ -26,12 +26,28 @@ import { GRAPH_MAX_RESPONSE_BYTES, GRAPH_QUERY_URL, GRAPH_TIMEOUT_MS } from "../
 
 export class GraphError extends Error {
   constructor(
-    public readonly reason: "auth" | "timeout" | "connect" | "server" | "parse" | "nokey",
+    public readonly reason: "auth" | "timeout" | "connect" | "server" | "parse" | "nokey" | "quota",
     message: string,
   ) {
     super(message);
     this.name = "GraphError";
   }
+}
+
+/**
+ * How many graph calls this worker has made, since it started.
+ *
+ * It exists for the budget surfaces, and it is deliberately kept even
+ * though the quota readout no longer memoises on it: a caller that wants
+ * to know how much of an hourly allowance THIS worker has spent cannot get
+ * that from anywhere else, and re-deriving it later would mean threading a
+ * counter back through every call site. Monotonic, never reset, and it
+ * counts attempts rather than successes because the tier is billed on the
+ * request and not on the answer.
+ */
+let calls = 0;
+export function graphCallCount(): number {
+  return calls;
 }
 
 export async function getKey(): Promise<string | null> {
@@ -64,6 +80,7 @@ export async function graphQuery(
   // plane.
   const url = opts.endpoint ?? GRAPH_QUERY_URL;
 
+  calls++;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res: Response;
@@ -89,6 +106,16 @@ export async function graphQuery(
 
   if (res.status === 401 || res.status === 403) {
     throw new GraphError("auth", "the graph rejected the key; sign in again");
+  }
+  if (res.status === 429) {
+    // The public tier's hourly ceiling, hit. This is a specific, recoverable
+    // state with a specific remedy, and telling a reader "graph unexpected
+    // status: 429" instead of what actually happened is the opaque error
+    // the robustness principle exists to forbid.
+    throw new GraphError(
+      "quota",
+      "this hour's free graph checks are used up; they reset on the hour, and an account raises the ceiling",
+    );
   }
   if (res.status >= 500) throw new GraphError("server", `graph server error: ${res.status}`);
   if (!res.ok) throw new GraphError("server", `graph unexpected status: ${res.status}`);

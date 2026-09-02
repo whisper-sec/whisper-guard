@@ -22,11 +22,26 @@ history.
   an honest dashed-slate UNKNOWN for the internet's long tail. Never a fake
   green. Popularity feeds (Tranco and friends) are treated as good, never as a
   threat.
-- **The composed picture, WHY included.** Click the mark for who runs the site
-  and where it lives, how old the domain is, and the WHY behind the verdict
-  shown by default: the graph's score and its named, weighted factors (each
-  threat-feed listing with its weight; popularity listings shown as good
-  standing), plus a look-alike neighborhood confirmed against the graph.
+- **The chain: the join path behind the name.** Any product can look a name
+  up. Click the mark and Guard walks the path instead, rung by rung: the
+  NAME and how long ago it was registered, what RUNS ON it, the ADDRESS it
+  answers on and the city that address sits in, the PREFIX that address is
+  announced in and how many of its neighbours are listed as threats, the
+  NETWORK that announces the prefix, the OPERATOR that holds the network,
+  and the buildings and internet exchanges that operator is PRESENT AT.
+  Seven rungs, seven joins, and no account. Expand a rung for what is behind
+  it: how much of that network's announced space is actually listed, how
+  many other names answer on that address, every facility by name.
+
+  Each rung says one of three things and never confuses them: it has a
+  value, the graph answered and holds nothing there, or the read did not
+  come back. The third is drawn in amber and says "could not be read",
+  because an outage that renders as an empty row is an outage that reads as
+  safety.
+- **The composed picture, WHY included.** The graph's score and its named,
+  weighted factors (each threat-feed listing with its weight; popularity
+  listings shown as good standing), plus a look-alike neighborhood confirmed
+  against the graph.
 - **Page-link pre-verdicts.** One click reads every link on the current page
   and verdicts each destination BEFORE you visit any of them: malicious,
   suspicious, unknown, or clean, riskiest first. The links are reduced to bare
@@ -70,6 +85,22 @@ history.
   guessed at. However many walls a page turns out to have, the tally counts
   the page once, because that is what was handled for you. Off with one
   switch.
+
+  **It reads the banner in its own language.** English, German, French,
+  Spanish, Italian, Dutch, Portuguese, Polish, Swedish, Danish, Norwegian,
+  Finnish, Czech, Turkish and Romanian, with accents folded before matching
+  so "Tylko niezbędne" and "Nur notwendige" are read as written. A wall
+  whose only refusal costs money is still left strictly alone in every one
+  of them: "Reject all and subscribe" is a paywall, and pressing it on your
+  behalf would be a purchase.
+- **The keyless tier, measured rather than pitched.** Signed out, the panel
+  shows your real remaining budget on the public graph tier and the join
+  depth it allows, read from the graph itself. "Sign in" is then a fact
+  about a ceiling you can see, not an advertisement. The size of the graph
+  behind every verdict is read live too, in the panel masthead and across
+  the top of the dashboard, along with the resolvers' own pulse over the
+  trailing 24 hours. No figure about our coverage is ever written into the
+  build: a number typed into a page is stale the day after it ships.
 - **A calm tally of what it handled.** One line in the panel counts today's
   quiet wins by category (clicks held, identities verified, cookie prompts
   declined) and nothing else: the record is a category, a count and today's
@@ -115,10 +146,24 @@ history.
 - A single toggle that asks the browser for on-page permission, used only to
   draw warnings: a full-page stop before known credential-phishing pages (with
   the feed-cited receipts), a slim amber banner on look-alikes, and a caution
-  when a password field gains focus on a flagged site. Decline it and everything
-  else still works, pre-emptive interruption included: that layer is arranged so
-  the browser's own permission model decides where it runs, so it reaches every
-  page under this grant and, without it, the tab you invoked Guard on.
+  when a **credential-shaped field** gains focus on a flagged site. Decline it
+  and everything else still works, pre-emptive interruption included: that
+  layer is arranged so the browser's own permission model decides where it
+  runs, so it reaches every page under this grant and, without it, the tab you
+  invoked Guard on.
+- **What counts as a credential field, and why it is not just a password box.**
+  A password input is the field a 2009 phishing page used. A wallet-drain page
+  asks for a twelve-word recovery phrase in a plain text box; a card skimmer
+  asks for a PAN and a CVC in a numeric one; an MFA-relay page asks for a
+  six-digit code in a `tel` box. Guard reads the autocomplete token, the type,
+  and the field's own labelling (name, id, placeholder, `aria-label`, and its
+  `<label>`), and names what it caught: "do not enter your one-time code here"
+  is a different sentence from "this site is flagged". The recovery-phrase case
+  gets the strongest wording there is, because that loss is the one with no
+  chargeback. It warns once per KIND, so a card form is one warning and not
+  four, and it stays silent on a search box, an email field or a name field:
+  a guard that warns on everything teaches you to dismiss the one that
+  mattered.
 
 ## How loud Guard is allowed to get
 
@@ -169,7 +214,12 @@ public identity verification all work with no key.
   `get.whisper.online` is contacted only for signed brand-corpus updates (no
   browsing data). `rdap.whisper.online` is contacted only to verify the
   identity of your own endpoints, and only receives IP literals of those
-  endpoints, never a browsing hostname.
+  endpoints, never a browsing hostname. `nic.whisper.online` serves the public
+  network statistics document, which is how the live size of the graph and the
+  resolvers' pulse reach the panel and the dashboard: a plain GET of a public
+  file, with no query string, no header, no body and no cookie, so nothing
+  about you can ride on it. The alternative was writing a coverage figure into
+  the build, where it would be stale the day after it shipped.
 - Verdicts are cached locally and navigations debounced, so revisits paint
   from cache with zero network.
 - Hostnames are used to answer the live safety check, not retained to build a
@@ -304,7 +354,7 @@ icons/         pre-rendered PNG state sets (built from the brand mark in assets/
 
 Default permissions are deliberately minimal: `activeTab`, `webNavigation`,
 `storage`, `scripting`, `contextMenus`, `declarativeNetRequest`, `alarms`,
-`proxy`, and host access to the four Whisper endpoints above. `proxy` is
+`proxy`, and host access to the five Whisper endpoints above. `proxy` is
 declared but inert: Chrome does not allow it to be optional, and Guard never
 touches the browser's proxy setting until you turn routing on (in Firefox it is
 genuinely optional and requested on that click). There is no `<all_urls>` grant

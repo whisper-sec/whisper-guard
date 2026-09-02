@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// All endpoints and tunables in one place. Five Whisper hosts exist, each
+// All endpoints and tunables in one place. Six Whisper hosts exist, each
 // with one narrow purpose; browsing hostnames go to exactly ONE of them:
 //
 //   graph.whisper.online      the graph front door. Two arms on one host: the
@@ -19,6 +19,11 @@
 //                             fetched from it; no browsing data is sent and
 //                             no reader is ever navigated there by us
 //   get.whisper.online        detector corpus updates only (no browsing data)
+//   nic.whisper.online        the public network statistics document: the live
+//                             size of the graph and the resolvers' own pulse. A
+//                             plain GET of a public file with no query string,
+//                             no header and no body, so nothing about the
+//                             reader can ride on it
 //   rdap.whisper.online       public endpoint-identity verification (IP literals only)
 //
 // One graph host, two arms. graph.whisper.online answers both the keyless
@@ -77,6 +82,26 @@ export const CONSOLE_URL = "https://console.whisper.online";
  */
 export const DEVICE_FLOW_ORIGIN = "https://console.whisper.security";
 
+/**
+ * The public keyless network statistics document: the live size of the
+ * graph the verdicts come from, and the live pulse of the resolvers that
+ * answer from it.
+ *
+ * It is a plain GET of a public JSON file. No query string, no header, no
+ * body, no cookie: nothing about the reader can ride on it, which is why
+ * it is safe to poll while a surface is open. The figures are read every
+ * time and NEVER written into this repository as constants - a hardcoded
+ * graph total is stale the day after it ships, and a security product
+ * quoting a stale figure about its own coverage is worse than one quoting
+ * none. When the endpoint cannot be reached the surface says so.
+ */
+export const STATS_URL = "https://nic.whisper.online/stats/data.json";
+export const SCALE_TIMEOUT_MS = 4000;
+export const SCALE_MAX_BYTES = 512_000;
+/** How long a read of the scale stays fresh. The document itself carries
+ *  Cache-Control max-age=30, so this matches its own cadence. */
+export const SCALE_TTL_MS = 30_000;
+
 export const CORPUS_URL = "https://get.whisper.online/guard/corpus.v1.json";
 export const RDAP_BASE = "https://rdap.whisper.online";
 
@@ -115,22 +140,19 @@ export const ENRICH_KEYED_QUERY =
   "head(collect(DISTINCT ip.verdictLevel)) AS verdict " +
   "RETURN host, ip, city, country, asn, owner, asnName, verdict";
 
-// KEYLESS enrichment: the public tier caps raw traversals at 2 hops total,
-// so geo and network ride two parallel 2-hop queries (the named procs above
-// do their deep traversal server-side and stay fully keyless).
+// KEYLESS enrichment, the geo half. The public tier caps a raw query at two
+// patterns, which is not enough to reach the operator three joins out, so
+// the OPERATOR half is served by CALL whisper.enrich - a named procedure
+// that does the deep walk server-side and answers keyless in one request
+// for a whole batch. This query survives for the one fact the procedure
+// does not carry: the city the address sits in, which is the fact a person
+// recognises.
 export const ENRICH_GEO_QUERY =
   "UNWIND $hosts AS host MATCH (n:HOSTNAME {name:host}) " +
   "OPTIONAL MATCH (n)-[:RESOLVES_TO]->(ip:IPV4)-[:LOCATED_IN]->(city:CITY) " +
   "WITH host, head(collect(DISTINCT ip.name)) AS ip, head(collect(DISTINCT city.name)) AS city, " +
   "head(collect(DISTINCT ip.verdictLevel)) AS verdict " +
   "RETURN host, ip, city, verdict";
-
-export const ENRICH_NET_QUERY =
-  "UNWIND $hosts AS host MATCH (n:HOSTNAME {name:host}) " +
-  "OPTIONAL MATCH (n)-[:RESOLVES_TO]->(:IPV4)-[:ANNOUNCED_BY]->(p:ANNOUNCED_PREFIX) " +
-  "WITH host, head(collect(DISTINCT p.name)) AS prefix, " +
-  "head(collect(DISTINCT p.threatNeighborCount)) AS threatNeighbors " +
-  "RETURN host, prefix, threatNeighbors";
 
 // KEYED destination drill: co-hosting fan-in (how many other names sit on
 // the same address) + the announcing prefix's threat-neighbor count.
@@ -237,3 +259,13 @@ export const FLEET_DEVICE_CAP = 24;
 export const POLL_ALARM_MINUTES = 0.5;
 export const POLL_OPEN_MS = 12_000;
 export const FEED_RING_MAX = 500;
+
+// ------------------------------------------------------------------ the chain
+
+// The chain (background/chain.ts) is built on the popup's ask, never on
+// every navigation. The public tier allows 100 graph calls an hour from one
+// address and the chain costs seven of them, so building it on every page
+// load would exhaust a reader's budget inside twenty minutes of ordinary
+// browsing and leave nothing for the verdict that actually protects them.
+// A composed chain is memoised for this long.
+export const CHAIN_TTL_MS = 10 * 60_000;

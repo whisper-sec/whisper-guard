@@ -15,7 +15,6 @@ import {
   ENRICH_BATCH,
   ENRICH_GEO_QUERY,
   ENRICH_KEYED_QUERY,
-  ENRICH_NET_QUERY,
   ENRICH_TTL_MS,
   IDENTIFY_BATCH_QUERY,
 } from "../shared/config";
@@ -48,7 +47,6 @@ interface MainRow {
   asn?: string;
   org?: string;
   asnName?: string;
-  prefix?: string;
   verdict?: string;
 }
 interface IdentifyRow {
@@ -77,29 +75,55 @@ async function runKeyed(hosts: string[]): Promise<Map<string, MainRow>> {
   return out;
 }
 
+/**
+ * The keyless enrichment path, and it is now BETTER than it was rather
+ * than merely cheaper.
+ *
+ * It used to be two 2-hop raw traversals (geo, then network) which between
+ * them could not reach the operator: the public tier caps a query at two
+ * patterns and the owner is three joins out. So a signed-out reader's
+ * "by company" column was a list of hostnames, which is the shape of "not
+ * known" wearing the shape of an answer.
+ *
+ * whisper.enrich does that walk SERVER-SIDE and answers keyless, in one
+ * call, for a whole batch: the operator, the country, the announcing ASN,
+ * the reconciled band and the popularity rank. Measured against the live
+ * graph on 2026-09-02: three hosts, one request, 9ms, every operator
+ * named. The two raw queries are kept for the KEYED path, which can still
+ * reach the city, and this one is what a signed-out reader gets.
+ */
 async function runKeyless(hosts: string[]): Promise<Map<string, MainRow>> {
   const out = new Map<string, MainRow>();
   if (hosts.length === 0) return out;
-  const [geoRows, netRows] = await Promise.all([
+  const [enrichRows, geoRows] = await Promise.all([
+    graphQuery("CALL whisper.enrich($hs)", { hs: hosts }).catch(() => []),
+    // The city is the one fact whisper.enrich does not carry, and it is the
+    // one a person recognises, so the cheap 2-hop geo read still rides along.
     graphQuery(ENRICH_GEO_QUERY, { hosts }).catch(() => []),
-    graphQuery(ENRICH_NET_QUERY, { hosts }).catch(() => []),
   ]);
+  for (const r of enrichRows) {
+    // The procedure returns the canonical name in `name`, and de-duplicates
+    // rows by it, so the output is NOT positionally aligned to the input.
+    const host = str(r["name"]);
+    if (!host) continue;
+    out.set(host, {
+      country: str(r["country"])?.toUpperCase(),
+      asn: str(r["asn"]),
+      org: str(r["owner"]),
+      verdict: str(r["band"]),
+    });
+  }
   for (const r of geoRows) {
     const host = str(r["host"]);
     if (!host) continue;
-    const city = str(r["city"]);
-    out.set(host, {
-      ip: str(r["ip"]),
-      city,
-      country: isoFromPlace(city),
-      verdict: str(r["verdict"]),
-    });
-  }
-  for (const r of netRows) {
-    const host = str(r["host"]);
-    if (!host) continue;
     const cur = out.get(host) ?? {};
-    cur.prefix = str(r["prefix"]);
+    const city = str(r["city"]);
+    cur.ip = str(r["ip"]) ?? cur.ip;
+    cur.city = city;
+    // The ASN registration country from the procedure is the better answer
+    // when it has one; the city-derived ISO is the fallback.
+    cur.country = cur.country ?? isoFromPlace(city);
+    cur.verdict = cur.verdict ?? str(r["verdict"]);
     out.set(host, cur);
   }
   return out;
@@ -139,7 +163,6 @@ function shapeRow(host: string, main: MainRow | undefined, identify: IdentifyRow
     country: main?.country,
     asn: main?.asn,
     asnName: main?.asnName,
-    prefix: main?.prefix,
     owner,
     category,
     verdict: (main?.verdict ?? "UNKNOWN").toUpperCase(),

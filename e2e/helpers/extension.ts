@@ -56,6 +56,14 @@ export interface LaunchOptions {
    *  persists, in-memory worker state does not: the deterministic way to
    *  exercise a service-worker restart end to end. */
   userDataDir?: string;
+  /**
+   * The browser's locale, which sets Accept-Language and navigator.language.
+   * It exists for the live consent probe: a German publisher serves a German
+   * wall to a German browser and an English one to an English browser, so a
+   * probe that always browses in English can never exercise anything but the
+   * English decline vocabulary, however many languages the module speaks.
+   */
+  locale?: string;
 }
 
 /**
@@ -91,6 +99,7 @@ export async function launchExtension(opts: LaunchOptions = {}): Promise<Extensi
     headless: true,
     args,
     viewport: { width: 1280, height: 800 },
+    ...(opts.locale ? { locale: opts.locale } : {}),
   });
 
   // With extra extensions loaded there is more than one service worker:
@@ -373,4 +382,57 @@ export async function visit(ext: Extension, url: string): Promise<{ page: Page; 
   }
   await page.goto(url, { waitUntil: "domcontentloaded" });
   return { page, tabId: created[0] };
+}
+
+/**
+ * Settle a popup for a still capture: reduced motion applied BEFORE the
+ * page's scripts run, then a wait until the one animated number has stopped
+ * moving.
+ *
+ * Emulating media AFTER navigation is too late for anything that animates on
+ * load. The graph-scale readout counts up over 650ms, so a capture taken
+ * 250ms later published "6.95B nodes" for a fixture holding 7.48B: a figure
+ * that was never true, in a published picture of a security product, about
+ * its own coverage. Reloading with the media state already set makes the
+ * page take its own prefers-reduced-motion path, which writes every final
+ * value on the first frame.
+ *
+ * Returns the settled scale text (or null when the readout is absent), so a
+ * caller can assert on it rather than trust this.
+ */
+export async function settlePopup(
+  popup: Page,
+  opts: { colorScheme?: "dark" | "light"; width?: number; height?: number } = {},
+): Promise<string | null> {
+  await popup.emulateMedia({
+    colorScheme: opts.colorScheme ?? "dark",
+    reducedMotion: "reduce",
+  });
+  await popup.setViewportSize({ width: opts.width ?? 400, height: opts.height ?? 700 });
+  await popup.reload();
+  // A sticky masthead and a full-page capture do not mix. Playwright scrolls
+  // and stitches a page taller than it can grow the viewport to, so the
+  // header is painted wherever it happened to be and lands across the middle
+  // of the picture, over the section it is covering. Pinning it for the
+  // capture shows the panel as a reader sees it at the top, which is the
+  // only place that header is ever actually drawn.
+  await popup.addStyleTag({ content: "header { position: static !important; }" });
+  await popup
+    .locator("#chain-mount .ch-rung")
+    .first()
+    .waitFor({ timeout: 15_000 })
+    .catch(() => undefined);
+  await popup.waitForTimeout(500);
+
+  const first = await popup.locator("#scale-nodes").textContent().catch(() => null);
+  if (first === null) return null;
+  await popup.waitForTimeout(350);
+  const second = await popup.locator("#scale-nodes").textContent().catch(() => null);
+  if (first !== second) {
+    throw new Error(
+      `the graph scale was still animating at capture time ("${first}" then "${second}"): ` +
+        "a published figure must be a settled value, not a frame of a transition",
+    );
+  }
+  return second;
 }

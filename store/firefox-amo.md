@@ -8,7 +8,7 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 - **Name:** Whisper Guard
 - **Add-on ID:** `guard@whisper.security` (already in the manifest)
-- **Summary:** The Whisper security graph in your browser: a live safety verdict on every site, plus a dashboard of where your devices go.
+- **Summary:** A live safety verdict on every site, and the join path behind the name: address, prefix, network, operator, building.
 - **Categories:** Privacy & Security
 - **License:** MIT
 - **Homepage:** https://whisper.online/docs/whisper-guard
@@ -38,9 +38,14 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   carrying a browsing hostname), `console.whisper.security` (RFC 8628
   device-flow sign-in only, two unauthenticated endpoints, no browsing data;
   it is a sign-in origin and never a destination), `get.whisper.online` (signed
-  brand-corpus updates, no browsing data), and `rdap.whisper.online` (public
+  brand-corpus updates, no browsing data), `rdap.whisper.online` (public
   identity verification of the user's own endpoints, IP literals only, no
-  browsing hostname). The add-on also OPENS `console.whisper.online` in a tab
+  browsing hostname), and `nic.whisper.online` (the public network statistics
+  document: a plain GET of one public JSON file, no query string, no header,
+  no body, no cookie, so nothing about the user can ride on it; it is how the
+  live size of the graph and the resolvers' latency reach the UI instead of
+  being written into the build as a constant that would be stale on release
+  day. `e2e/consent.spec.ts` asserts that shape from the outside). The add-on also OPENS `console.whisper.online` in a tab
   when the user asks for the console; it is never fetched from, which is why
   it is not in the host permissions. The e2e suite (`e2e/mocked.spec.ts`)
   proves the hostname-only invariant with a full network capture, and

@@ -18,7 +18,10 @@
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
 import { addressNode, mountProtectControl, type ProtectControl } from "../shared/protect-control";
 import { CANVAS_MONO, CANVAS_SANS, categoryColor, chartInk, onThemeChange } from "../shared/theme";
-import type { EgressStatus, FleetEndpoint } from "../shared/types";
+import type { EgressStatus, FleetEndpoint, GraphScale, SiteChain } from "../shared/types";
+import { renderChain, renderChainPending } from "../shared/chain-view";
+import { compact, countUp, sparkline } from "../shared/spark";
+import { mountTierMeter } from "../shared/tier";
 import {
   CATEGORY_HEX,
   CATEGORY_LABEL,
@@ -194,6 +197,37 @@ function renderOwnerBars(container: HTMLElement, hosts: ReportHost[]): void {
   );
 }
 
+/**
+ * By network: which autonomous systems actually answer for the places this
+ * browser goes. It is a new axis rather than a restatement of "by company":
+ * one operator can announce several networks, and several operators can sit
+ * behind one, which is precisely the kind of thing only a join can say.
+ *
+ * It became drawable for a signed-out reader when the keyless enrichment
+ * moved to the server-side walk (background/enrich.ts); before that the ASN
+ * was three joins past the public tier's ceiling and this card would have
+ * been empty for everyone without an account.
+ */
+function renderNetworkBars(container: HTMLElement, hosts: ReportHost[]): void {
+  const tally = new Map<string, { count: number; label: string }>();
+  for (const h of hosts) {
+    if (!h.asn) continue;
+    const cur = tally.get(h.asn) ?? { count: 0, label: h.asnName ? `${h.asn} ${shortOwner(h.asnName)}` : h.asn };
+    cur.count += 1;
+    tally.set(h.asn, cur);
+  }
+  const rows = [...tally.values()].sort((a, b) => b.count - a.count).slice(0, 10);
+  const max = rows[0]?.count ?? 0;
+  renderBars(container, rows.map((r) => ({ name: r.label, count: r.count })), max);
+  if (rows.length === 0) {
+    // An empty card and an unenriched card look the same, and only one of
+    // them is a fact about this browser.
+    container.replaceChildren(
+      el("div", "w-note", "No announcing network resolved for these destinations yet."),
+    );
+  }
+}
+
 // TODO(fleet-map): a small geo dot-map of where this browser / the fleet
 // actually goes. The data already exists (ReportHost.country + .asn from the
 // graph enrichment feeding tallyCountry below); the render would be one
@@ -212,7 +246,92 @@ function renderCountryBars(container: HTMLElement, hosts: ReportHost[]): void {
 
 // ------------------------------------------------------------ ledger
 
-function hostRow(h: ReportHost, fresh: Set<string>, onClick?: (h: ReportHost) => void): HTMLElement {
+// -------------------------------------------------------- the scale band
+//
+// Read live on every load, never written into the build. When the endpoint
+// cannot be read the band stays hidden: a page that shows a remembered
+// figure about its own coverage is worse than one that shows none, because
+// the reader cannot tell which it is looking at.
+
+async function loadScaleBand(): Promise<void> {
+  const res = await send<{ ok: true; scale: GraphScale | null }>({ kind: "getScale" });
+  if (!res.ok || !res.scale) return;
+  const sc = res.scale;
+  $("scale-band").hidden = false;
+  countUp($("sb-nodes"), sc.nodes, compact);
+  countUp($("sb-edges"), sc.edges, compact);
+  countUp($("sb-identities"), sc.identities, (n) => Math.round(n).toLocaleString("en"));
+
+  const buckets = sc.pulse.length;
+  const note = $("sb-pulse-note");
+  const chart = $("sb-pulse-chart");
+  const spark = sparkline(sc.pulse, {
+    width: 640,
+    height: 52,
+    fill: 0.14,
+    head: true,
+    title: `DNS questions answered per 5 minutes over the last ${sc.windowHours} hours`,
+  });
+  if (spark) {
+    // Let the SVG stretch to the card; the stroke is non-scaling so it stays
+    // one pixel wide however wide the card gets.
+    spark.removeAttribute("width");
+    spark.removeAttribute("height");
+    chart.replaceChildren(spark);
+    const lat = sc.p50Us !== null ? ` · p50 ${Math.round(sc.p50Us)}us` : "";
+    note.textContent =
+      `${sc.queries.toLocaleString("en")} questions answered in ${sc.windowHours}h${lat}` +
+      `${sc.degraded ? " · the endpoint reports degraded input" : ""}`;
+  } else {
+    // The endpoint answered but carried no series worth drawing. Say that,
+    // rather than drawing a flat line that implies a measured steady state.
+    chart.replaceChildren();
+    note.textContent =
+      buckets === 0
+        ? "no per-bucket series published right now"
+        : "not enough variation in the window to plot";
+  }
+}
+
+// ---------------------------------------------------- the chain, in a row
+//
+// A destination row opens the join path behind it, in place. The same
+// module the panel mounts, so there is one chain and it reads the same
+// everywhere. Keyless, so this works signed out.
+
+const openChains = new Map<string, HTMLElement>();
+
+async function toggleChain(row: HTMLElement, host: string): Promise<void> {
+  const existing = openChains.get(host);
+  if (existing) {
+    existing.remove();
+    openChains.delete(host);
+    row.classList.remove("open");
+    return;
+  }
+  const panel = el("div", "ledger-chain");
+  renderChainPending(panel, 7, `THE CHAIN BEHIND ${host.toUpperCase()}`);
+  row.after(panel);
+  openChains.set(host, panel);
+  row.classList.add("open");
+
+  const res = await send<{ ok: true; chain: SiteChain }>({ kind: "getChain", host });
+  // The row may have been closed, or the ledger re-rendered under us, while
+  // the walk was in flight.
+  if (!openChains.has(host) || !panel.isConnected) return;
+  if (!res.ok) {
+    panel.replaceChildren(el("div", "w-note", "The graph could not be reached for this walk. Nothing here is a verdict."));
+    return;
+  }
+  renderChain(panel, res.chain, { heading: `THE CHAIN BEHIND ${host.toUpperCase()}` });
+}
+
+function hostRow(
+  h: ReportHost,
+  fresh: Set<string>,
+  onClick?: (h: ReportHost) => void,
+  onExpand?: (row: HTMLElement, h: ReportHost) => void,
+): HTMLElement {
   const row = el("div", `w-ledger-row${fresh.has(h.host) ? " fresh" : ""}`);
   const catDot = el("span", "w-dot");
   catDot.style.background = CATEGORY_HEX[h.category];
@@ -229,6 +348,18 @@ function hostRow(h: ReportHost, fresh: Set<string>, onClick?: (h: ReportHost) =>
   if (onClick) {
     row.style.cursor = "pointer";
     row.addEventListener("click", () => onClick(h));
+  } else if (onExpand) {
+    row.classList.add("expandable");
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.title = "Open the join path behind this destination";
+    row.addEventListener("click", () => onExpand(row, h));
+    row.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        onExpand(row, h);
+      }
+    });
   }
   return row;
 }
@@ -238,8 +369,9 @@ function renderHostLedger(
   hosts: ReportHost[],
   fresh: Set<string>,
   onClick?: (h: ReportHost) => void,
+  onExpand?: (row: HTMLElement, h: ReportHost) => void,
 ): void {
-  container.replaceChildren(...hosts.map((h) => hostRow(h, fresh, onClick)));
+  container.replaceChildren(...hosts.map((h) => hostRow(h, fresh, onClick, onExpand)));
 }
 
 // ----------------------------------------------------------- browser view
@@ -257,6 +389,7 @@ async function refreshBrowser(): Promise<void> {
     renderTiles($("b-tiles"), totalsTiles(totals));
     renderDonut($<HTMLCanvasElement>("b-donut"), $("b-donut-legend"), hosts);
     renderOwnerBars($("b-owners"), hosts);
+    renderNetworkBars($("b-networks"), hosts);
     renderCountryBars($("b-countries"), hosts);
 
     const conc = concentration(hosts);
@@ -279,7 +412,12 @@ async function refreshBrowser(): Promise<void> {
       if (prev !== undefined && h.q > prev) fresh.add(h.host);
     }
     lastBrowserHosts = new Map(hosts.map((h) => [h.host, h.q]));
-    renderHostLedger($("b-ledger"), hosts, fresh);
+    // Every destination row opens the join path behind it, in place. It is
+    // the same spine the panel draws, and it needs no account.
+    openChains.clear();
+    renderHostLedger($("b-ledger"), hosts, fresh, undefined, (row, h) => {
+      void toggleChain(row, h.host);
+    });
     $("b-count").textContent = `${hosts.length} destinations, 24h window`;
     $("b-empty").hidden = hosts.length > 0;
   } finally {
@@ -338,6 +476,7 @@ async function refreshFleet(): Promise<void> {
   ]);
   renderDonut($<HTMLCanvasElement>("f-donut"), $("f-donut-legend"), f.hosts);
   renderOwnerBars($("f-owners"), f.hosts);
+  renderNetworkBars($("f-networks"), f.hosts);
   renderCountryBars($("f-countries"), f.hosts);
 
   const feed = $("f-feed");
@@ -463,7 +602,7 @@ function drawConstellation(canvas: HTMLCanvasElement, d: EndpointDetail): void {
     ctx.fillText(fitText(ctx, h.host, W * 0.72 - 6 - (hx + 9)), hx + 9, y + 3);
 
     // Hostname -> network/owner chain, when resolved.
-    const net = h.asn ?? h.prefix;
+    const net = h.asn;
     if (net) {
       const nx = W * 0.72;
       ctx.strokeStyle = ink.line;
@@ -1021,6 +1160,8 @@ async function startSignIn(statusId: string): Promise<void> {
   }
 }
 
+let scaleTimer: ReturnType<typeof setInterval> | null = null;
+
 function init(): void {
   $("tab-browser").addEventListener("click", () => switchView("browser"));
   $("tab-fleet").addEventListener("click", () => switchView("fleet"));
@@ -1081,6 +1222,31 @@ function init(): void {
   onThemeChange(() => {
     switchView(view);
   });
+
+  // The scale band is about the product rather than about this browser, so
+  // it is loaded once and does not repaint on every navigation nudge. Its
+  // own memo (background/scale.ts) matches the endpoint's 30s cache, so a
+  // periodic refresh costs at most one request every half minute.
+  void loadScaleBand();
+  // The tier meter only earns its place while the reader has no account:
+  // with one, the identity control above it is the whole story.
+  void (async () => {
+    // getSettings is the one message that reports the key's presence
+    // without spending a graph call to find out.
+    const st = await send<{ ok: true; signedIn: boolean }>({ kind: "getSettings" });
+    if (st.ok && st.signedIn) return;
+    await mountTierMeter({
+      root: $("tier-meter"),
+      label: $("tier-label"),
+      count: $("tier-count"),
+      fill: $("tier-fill"),
+      note: $("tier-note"),
+    });
+  })();
+  scaleTimer = setInterval(() => {
+    if (!document.hidden) void loadScaleBand();
+  }, 60_000);
+  void scaleTimer;
 
   const hash = window.location.hash.replace("#", "");
   switchView(hash === "fleet" || hash === "endpoint" ? (hash as ViewName) : "browser");

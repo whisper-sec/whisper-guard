@@ -6,12 +6,14 @@
 //
 //   band/gate   whisper.assess (the reconciled engine verdict; the ONLY
 //               thing that blocks; popularity listings can never flag)
-//   who         whisper.identify shaped through the owner inference chain
-//               (raw identify returns hashes and nulls, never rendered raw)
+//   who/where/  read straight off THE CHAIN (background/chain.ts), the one
+//   age/cat     walk that already joined the name to its vendor, its
+//               address, its prefix, its network, its operator and its
+//               registration date. Asking the graph those questions a
+//               second time cost calls out of a budget that is a real
+//               number, and let the panel's "Who" row disagree with its
+//               own OPERATOR rung. It now cannot: there is one walk.
 //   why         whisper.explain, feed-cited, popularity feeds excluded
-//   age         whisper.history registration date (freshest snapshot wins)
-//   where       resolved geo (2-hop public tier; the keyed tier adds the
-//               announcing network + registered organization)
 //   variants    whisper.variants (exists-only): registered look-alikes of
 //               this name, confirmed against assess before they are shown
 //
@@ -19,22 +21,13 @@
 // and a missing part renders as absent, never invented.
 
 import { decide } from "../shared/escalation";
-import {
-  ENRICH_GEO_QUERY,
-  ENRICH_KEYED_QUERY,
-  HISTORY_QUERY,
-  VARIANTS_QUERY,
-} from "../shared/config";
+import { VARIANTS_QUERY } from "../shared/config";
 import type { AssessVerdict, CandidateVerdict, GraphBand, Protection, WhyFactor } from "../shared/types";
-import {
-  inferCategory,
-  isoFromPlace,
-  isPopularityFeed,
-  resolveOwnerLabel,
-} from "../shared/report";
+import { inferCategory, isPopularityFeed, resolveOwnerLabel } from "../shared/report";
 import { assessHost, assessHosts } from "./assess";
+import { chainFor } from "./chain-cache";
 import { cacheGet, cachePut } from "./cache";
-import { graphQuery, hasKey } from "./graph-client";
+import { graphQuery } from "./graph-client";
 
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 
@@ -54,49 +47,34 @@ async function assessCached(host: string): Promise<AssessVerdict> {
   return v;
 }
 
+/**
+ * Who runs it, what kind of thing it is, and where its network is
+ * registered - read off the ONE chain walk rather than re-asked. The
+ * fields the chain could not read stay null, and the caller marks the
+ * picture partial, so "we did not read it" never renders as "there is
+ * none".
+ */
 async function fetchWho(host: string): Promise<{
   who: string | null;
   category: string | null;
   where: Protection["where"];
+  ageDays: number | null;
+  ok: boolean;
 }> {
-  const keyed = await hasKey();
-  const [identifyRows, geoRows] = await Promise.all([
-    graphQuery(
-      "CALL whisper.identify($h) YIELD host, canonical_name, category, roles " +
-        "RETURN host, canonical_name, category, roles",
-      { h: host },
-    ).catch(() => [] as Record<string, unknown>[]),
-    graphQuery(keyed ? ENRICH_KEYED_QUERY : ENRICH_GEO_QUERY, { hosts: [host] }).catch(
-      () => [] as Record<string, unknown>[],
-    ),
-  ]);
-
-  const idRow = identifyRows.find((r) => str(r["host"])?.toLowerCase() === host.toLowerCase());
-  const canonical = str(idRow?.["canonical_name"]) ?? undefined;
-  const roles = Array.isArray(idRow?.["roles"])
-    ? (idRow["roles"] as unknown[]).filter((x): x is string => typeof x === "string")
-    : undefined;
-
-  const geo = geoRows.find((r) => str(r["host"])?.toLowerCase() === host.toLowerCase());
-  const city = str(geo?.["city"]);
-  const org = str(geo?.["owner"]) ?? undefined;
-  const asnName = str(geo?.["asnName"]) ?? undefined;
-  const country = str(geo?.["country"]) ?? isoFromPlace(city ?? undefined) ?? null;
-
-  const who = resolveOwnerLabel(org, canonical, host);
+  const chain = await chainFor(host);
+  const who = resolveOwnerLabel(chain.owner ?? undefined, chain.vendor ?? undefined, host);
   const category = inferCategory({
     host,
-    identifyCategory: str(idRow?.["category"]) ?? undefined,
-    identifyRoles: roles,
+    identifyCategory: chain.identifyCategory ?? undefined,
+    identifyRoles: chain.roles,
     owner: who,
-    asnName,
-    org,
+    org: chain.owner ?? undefined,
   });
   const where =
-    city || country || str(geo?.["ip"])
-      ? { city, country, ip: str(geo?.["ip"]) }
+    chain.city || chain.country || chain.ip
+      ? { city: chain.city, country: chain.country, ip: chain.ip }
       : null;
-  return { who, category, where };
+  return { who, category, where, ageDays: chain.ageDays, ok: chain.unavailable === 0 };
 }
 
 interface WhyPicture {
@@ -150,27 +128,6 @@ async function fetchWhy(host: string): Promise<WhyPicture> {
     if (explanation) why.push(explanation);
   }
   return { why, score, factors };
-}
-
-async function fetchAgeDays(host: string): Promise<number | null> {
-  const rows = await graphQuery(HISTORY_QUERY, { h: host }).catch(
-    () => [] as Record<string, unknown>[],
-  );
-  // Many WHOIS snapshots return; the freshest by updateDate/queryTime wins.
-  let best: Record<string, unknown> | null = null;
-  let bestKey = "";
-  for (const r of rows) {
-    const key = `${str(r["updateDate"]) ?? ""}|${str(r["queryTime"]) ?? ""}`;
-    if (key > bestKey) {
-      bestKey = key;
-      best = r;
-    }
-  }
-  const created = str(best?.["createDate"]);
-  if (!created) return null;
-  const t = Date.parse(created);
-  if (!Number.isFinite(t)) return null;
-  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
 const VARIANT_CAP = 24;
@@ -227,18 +184,14 @@ export async function protectHost(host: string, withVariants = false): Promise<P
     return { host: h, band: "UNKNOWN" as GraphBand, coverage: null, label: null, at: Date.now() };
   });
 
-  const [who, why, ageDays, variants] = await Promise.all([
+  const [who, why, variants] = await Promise.all([
     fetchWho(h).catch(() => {
       partial = true;
-      return { who: null, category: null, where: null };
+      return { who: null, category: null, where: null, ageDays: null, ok: false };
     }),
     fetchWhy(h).catch((): WhyPicture => {
       partial = true;
       return { why: [], score: null, factors: [] };
-    }),
-    fetchAgeDays(h).catch(() => {
-      partial = true;
-      return null;
     }),
     withVariants
       ? variantNeighborhood(h).then(
@@ -251,6 +204,8 @@ export async function protectHost(host: string, withVariants = false): Promise<P
       : Promise.resolve([] as CandidateVerdict[]),
   ]);
 
+  if (!who.ok) partial = true;
+
   const p: Protection = {
     host: h,
     band: verdict.band,
@@ -260,7 +215,7 @@ export async function protectHost(host: string, withVariants = false): Promise<P
     who: who.who,
     category: who.category,
     where: who.where,
-    ageDays,
+    ageDays: who.ageDays,
     why: why.why,
     score: why.score,
     whyFactors: why.factors,

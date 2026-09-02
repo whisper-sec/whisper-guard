@@ -384,3 +384,298 @@ a.w-note, .w-note a, .w-privacy a { color: var(--w-accent); }
 }
 
 [hidden] { display: none !important; }
+
+/* ------------------------------------------------------------ the chain
+
+   The join path, drawn as one rail with a dot per rung. Shared by the
+   panel and the dashboard because there is one chain and it should look
+   like one thing wherever it is read.
+
+   Geometry: a 9px rail column, a 2px hairline running the full height of
+   every rung except the last, and a 7px dot centred on it. The dot is a
+   ring when the graph answered with nothing and a filled mark when it
+   answered with a value, so the completeness of the walk is legible from
+   the rail alone before a single word is read. */
+
+.ch-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ch-count {
+  font: 500 10.5px/1.4 var(--w-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--w-muted);
+  white-space: nowrap;
+}
+.ch-count-lost { color: var(--w-v-low); }
+
+.ch-spine { list-style: none; margin: 0; padding: 0; }
+
+.ch-rung {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  /* Each rung fades up a beat after the one above it: the reader watches
+     the path being walked. --ch-i is set per rung by the renderer. */
+  animation: ch-arrive 320ms ease-out backwards;
+  animation-delay: calc(var(--ch-i, 0) * 45ms);
+}
+@keyframes ch-arrive {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.ch-rail {
+  position: relative;
+  flex: none;
+  width: 9px;
+  display: flex;
+  justify-content: center;
+}
+/* The connector. Drawn on the rail rather than between rungs so it cannot
+   fall out of step with a rung that wraps to two lines. */
+.ch-rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--w-line-strong);
+}
+.ch-rung:first-child .ch-rail::before { top: 11px; }
+.ch-rung:last-child .ch-rail::before { bottom: calc(100% - 11px); }
+
+.ch-dot {
+  position: relative;
+  margin-top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--w-bg);
+  box-shadow: 0 0 0 1.5px var(--w-line-strong);
+}
+/* Answered with a value: a filled mark. */
+.ch-live .ch-dot { background: var(--w-muted); box-shadow: 0 0 0 1.5px var(--w-bg); }
+/* Answered with nothing: a ring, which is visibly not the same as a mark. */
+.ch-empty .ch-dot { background: var(--w-bg); box-shadow: 0 0 0 1.5px var(--w-line-strong); }
+/* Could not be read at all: the one rung state that is allowed a hue,
+   because "we do not know" is the fact most easily mistaken for "fine". */
+.ch-lost .ch-dot { background: var(--w-bg); box-shadow: 0 0 0 1.5px var(--w-v-low); }
+
+.ch-body {
+  display: grid;
+  grid-template-columns: 5.6em minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 4px 0 5px;
+  flex: 1;
+}
+/* The rung name is a WORD THE READER READS, not a mark, so it is ink-dim
+   and never --w-faint. --w-faint measures 3.12:1 on the panel ground, which
+   the theme's own rule reserves for decoration; a rung called PREFIX that a
+   reader cannot read is a rung that is not there. Caught by the contrast
+   sweep in e2e/theme.spec.ts rather than by eye. */
+.ch-label {
+  font: 600 9px/1.5 var(--w-font-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  white-space: nowrap;
+}
+.ch-value {
+  font-family: var(--w-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--w-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ch-empty .ch-value, .ch-lost .ch-value {
+  font-family: var(--w-font-sans);
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--w-muted);
+}
+.ch-lost .ch-value { color: var(--w-v-low); font-style: normal; }
+.ch-fact {
+  font: 400 10.5px/1.5 var(--w-font-sans);
+  color: var(--w-muted);
+  white-space: nowrap;
+  text-align: right;
+}
+/* A rung that carries its own risk says so in a word AND a hue, never a
+   hue alone: the fact text is what the reader actually reads. */
+.ch-warn .ch-fact { color: var(--w-v-low); }
+.ch-hot .ch-fact { color: var(--w-v-high); font-weight: 600; }
+.ch-warn .ch-dot { box-shadow: 0 0 0 1.5px var(--w-v-low); background: var(--w-v-low); }
+.ch-hot .ch-dot { box-shadow: 0 0 0 1.5px var(--w-v-high); background: var(--w-v-high); }
+
+/* The graph's own join path, verbatim. */
+.ch-evidence {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--w-muted);
+  word-break: break-all;
+}
+.ch-ev-lead { text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px; }
+.ch-ev-path { font-family: var(--w-mono); color: var(--w-muted); }
+
+/* The waiting spine: same geometry, so nothing jumps when the walk lands. */
+.ch-wait .ch-skel {
+  display: block;
+  grid-column: 1 / -1;
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--w-elev) 0%,
+    var(--w-hover) 40%,
+    var(--w-elev) 80%
+  );
+  background-size: 220% 100%;
+  animation: ch-sweep 1.4s linear infinite;
+  animation-delay: calc(var(--ch-i, 0) * 90ms);
+  /* The rungs are not equally long in life, and a placeholder that is
+     should not pretend otherwise. */
+  width: calc(46% + var(--ch-i, 0) * 7%);
+  max-width: 100%;
+}
+@keyframes ch-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+/* ----------------------------------------------------------- sparklines */
+
+.w-spark { display: block; color: var(--w-accent); opacity: 0.85; }
+.w-spark-muted { color: var(--w-muted); opacity: 0.7; }
+
+/* ----------------------------------------------------------- the tier meter
+
+   RULE 14's two-tier boundary, measured rather than pitched: the reader's
+   real remaining budget on the public tier. It lives here, beside the one
+   module that builds it (shared/tier.ts), because the panel and the
+   dashboard mount exactly the same meter.
+
+   The fill only changes hue when the budget is genuinely low, and it always
+   carries the figure in words beside it, so the state never rides on colour
+   alone. */
+
+.tier { margin: 12px 0; }
+.tier-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tier-label {
+  font: 600 9.5px/1.4 var(--w-font-sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tier-count {
+  font: 500 10.5px/1.4 var(--w-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--w-text);
+}
+.tier-track {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--w-elev);
+  overflow: hidden;
+}
+.tier-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--w-accent);
+  width: 0;
+  transition: width 620ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tier-fill.low { background: var(--w-v-low); }
+.tier-fill.out { background: var(--w-v-high); }
+#tier-note { margin-top: 6px; }
+
+
+/* ------------------------------------------------- the chain, expanded
+
+   A rung with more behind it is a control, and it looks like one only on
+   hover and focus: a spine where every row is permanently dressed as a
+   button is a spine nobody reads. */
+
+.ch-rung.ch-open { cursor: pointer; border-radius: 5px; }
+.ch-rung.ch-open:hover { background: var(--w-hover); }
+.ch-rung.ch-open:hover .ch-label { color: var(--w-text); }
+.ch-rung.ch-open .ch-body { padding-right: 16px; position: relative; }
+/* The affordance: a chevron that turns, and nothing else. It is drawn in
+   the label ink so it never competes with the value beside it. */
+.ch-rung.ch-open .ch-body::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 11px;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--w-muted);
+  border-bottom: 1.5px solid var(--w-muted);
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 180ms ease;
+}
+.ch-rung.ch-open[aria-expanded="true"] .ch-body::after { transform: rotate(225deg); }
+
+.ch-detail {
+  list-style: none;
+  margin: 0 0 4px 19px;
+  padding: 8px 10px;
+  border-left: 1px solid var(--w-line-strong);
+  background: var(--w-surface);
+  border-radius: 0 5px 5px 0;
+  animation: ch-detail-open 200ms ease-out;
+}
+@keyframes ch-detail-open {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+.ch-detail-lines { display: flex; flex-direction: column; gap: 4px; }
+.ch-detail-line {
+  font: 400 11px/1.5 var(--w-font-sans);
+  color: var(--w-muted);
+  word-break: break-word;
+}
+.ch-detail-pending { font-style: italic; }
+/* "We could not read it" is a different fact from "there is none", and the
+   one that must never be mistaken for reassurance. */
+.ch-detail-lost { color: var(--w-v-low); }
+
+/* A ratio drawn as a ratio: the difference between a huge clean network and
+   a small dirty one is the whole reason to show the number at all. */
+.ch-ratio { margin-top: 6px; }
+.ch-ratio-track {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--w-elev);
+  overflow: hidden;
+}
+.ch-ratio-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--w-v-med);
+  transition: width 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ch-ratio-cap {
+  display: block;
+  margin-top: 4px;
+  font: 500 9.5px/1.4 var(--w-font-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}

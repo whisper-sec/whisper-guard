@@ -48,6 +48,20 @@ import { launchExtension, makeShieldDist, setSettings, visit, type Extension } f
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE = resolve(HERE, "../e2e-artifacts/consent-live-evidence.md");
 
+/**
+ * The German pass. A publisher serves the wall in the browser's language, so
+ * a probe that always browses in English exercises only the English decline
+ * vocabulary however many languages the module speaks - which is exactly the
+ * blind spot the vocabulary work was fixing. These run a second time with a
+ * German browser, and the artifact records the labels each one offered so the
+ * outcome is a reason rather than a number.
+ */
+const GERMAN_SITES = [
+  "https://www.heise.de/",
+  "https://www.spiegel.de/",
+  "https://www.zeit.de/index",
+];
+
 const SITES = [
   "https://www.bbc.com/news",
   "https://www.theguardian.com/international",
@@ -108,6 +122,54 @@ async function frameArming(tabId: number): Promise<FrameArming[]> {
   }, tabId) as Promise<FrameArming[]>;
 }
 
+/**
+ * The visible button labels inside anything consent-shaped, per frame.
+ *
+ * "declined 1 of 7" is a number, not evidence. Without the labels there is
+ * no way to tell the two possible reasons apart - the wall offered no plain
+ * refusal (correct, leave it), or it offered one we could not read (a
+ * defect) - and those need opposite responses. The artifact is only worth
+ * writing if it distinguishes them.
+ *
+ * Read-only: it never clicks. Playwright reaches every frame directly, so
+ * this needs nothing from the extension.
+ */
+async function consentButtons(page: import("@playwright/test").Page): Promise<string[]> {
+  const out: string[] = [];
+  for (const frame of page.frames()) {
+    let labels: string[] = [];
+    try {
+      labels = await frame.evaluate(() => {
+        const SEL = [
+          "[role='dialog']", "[role='alertdialog']", "[aria-modal='true']",
+          "[id*='cookie' i]", "[class*='cookie' i]", "[id*='consent' i]",
+          "[class*='consent' i]", "[id*='gdpr' i]", "[class*='gdpr' i]",
+          "[class*='sp_message' i]", "[class*='message-component' i]",
+        ].join(",");
+        const seen = new Set<string>();
+        for (const root of document.querySelectorAll(SEL)) {
+          for (const b of root.querySelectorAll("button,[role='button'],input[type='button'],input[type='submit'],a[href]")) {
+            const el = b as HTMLElement;
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            const text = (el.textContent ?? (el as HTMLInputElement).value ?? "").replace(/\s+/g, " ").trim();
+            if (text === "" || text.length > 64) continue;
+            seen.add(`${text}${el.tagName === "A" ? " [link]" : ""}`);
+            if (seen.size >= 12) break;
+          }
+          if (seen.size >= 12) break;
+        }
+        return [...seen];
+      });
+    } catch {
+      // cross-origin frame that refused evaluation, or gone
+      labels = [];
+    }
+    for (const l of labels) if (!out.includes(l)) out.push(l);
+  }
+  return out.slice(0, 16);
+}
+
 test.beforeAll(async () => {
   ext = await launchExtension({ dist: makeShieldDist() });
   await setSettings(ext, { shield: true, cookieDecline: true, cloudCheck: true });
@@ -139,10 +201,12 @@ test("the pass reaches the frame where a real CMP renders its wall", async () =>
   for (const url of SITES) {
     const before = await winCount();
     let arming: FrameArming[] = [];
+    let buttons: string[] = [];
     try {
       const { page, tabId } = await visit(ext, url);
       await page.waitForTimeout(SETTLE_MS);
       arming = await frameArming(tabId);
+      buttons = await consentButtons(page);
       await page.close();
     } catch (e) {
       outcome.push(`| ${url} | ? | ? | UNREACHABLE (${e instanceof Error ? e.message.slice(0, 50) : "?"}) |`);
@@ -170,6 +234,14 @@ test("the pass reaches the frame where a real CMP renders its wall", async () =>
         `| ${f.frameId} | ${f.consent ? "yes" : "NO"} | ${f.preempt ? "yes" : "no"} | ${f.url} |`,
       );
     }
+    // The labels the wall actually offered. This is the line that turns
+    // "no" into a reason, and it is the whole point of writing the file.
+    detail.push(``);
+    detail.push(
+      buttons.length > 0
+        ? `**Buttons on offer:** ${buttons.map((b) => `\`${b}\``).join(" · ")}`
+        : `**Buttons on offer:** none found in a consent-shaped container.`,
+    );
     detail.push(``);
   }
 
@@ -200,4 +272,67 @@ test("the pass reaches the frame where a real CMP renders its wall", async () =>
   // And the bound holds on the real web too: widening where the module RUNS
   // did not widen what it may INTERCEPT.
   expect(preemptOutsideTop, "the click guard escaped the top document").toBe(0);
+});
+
+test("the German pass: the wall is read in the language the publisher serves", async () => {
+  test.setTimeout(GERMAN_SITES.length * (SETTLE_MS + 40_000) + 60_000);
+
+  // A second browser, in German. The extension under test is the same build;
+  // only Accept-Language and navigator.language differ, which is what makes
+  // the publisher serve a German wall.
+  const de = await launchExtension({ dist: makeShieldDist(), locale: "de-DE" });
+  await setSettings(de, { shield: true, cookieDecline: true, cloudCheck: true });
+
+  const germanWins = async (): Promise<number> => {
+    const rec = await de.sw.evaluate(async () => {
+      const st = await chrome.storage.local.get("wins");
+      return (st["wins"] ?? null) as { counts?: Record<string, number> } | null;
+    });
+    return rec?.counts?.["cookieDecline"] ?? 0;
+  };
+
+  const rows: string[] = [`| site | declined | buttons on offer |`, `|---|---|---|`];
+  let declined = 0;
+  try {
+    for (const url of GERMAN_SITES) {
+      const before = await germanWins();
+      let buttons: string[] = [];
+      try {
+        const { page } = await visit(de, url);
+        await page.waitForTimeout(SETTLE_MS);
+        buttons = await consentButtons(page);
+        await page.close();
+      } catch (e) {
+        rows.push(`| ${url} | UNREACHABLE | ${e instanceof Error ? e.message.slice(0, 60) : "?"} |`);
+        continue;
+      }
+      const won = (await germanWins()) - before;
+      if (won > 0) declined += 1;
+      rows.push(
+        `| ${url} | ${won > 0 ? "YES" : "no"} | ${
+          buttons.length > 0 ? buttons.map((b) => `\`${b}\``).join(" · ") : "none found"
+        } |`,
+      );
+    }
+  } finally {
+    await de.close();
+  }
+
+  note(``);
+  note(`## German pass (Accept-Language: de-DE)`);
+  note(``);
+  for (const r of rows) note(r);
+  note(``);
+  note(
+    `declined ${declined} of ${GERMAN_SITES.length}. A "no" beside a button list ` +
+      `whose only refusal costs money is the contract working, not a miss.`,
+  );
+
+  // The assertion is the CAPABILITY, not the count, for the same reason as
+  // the pass above: how many German publishers offer a free refusal is a
+  // fact about the German press, and pinning it would turn a publisher's
+  // pricing decision into our regression. What must hold is that the probe
+  // really ran in German and really saw walls.
+  const sawSomething = rows.filter((r) => r.includes("`")).length;
+  expect(sawSomething, "the German pass observed no consent wall at all; it measured nothing").toBeGreaterThan(0);
 });

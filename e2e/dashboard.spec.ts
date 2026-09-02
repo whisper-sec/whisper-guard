@@ -52,7 +52,12 @@ function seedGraph(n: E2ENetwork): void {
     ip: "198.51.100.9", city: "Montreal, CA", country: "CA",
     asn: "AS64510", owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC", verdict: "CRITICAL", prefix: "198.51.100.0/24",
   });
-  // identify canonical: the keyless "who" (the 2-hop tier can't see the ASN org).
+  // Two different parties, and the chain names both: the VENDOR the atlas
+  // matches (identify) and the network OPERATOR that announces the address
+  // (whisper.enrich, which walks it server-side and answers keyless). The
+  // old panel conflated them into one "Who" row and could only ever show
+  // whichever one it happened to have, which is how a network attribution
+  // came to read as an attribution of the site.
   n.setIdentify("evil-known-guard-e2e.com", [
     { host: "evil-known-guard-e2e.com", canonical_name: "Sketchy Co", category: null, roles: [] },
   ]);
@@ -104,8 +109,24 @@ test("protection: keyless composed verdict cites feeds, owner, and age; populari
   // The composed card: who runs it (identify canonical, keyless), where it
   // sits (2-hop geo), how old it is (history), and the feed-cited why.
   await expect(popup.locator("#protect-card")).toBeVisible({ timeout: 15_000 });
-  await expect(popup.locator("#protect-rows")).toContainText("Sketchy Co");
-  await expect(popup.locator("#protect-rows")).toContainText("Montreal");
+  // Who runs it and where it sits are on THE CHAIN now, as rungs of one
+  // walk rather than as detached rows beside it. Asserting the rung is a
+  // stronger claim than asserting the old row was: it pins WHICH join
+  // produced the fact, so a chain that silently stopped joining fails here.
+  const chain = popup.locator("#chain-mount");
+  await expect(chain.locator(".ch-rung.ch-live").first()).toBeVisible({ timeout: 15_000 });
+  // The vendor and the network operator are DIFFERENT parties here, and the
+  // chain has to keep them apart: "Sketchy Co runs it" and "Bad Hosting LLC
+  // announces the address it sits on" are two facts, and conflating them is
+  // how a network attribution turns into an accusation about a site.
+  await expect(chain.locator(".ch-rung").filter({ hasText: "RUNS ON" })).toContainText("Sketchy Co");
+  await expect(chain.locator(".ch-rung").filter({ hasText: "OPERATOR" })).toContainText("Bad Hosting LLC");
+  await expect(chain.locator(".ch-rung").filter({ hasText: "ADDRESS" })).toContainText("Montreal");
+  // And the join that produced them: the address, then the prefix it is
+  // announced in. A chain that quietly stopped walking would still render
+  // the two names above from the first round alone; it cannot render these.
+  await expect(chain.locator(".ch-rung").filter({ hasText: "ADDRESS" })).toContainText("198.51.100.9");
+  await expect(chain.locator(".ch-rung").filter({ hasText: "PREFIX" })).toContainText("198.51.100.0/24");
   // The named weighted factors ARE the citation now: the panel no longer
   // repeats them as a sentence directly underneath itself. So the exclusion
   // is pinned where it lives, on the rows, and more precisely than before.

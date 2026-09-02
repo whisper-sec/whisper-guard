@@ -160,10 +160,19 @@ test("NO new capability: the permission sets are exactly the pre-existing ones, 
     // may reach and the keyed control plane - and nothing else. Adding a host
     // here is a re-consent prompt for every installed user, so the list is
     // pinned, not merely bounded.
+    //
+    // nic.whisper.online is the fifth, added deliberately and at that price:
+    // it serves the public network statistics document, which is how the
+    // live size of the graph reaches the surfaces instead of being written
+    // into the build as a constant that is stale the day after it ships. It
+    // is a plain GET of a public file - no query string, no header, no body,
+    // no cookie - which the wire-capture invariant in consent.spec.ts
+    // asserts rather than assumes.
     expect(m.host_permissions).toEqual([
       "https://graph.whisper.online/*",
       "https://console.whisper.security/*",
       "https://get.whisper.online/*",
+      "https://nic.whisper.online/*",
       "https://rdap.whisper.online/*",
     ]);
     expect(m.optional_host_permissions).toEqual(["<all_urls>"]);

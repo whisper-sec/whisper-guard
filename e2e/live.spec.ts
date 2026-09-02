@@ -35,16 +35,21 @@ const LIVE_KEY = process.env["WHISPER_GUARD_E2E_KEY"] ?? "";
 const GRAPH = "https://graph.whisper.online/api/query";
 const EVIDENCE = resolve(HERE, "../e2e-artifacts/live-evidence.md");
 
-// A fresh URLhaus pull happens first; these recently-listed hosts are the
-// fallback when the feed is unreachable from CI.
-const FALLBACK_BAD_HOSTS = [
-  "airyvineic.help",
-  "1717.1000uc.com",
-  "abdulahad.net",
-  "alineeleuterio.com.br",
-  "aftelecom.com.br",
-  "123.ywxww.net",
-];
+// NO HARDCODED BAD HOSTS. This file used to carry six real domains as a
+// fallback list of "recently-listed" malware hosts, and that is a claim a
+// security company must not freeze into a public repository.
+//
+// A feed listing is a moment in time. URLhaus delists a site once it is
+// cleaned, and several of those six read as ordinary businesses that were
+// compromised rather than built for the purpose - so the feed would have
+// moved on and this repository would have gone on asserting it, in English,
+// for ever, about named third parties who never heard of us.
+//
+// The subject is now taken from the LIVE feed on every run, which is the
+// only place a listing is true as of now. If the feed cannot be reached the
+// test SKIPS, which is the honest failure: "we could not obtain a subject"
+// is a different fact from "the product is broken", and a suite that
+// invents a subject to stay green is measuring its own fixture.
 
 const LOOKALIKE = "paypa1-login-verify.com";
 
@@ -73,8 +78,13 @@ async function assess(hosts: string[]): Promise<Record<string, unknown>[]> {
   return parsed.rows ?? [];
 }
 
-async function pickCriticalHost(): Promise<{ host: string; row: Record<string, unknown> }> {
-  let candidates = [...FALLBACK_BAD_HOSTS];
+/**
+ * A subject for the live run, taken fresh from the feed every time and
+ * never from this file. Returns null when no subject can be obtained, and
+ * the suite skips rather than inventing one.
+ */
+async function pickCriticalHost(): Promise<{ host: string; row: Record<string, unknown> } | null> {
+  let candidates: string[] = [];
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 15_000);
@@ -82,7 +92,7 @@ async function pickCriticalHost(): Promise<{ host: string; row: Record<string, u
     clearTimeout(t);
     if (feed.ok) {
       const text = await feed.text();
-      const fresh = [
+      candidates = [
         ...new Set(
           text
             .split("\n")
@@ -91,15 +101,17 @@ async function pickCriticalHost(): Promise<{ host: string; row: Record<string, u
             .filter((h) => h && !/^[0-9.]+$/.test(h)),
         ),
       ].slice(0, 30);
-      candidates = [...fresh, ...candidates];
     }
   } catch {
-    // fallback list stands
+    // The feed is unreachable. There is no second list to fall back to, by
+    // design; the caller skips.
   }
+  if (candidates.length === 0) return null;
   const rows = await assess(candidates);
   const critical = rows.find((r) => r["band"] === "CRITICAL");
-  if (!critical) throw new Error("no CRITICAL host available from the live graph right now");
-  return { host: String(critical["host"]), row: critical };
+  // The graph agreeing with no listing today is a fact about today, not a
+  // regression, and it is not a reason to reach for a frozen name.
+  return critical ? { host: String(critical["host"]), row: critical } : null;
 }
 
 test.describe("live graph, real key", () => {
@@ -109,8 +121,14 @@ test.describe("live graph, real key", () => {
     test.setTimeout(180_000);
 
     const picked = await pickCriticalHost();
-    badHost = picked.host;
-    badVerdict = picked.row;
+    // No subject, no run. The alternative is a suite that measures a name
+    // this repository chose rather than one the feed listed today.
+    test.skip(
+      picked === null,
+      "no CRITICAL subject available from the live feed right now; nothing is hardcoded to fall back to",
+    );
+    badHost = picked!.host;
+    badVerdict = picked!.row;
 
     // Harmless local page standing in for the malicious host's content.
     localServer = http.createServer((_req, res) => {

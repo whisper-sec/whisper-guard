@@ -27,21 +27,45 @@ export function onNavRecorded(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
+/**
+ * The in-flight load, so two concurrent callers share one read of storage
+ * and, more importantly, so a navigation recorded DURING that read is not
+ * thrown away.
+ *
+ * The old shape published an empty `mem` before awaiting storage. A
+ * recordNav landing in that window found the non-null empty map, wrote its
+ * increment into it, and was then overwritten when the stored value arrived
+ * and did `mem.set(host, stored)`. The lost visit was the FIRST visit after
+ * every service-worker start, which is the one most likely to be the one
+ * that mattered, and it was invisible: the count was merely one lower than
+ * it should have been.
+ *
+ * Now the map is published only once it holds the stored rows, and a
+ * concurrent caller awaits the same promise rather than racing it.
+ */
+let loading: Promise<Map<string, { q: number; lastAt: number }>> | null = null;
+
 async function load(): Promise<Map<string, { q: number; lastAt: number }>> {
   if (mem) return mem;
-  mem = new Map();
-  try {
-    const stored = (await chrome.storage.local.get("navlog"))["navlog"] as Stored | undefined;
-    if (stored && typeof stored === "object") {
-      const floor = Date.now() - NAVLOG_WINDOW_MS;
-      for (const [host, v] of Object.entries(stored)) {
-        if (v && typeof v.lastAt === "number" && v.lastAt >= floor) mem.set(host, v);
+  if (loading) return loading;
+  loading = (async () => {
+    const built = new Map<string, { q: number; lastAt: number }>();
+    try {
+      const stored = (await chrome.storage.local.get("navlog"))["navlog"] as Stored | undefined;
+      if (stored && typeof stored === "object") {
+        const floor = Date.now() - NAVLOG_WINDOW_MS;
+        for (const [host, v] of Object.entries(stored)) {
+          if (v && typeof v.lastAt === "number" && v.lastAt >= floor) built.set(host, v);
+        }
       }
+    } catch {
+      // memory-only fallback is fine
     }
-  } catch {
-    // memory-only fallback is fine
-  }
-  return mem;
+    mem = built;
+    loading = null;
+    return built;
+  })();
+  return loading;
 }
 
 function persistSoon(): void {

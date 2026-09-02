@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Whisper Guard",
-  "version": "2.4.0",
-  "description": "The Whisper security graph in your browser: a live safety verdict on every site, plus a dashboard of where your devices go.",
+  "version": "2.5.0",
+  "description": "The Whisper security graph in your browser: a live safety verdict on every site, the join path behind the name, and a dashboard of where your devices go.",
   "minimum_chrome_version": "121",
   "background": {
     "service_worker": "background.js",
@@ -42,6 +42,7 @@
     "https://graph.whisper.online/*",
     "https://console.whisper.security/*",
     "https://get.whisper.online/*",
+    "https://nic.whisper.online/*",
     "https://rdap.whisper.online/*"
   ],
   "optional_permissions": [

@@ -1,4 +1,4 @@
-# Chrome Web Store: paste-ready fields (Whisper Guard 2.4.0)
+# Chrome Web Store: paste-ready fields (Whisper Guard 2.5.0)
 
 Open this file in your editor and copy each block into the matching CWS field.
 
@@ -90,7 +90,7 @@ Provides the proxy authorization for the optional Whisper egress route, so the r
 Hardens WebRTC to proxied-only while the optional Whisper egress route is on, so the browser's real IP cannot leak around the proxy. Applied only when routing is enabled.
 
 --- Host permission justification ---
-graph.whisper.online: the graph, carrying both arms. The safety check + destination enrichment (hostname only) is the only thing a browsing hostname ever reaches. The signed-in control plane (the user's own fleet roster, enrollment and egress) always carries the user's key and never a browsing hostname, and is not called at all when signed out. console.whisper.security: the sign-in device flow, two unauthenticated endpoints, and nothing else (no browsing data); it is a sign-in origin, never a destination. get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). No other host is ever contacted. The extension also OPENS console.whisper.online in a tab when the user asks for the console; it is never fetched from, so it needs no host permission.
+graph.whisper.online: the graph, carrying both arms. The safety check + destination enrichment (hostname only) is the only thing a browsing hostname ever reaches. The signed-in control plane (the user's own fleet roster, enrollment and egress) always carries the user's key and never a browsing hostname, and is not called at all when signed out. console.whisper.security: the sign-in device flow, two unauthenticated endpoints, and nothing else (no browsing data); it is a sign-in origin, never a destination. get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). nic.whisper.online: the public network statistics document, a plain GET of one public JSON file with no query string, no header, no body and no cookie, so nothing about the user can ride on it. It is how the extension shows the live size of the graph and the resolvers' current latency instead of quoting a figure baked into the build, which would be stale the day after release. No other host is ever contacted. The extension also OPENS console.whisper.online in a tab when the user asks for the console; it is never fetched from, so it needs no host permission.
 
 --- Remote code ---
 No, I am not using Remote code.

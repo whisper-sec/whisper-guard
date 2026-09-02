@@ -186,34 +186,170 @@ if (!w[FLAG]) {
     root.appendChild(bar);
   }
 
+  // ------------------------------------------------ credential-shaped fields
+  //
+  // The field guard used to fire on exactly one thing: `input[type=password]`.
+  // That is the field a 2009 phishing page used. It is not the field the
+  // ones we actually see use.
+  //
+  // A wallet-drain page asks for a twelve-word recovery phrase in a plain
+  // `type="text"` box. A card-skimming overlay asks for a PAN and a CVC in
+  // `inputmode="numeric"`. An MFA-relay page asks for a six-digit code in a
+  // `type="tel"` box, often six of them side by side. None of those is a
+  // password input, and on every one of them the guard was silent - on the
+  // exact surfaces where being silent costs the most.
+  //
+  // So the test is now three tests, cheapest first, and each one names what
+  // it caught so the warning can be specific rather than generic. A warning
+  // that says "do not enter your recovery phrase here" is a different piece
+  // of writing from "this site is flagged", and only one of them tells the
+  // reader what they were about to lose.
+
+  type CredentialKind = "password" | "otp" | "card" | "secret";
+
+  /** Autocomplete tokens that ARE the answer, whatever the input type is. */
+  const AUTOCOMPLETE_KIND: Record<string, CredentialKind> = {
+    "current-password": "password",
+    "new-password": "password",
+    "one-time-code": "otp",
+    "cc-number": "card",
+    "cc-csc": "card",
+    "cc-exp": "card",
+    "cc-exp-month": "card",
+    "cc-exp-year": "card",
+  };
+
+  /**
+   * The vocabulary, matched against a field's own labelling. Ordered most
+   * specific first: "recovery phrase" must not be read as a password, and
+   * "card number" must not be read as an OTP.
+   */
+  const NAME_PATTERNS: [RegExp, CredentialKind][] = [
+    [/\b(seed|recovery|mnemonic|secret)[\s_-]?(phrase|words?|key)\b|\bmnemonic\b|\bprivate[\s_-]?key\b|\bkeystore\b/i, "secret"],
+    [/\b(card|cc|credit|debit)[\s_-]?(number|num|no)\b|\bcardnumber\b|\bpan\b|\bcvv\b|\bcvc\b|\bcsc\b|\bsecurity[\s_-]?code\b/i, "card"],
+    [/\b(otp|totp|mfa|2fa)\b|\bone[\s_-]?time\b|\b(auth|authentication|verification|confirmation|sms)[\s_-]?code\b|\bpasscode\b/i, "otp"],
+    [/\bpass(word|wd|phrase)?\b|\bpwd\b|\bpin\b/i, "password"],
+  ];
+
+  /** Every string that labels this field, joined. Bounded: a page can put a
+   *  novel in an aria-label and we are not going to regex a novel. */
+  function labelling(el: HTMLInputElement): string {
+    const bits = [
+      el.name,
+      el.id,
+      el.getAttribute("placeholder"),
+      el.getAttribute("aria-label"),
+      el.getAttribute("data-testid"),
+    ];
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      for (const id of labelledBy.split(/\s+/).slice(0, 4)) {
+        bits.push(document.getElementById(id)?.textContent ?? null);
+      }
+    }
+    for (const lab of el.labels ?? []) bits.push(lab.textContent);
+    return bits.filter(Boolean).join(" ").slice(0, 400);
+  }
+
+  /** Input types that can plausibly hold a secret. A checkbox cannot, and a
+   *  file picker holding a keystore is a different feature. */
+  const TEXTUAL = new Set(["text", "tel", "number", "search", "email", "url", ""]);
+
+  /** What KIND of credential this field is asking for, or null. */
+  function credentialKind(el: HTMLInputElement): CredentialKind | null {
+    if (el.type === "password") return "password";
+
+    const auto = (el.getAttribute("autocomplete") ?? "").toLowerCase().trim();
+    for (const token of auto.split(/\s+/)) {
+      const kind = AUTOCOMPLETE_KIND[token];
+      if (kind) return kind;
+    }
+
+    if (!TEXTUAL.has(el.type)) return null;
+    const text = labelling(el);
+    if (text === "") return null;
+    for (const [re, kind] of NAME_PATTERNS) {
+      if (re.test(text)) return kind;
+    }
+    return null;
+  }
+
+  const KIND_COPY: Record<CredentialKind, string> = {
+    password: "password",
+    otp: "one-time code",
+    card: "card details",
+    secret: "recovery phrase or private key",
+  };
+
+  function fieldWarning(kind: CredentialKind, cfg: GuardConfig): string {
+    const what = KIND_COPY[kind];
+    if (kind === "secret") {
+      // The one case with no recovery and no chargeback. It gets its own
+      // sentence, and the sentence is the strongest one we write.
+      return cfg.brandDomain
+        ? `STOP. This is NOT ${cfg.brandDomain}. A ${what} typed here is gone, and so is everything it unlocks.`
+        : "STOP. This site is flagged and it is asking for a recovery phrase. Nobody legitimate ever asks for one. Typed here, it is gone.";
+    }
+    if (cfg.brandDomain) {
+      return `Careful: this is NOT ${cfg.brandDomain}. Do not enter your ${what}.`;
+    }
+    if (cfg.afterAllow === true) {
+      return `You continued past a known-threat warning for this site. Do not enter your ${what} here, and never one you use anywhere else.`;
+    }
+    return `Careful: this site is flagged and it is asking for your ${what}. Think twice.`;
+  }
+
   function armFieldGuard(cfg: GuardConfig): void {
-    let warned = false;
+    // One warning per KIND, not one per page. A page that asks for a card
+    // number and then a CVC has asked twice and deserves one answer; a page
+    // that asks for a password and then a recovery phrase has asked two
+    // different questions, and the second is the dangerous one. Capped so a
+    // hostile page cannot turn the guard into the annoyance.
+    const warnedKinds = new Set<CredentialKind>();
+    const MAX_WARNINGS = 3;
+
     document.addEventListener(
       "focusin",
       (ev) => {
-        if (warned) return;
+        if (warnedKinds.size >= MAX_WARNINGS) return;
         const t = ev.target;
-        if (!(t instanceof HTMLInputElement) || t.type !== "password") return;
-        warned = true;
+        if (!(t instanceof HTMLInputElement)) return;
+        const kind = credentialKind(t);
+        if (kind === null || warnedKinds.has(kind)) return;
+        warnedKinds.add(kind);
+
         const root = mount();
         const tip = document.createElement("div");
         tip.setAttribute("role", "alert");
-        const rect = t.getBoundingClientRect();
         tip.style.cssText = [
           "position:fixed",
-          `top:${Math.max(8, rect.top - 56)}px`,
-          `left:${Math.max(8, rect.left)}px`,
           "max-width:340px", "background:#7F1D1D", "color:#FEE2E2",
           "font:13px/1.5 system-ui,sans-serif", "padding:10px 12px",
           "border-radius:8px", "box-shadow:0 4px 16px rgba(0,0,0,.5)",
         ].join(";");
-        tip.textContent = cfg.brandDomain
-          ? `Careful: this is NOT ${cfg.brandDomain}. Do not enter the password you use there.`
-          : cfg.afterAllow === true
-            ? "You continued past a known-threat warning for this site. Do not enter a password here, and never one you use anywhere else."
-            : "Careful: this site is flagged. Think twice before entering a password here.";
+        tip.textContent = fieldWarning(kind, cfg);
+
+        // Follow the field. The tip used to be positioned once, so on any
+        // page long enough to scroll it stayed behind while the field it was
+        // about moved away, and it ended up pointing at whatever happened to
+        // be there instead.
+        const place = (): void => {
+          const rect = t.getBoundingClientRect();
+          tip.style.top = `${Math.max(8, rect.top - 56)}px`;
+          tip.style.left = `${Math.max(8, rect.left)}px`;
+        };
+        place();
+        const opts = { passive: true, capture: true } as const;
+        window.addEventListener("scroll", place, opts);
+        window.addEventListener("resize", place, opts);
+        const drop = (): void => {
+          window.removeEventListener("scroll", place, opts);
+          window.removeEventListener("resize", place, opts);
+          tip.remove();
+        };
+
         root.appendChild(tip);
-        setTimeout(() => tip.remove(), 8000);
+        setTimeout(drop, 8000);
       },
       true,
     );

@@ -1,29 +1,34 @@
 /* SPDX-License-Identifier: MIT
    Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 
-   Popup layout on top of the shared theme.
+   Panel layout on top of the shared theme.
 
-   Three rules hold the panel together:
+   Four rules hold the panel together:
 
    1. HIERARCHY IS STRUCTURAL, not decorative. The site verdict is the
-      headline and sits on the page ground with no box around it. A .w-card
-      is spent only on something that needs a boundary because it demands a
-      decision (a look-alike, a session block, this browser's protection).
+      headline and sits on the page ground behind a coloured rail rather
+      than inside a box. A .w-card is spent only on something that demands
+      a decision (a look-alike, a session block, this browser's routing).
       Everything else is a .panel: a quiet group separated by one hairline.
-   2. ONE TYPE SCALE, and it is the shared one (theme.css): 9.5 (eyebrow),
-      10.5 (mono metadata), 11 (caption), 12 (mono rows), 12.5 (body),
-      13.5 (the hostname), 26 (the one hero number). Nothing else. Spacing
-      is 4 / 8 / 12 / 16 and nothing else.
+   2. ONE TYPE SCALE, and it is the shared one (theme.css): 9 / 9.5
+      (eyebrow), 10.5 (mono metadata), 11 (caption), 11.5-12 (mono rows),
+      12.5 (body), 15 (the hostname), 26 (the one hero number). Nothing
+      else. Spacing is 4 / 8 / 12 / 16 and nothing else.
    3. COLOUR IS MEANING. The verdict scale is the only saturated colour on
-      the panel; the accent carries identity. Everything else is ink.
+      the panel; the accent carries identity and liveness. Everything else
+      is ink.
+   4. THE PANEL IS ALIVE BEFORE IT IS ASKED. The graph scale in the
+      masthead, the resolver pulse beside it and the chain arriving rung by
+      rung all move on their own, because a security surface that changes
+      only when it is clicked reads as switched off. Every one of them
+      yields whole to prefers-reduced-motion.
 
    The panel carries no colours of its own. Every token it draws with is
    defined once in theme.css and flips whole with the reader's colour
-   scheme, so the panel cannot drift from the dashboard or from the
-   console. */
+   scheme, so the panel cannot drift from the dashboard or the console. */
 
 body {
-  width: 390px;
+  width: 400px;
 }
 
 /* ----------------------------------------------------------- the shell */
@@ -31,10 +36,13 @@ body {
 header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 9px 14px;
   border-bottom: 1px solid var(--w-line);
   background: var(--w-surface);
+  position: sticky;
+  top: 0;
+  z-index: 4;
 }
 
 .icon-btn {
@@ -49,10 +57,45 @@ header {
 }
 .icon-btn:hover { color: var(--w-text); background: var(--w-hover); }
 
-main { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+/* The live scale readout: the size of the graph the verdict came from,
+   and the resolvers' own pulse over the trailing window. Both are read
+   from the public stats endpoint every time the panel opens. */
+.scale {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  cursor: default;
+}
+.scale-pulse {
+  display: block;
+  width: 44px;
+  height: 14px;
+  color: var(--w-accent);
+  opacity: 0.75;
+}
+.scale-pulse svg { display: block; }
+.scale-figures { display: flex; align-items: baseline; gap: 4px; }
+.scale-num {
+  font: 500 11.5px/1 var(--w-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--w-text);
+}
+/* Ink-dim, not --w-faint: these are words a reader reads. --w-faint is the
+   theme's decoration ink (3.12:1 on the panel ground) and carrying a caption
+   in it is how a label ends up invisible in a published figure that nobody
+   looked at closely. */
+.scale-unit {
+  font: 500 9px/1 var(--w-font-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+main { padding: 14px; display: flex; flex-direction: column; gap: 13px; }
 
 /* A quiet group: no box, one hairline, the same inner rhythm as a card. */
-.panel { border-top: 1px solid var(--w-line); padding-top: 12px; }
+.panel { border-top: 1px solid var(--w-line); padding-top: 13px; }
 main > .panel:first-child { border-top: none; padding-top: 0; }
 
 .row { display: flex; align-items: center; }
@@ -63,13 +106,42 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 
 /* ------------------------------------------------- 1. the site verdict */
 
-#host-row { display: flex; gap: 12px; align-items: flex-start; }
+#host-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  position: relative;
+}
+
+/* The rail. A verdict is legible from the left edge before a word is
+   read, and it grows into place on open, which is the panel saying it
+   just measured this rather than remembered it. */
+.band-rail {
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  align-self: stretch;
+  min-height: 44px;
+  background: var(--w-line-strong);
+  transform-origin: top;
+  animation: rail-grow 380ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+@keyframes rail-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+.band-rail.benign { background: var(--w-ok); }
+.band-rail.suspicious { background: var(--w-v-low); }
+.band-rail.malicious { background: var(--w-v-crit); }
+.band-rail.unknown { background: repeating-linear-gradient(
+  180deg, var(--w-line-strong) 0 3px, transparent 3px 6px); }
 
 .glyph {
-  width: 32px; height: 32px; border-radius: 8px; flex: none;
+  width: 26px; height: 26px; border-radius: 7px; flex: none;
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 700; background: transparent;
-  border: 2px solid var(--w-line-strong);
+  font-size: 13px; font-weight: 700; background: transparent;
+  border: 1.5px solid var(--w-line-strong);
+  margin-top: 1px;
 }
 .glyph.benign { border-color: var(--w-ok); color: var(--w-ok); }
 .glyph.suspicious { border-color: var(--w-v-low); color: var(--w-v-low); }
@@ -78,23 +150,23 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 .glyph.signedout { border-color: var(--w-line-strong); color: var(--w-muted); }
 
 .host-meta { min-width: 0; flex: 1; }
-.hostname { font-weight: 600; font-size: 13.5px; line-height: 1.35; word-break: break-all; }
-.chips { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.hostname {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  word-break: break-all;
+}
+.chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 
 /* The one sentence about this site. It never restates the badge above it. */
-.verdict-line { margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
+.verdict-line { margin-top: 7px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
 
 /* ------------------------------------------------------- evidence block */
 
 .w-card.warn { border-color: var(--w-v-low); }
 .w-card.muted { color: var(--w-muted); font-size: 12px; }
 .w-card p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
-
-.protect-rows { display: flex; flex-direction: column; gap: 4px; }
-.protect-rows:empty { display: none; }
-.protect-kv { display: flex; gap: 8px; font-size: 12px; min-width: 0; }
-.protect-kv .k { flex: 0 0 5.5em; color: var(--w-muted); }
-.protect-kv .v { color: var(--w-text); min-width: 0; word-break: break-word; }
 
 .why-chips { display: flex; flex-direction: column; gap: 3px; }
 .why-chips:not(:empty) { margin-top: 8px; }
@@ -103,8 +175,7 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
    evidence and carries the weight the factor rows otherwise would. */
 .why-line.threat { color: var(--w-v-med); }
 
-#why-panel { margin-top: 10px; }
-.protect-rows:not(:empty) + #why-panel { border-top: 1px solid var(--w-line); padding-top: 9px; }
+#why-panel { margin-top: 0; }
 .why-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .why-factors { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
 .why-factor { display: flex; align-items: center; gap: 7px; font-size: 11px; min-width: 0; }
@@ -125,6 +196,13 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 
 .chip-muted { color: var(--w-muted); letter-spacing: 0; }
 
+/* -------------------------------------------------------- 2. the chain
+
+   The spine's own styles are shared (theme.css), because the dashboard
+   draws the same one. Only the note under it is panel-local. */
+
+#chain-note { margin-top: 9px; }
+
 /* ------------------------------------------------ page-link pre-verdicts */
 
 .linkscan-summary { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--w-muted); }
@@ -139,13 +217,13 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 .link-host { font-family: var(--w-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link-n { margin-left: auto; color: var(--w-muted); font-family: var(--w-mono); font-size: 10.5px; }
 
-/* --------------------------------------------- 2. this browser (protect)
+/* --------------------------------------------- 4. this browser (protect)
 
    The control's own layout is in theme.css beside the module that builds
-   it, because the dashboard mounts the same thing. */
+   it, because the dashboard mounts the same thing - and so is the tier
+   meter under it, for the same reason. */
 
-
-/* --------------------------------------------------------- 3. activity */
+/* --------------------------------------------------------- 5. activity */
 
 .today-row { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
 .today-hero {

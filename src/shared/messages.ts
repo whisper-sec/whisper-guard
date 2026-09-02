@@ -17,8 +17,13 @@ import type {
   FleetEndpoint,
   IdentityVerification,
   LinkScanResult,
+  ChainRungKind,
+  GraphQuota,
+  GraphScale,
+  RungDetail,
   Protection,
   SessionRisk,
+  SiteChain,
   Settings,
   TabState,
   WinsToday,
@@ -81,6 +86,22 @@ export type BgRequest =
   // no host, no URL, nothing read from the page, so the wins record
   // (category + count) could not learn a site even if it wanted to.
   | { kind: "consentDeclined" }
+  // The join path behind one hostname: the seven-rung walk from the name
+  // to the buildings the network that announces its address is present in.
+  // Built on the reader's ask rather than on every navigation, because the
+  // public tier's hourly budget is a real number and browsing must not
+  // spend it (see CHAIN_TTL_MS in shared/config.ts).
+  | { kind: "getChain"; host: string }
+  // What is behind ONE rung, fetched only when a reader expands it. Lazy on
+  // purpose: a reader who never expands one must never spend a graph call
+  // on it, and the public tier's hourly budget is a real number.
+  | { kind: "getRungDetail"; host: string; rung: ChainRungKind }
+  // The live size of the graph and the resolvers' pulse. Public, keyless,
+  // carries nothing about the reader, and is never read from a constant.
+  | { kind: "getScale" }
+  // The caller's own tier and what is left of it: RULE 14's two-tier
+  // boundary as a measurement rather than a pitch.
+  | { kind: "getQuota" }
   // Today's quiet-wins tally: categories + counts only, ever.
   | { kind: "getWins" }
   // the hosts blocked for this session (the DNR rule ids are hashes, so
@@ -153,6 +174,12 @@ export type BgResponse =
   | { ok: true; scan: LinkScanResult }
   | { ok: true; verification: IdentityVerification | null }
   | { ok: true; preempt: PreemptDecision }
+  | { ok: true; chain: SiteChain }
+  | { ok: true; detail: RungDetail }
+  // null is a first-class answer: the endpoint could not be read, and the
+  // surface says so instead of showing a remembered or invented figure.
+  | { ok: true; scale: GraphScale | null }
+  | { ok: true; quota: GraphQuota | null }
   | { ok: true; wins: WinsToday }
   | { ok: true; hosts: string[] } // the session block ledger (listBlocked)
   | { ok: true }

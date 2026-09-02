@@ -9,31 +9,42 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+  <!-- The masthead carries the product AND the live size of the graph the
+       verdicts come from, read from the public stats endpoint on every
+       open. A number about our own coverage is never written into this
+       build: it would be stale the day after it shipped. -->
   <header>
-    <!-- The knot plus an ink wordmark: the shipped wordmark PNG is
-         white-only and vanishes on a light ground, so only the mark is an
-         image. Same lockup as the console's. -->
     <div class="w-lockup">
       <img src="knot.png" alt="Whisper" class="w-knot">
       <span class="w-wordmark">Whisper</span>
       <span class="w-product">Guard</span>
     </div>
     <span class="spacer"></span>
+    <div id="scale" class="scale" hidden>
+      <span id="scale-pulse" class="scale-pulse"></span>
+      <span class="scale-figures">
+        <span id="scale-nodes" class="scale-num">-</span>
+        <span class="scale-unit">nodes</span>
+      </span>
+    </div>
     <button id="btn-refresh" class="icon-btn" title="Re-check this site" aria-label="Re-check this site">&#8635;</button>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
   </header>
 
   <main>
-    <!-- 1. THIS SITE. The verdict is the headline, not a card: one glyph,
-         one name, one badge, one sentence. Everything under it is evidence
-         for that sentence and is styled to read as subordinate to it. -->
+    <!-- 1. THE VERDICT. A coloured rail, the name, one badge, one sentence.
+         The sentence never restates the badge; coverage lives with the
+         evidence, never beside the verdict where it reads as a score. -->
     <section id="host-row" hidden>
-      <div id="band-glyph" class="glyph"></div>
+      <span id="band-rail" class="band-rail"></span>
       <div class="host-meta">
         <div id="hostname" class="hostname w-host"></div>
-        <div class="chips"><span id="band-chip" class="w-chip"></span></div>
+        <div class="chips">
+          <span id="band-chip" class="w-chip"></span>
+        </div>
         <div id="band-note" class="verdict-line"></div>
       </div>
+      <div id="band-glyph" class="glyph" aria-hidden="true"></div>
     </section>
 
     <!-- The on-device look-alike catch: an alert with its own way out. -->
@@ -56,10 +67,22 @@
 
     <section id="graph-error" class="w-card muted" hidden></section>
 
-    <!-- The evidence behind the verdict: who runs it, where, how old, and
-         the named weighted factors the graph scored it on. -->
+    <!-- 2. THE CHAIN. The join path behind the name: what runs it, what it
+         resolves to, the prefix that address sits in, the network that
+         announces the prefix, the operator that holds the network, and the
+         buildings that operator is physically present in.
+
+         Any product can look a name up. This is the one thing on the panel
+         that needs a graph rather than a feed, and it is why the panel is
+         worth opening on a site that turns out to be fine. -->
+    <section id="chain-card" class="panel" hidden>
+      <div id="chain-mount"></div>
+      <div id="chain-note" class="w-note" hidden></div>
+    </section>
+
+    <!-- 3. THE EVIDENCE behind the verdict: the named weighted factors the
+         graph scored it on, and how much it knows about the name at all. -->
     <section id="protect-card" class="panel" hidden>
-      <div id="protect-rows" class="protect-rows"></div>
       <div id="why-panel" hidden>
         <div class="why-head">
           <span class="w-label">Why this verdict</span>
@@ -83,7 +106,7 @@
       <div id="linkscan-note" class="w-note" hidden></div>
     </section>
 
-    <!-- 2. THIS BROWSER. One control does the whole thing: reserve the
+    <!-- 4. THIS BROWSER. One control does the whole thing: reserve the
          identity AND route through it, asking for the permission it needs
          at the moment it needs it. No second step, no hand-off. -->
     <section id="identity-card" class="w-card" hidden>
@@ -92,18 +115,30 @@
       <div id="identity-control"></div>
     </section>
 
+    <!-- The signed-out tier. Not a pitch: the reader's real, measured
+         position on the keyless tier, read from the graph, and exactly
+         what an account changes about it. -->
     <section id="signin-pitch" class="w-card" hidden>
       <div class="pc-head">
         <span class="w-label">This browser</span>
         <span class="w-chip unknown">NOT ON THE NETWORK</span>
       </div>
-      <p>Sign in to give this browser its own routable Whisper address and
-      route its traffic through it. Everything above already works without an account.</p>
+      <p>Everything above ran without an account. Sign in to give this
+      browser its own routable Whisper address and send its traffic out
+      through it.</p>
+      <div id="tier-meter" class="tier" hidden>
+        <div class="tier-head">
+          <span id="tier-label" class="tier-label"></span>
+          <span id="tier-count" class="tier-count"></span>
+        </div>
+        <div class="tier-track"><span id="tier-fill" class="tier-fill"></span></div>
+        <div id="tier-note" class="w-note"></div>
+      </div>
       <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
       <div id="device-status" class="w-note" hidden></div>
     </section>
 
-    <!-- 3. WHAT IT HAS DONE. Lines, not tiles: a count nobody can act on is
+    <!-- 5. WHAT IT HAS DONE. Lines, not tiles: a count nobody can act on is
          not worth a card, and a zero is not worth a number. -->
     <section class="panel">
       <div class="mini-head">

@@ -6,7 +6,7 @@ Everything the CWS dashboard asks for, ready to paste. Upload
 ## Listing
 
 - **Name:** Whisper Guard
-- **Summary (132 max):** The Whisper security graph in your browser: a live safety verdict on every site, plus a dashboard of where your devices go.
+- **Summary (132 max):** A live safety verdict on every site, and the join path behind the name: address, prefix, network, operator, building.
 - **Category:** Privacy & Security
 - **Language:** English
 
@@ -18,9 +18,27 @@ verdict on every site, and a dashboard of where your devices actually go.
 The moment you install it, the toolbar mark answers "is THIS site safe?" on
 every page you visit, with no account needed: green for no known threat, amber
 for suspicious, a red stop plate reserved for evidenced-malicious sites, and an
-honest UNKNOWN for the internet's long tail. Click the mark for who runs the
-site and where it lives, how old the domain is, the threat feeds it is listed
-in, and a look-alike neighborhood confirmed against the graph.
+honest UNKNOWN for the internet's long tail.
+
+Then click the mark, and Guard shows you something no other extension can:
+THE CHAIN. Not a lookup, a walk. The name and how long ago it was registered.
+What runs on it. The address it answers on and the city that address is in.
+The prefix that address is announced in, and how many of that prefix's
+neighbours are listed as threats. The network that announces the prefix. The
+operator that holds the network. The buildings and internet exchanges that
+operator is physically present in. Seven rungs, seven joins, no account
+needed. Expand any rung for what is behind it: how much of that network's
+announced space is actually listed, how many other names answer on that
+address, every facility by name.
+
+Each rung says one of three things and never confuses them: it has a value,
+the graph answered and holds nothing there, or the read did not come back.
+The third is drawn in amber and says so, because an outage that renders as an
+empty row is an outage that reads as safety.
+
+The panel also shows the graph's own score and the named, weighted feed
+listings behind the verdict, plus a look-alike neighborhood confirmed against
+the graph.
 
 An on-device detector also checks every site against 800+ heavily phished
 brands: homoglyph tricks (paypa1.com, Cyrillic lookalikes), swapped endings
@@ -38,6 +56,25 @@ with an explainable identity-health score, and one control that gives this
 browser its own routable Whisper IPv6 identity and routes its traffic out
 through it, so it becomes a first-class endpoint anyone can verify by public
 RDAP. The same one control is in the toolbar panel and on the dashboard.
+
+Cookie banners are answered for you, in their own language. English, German,
+French, Spanish, Italian, Dutch, Portuguese, Polish, Swedish, Danish,
+Norwegian, Finnish, Czech, Turkish and Romanian, using the banner's own reject
+control so the page starts in its most private configuration. A wall whose
+only refusal costs money is left strictly alone: "Reject all and subscribe" is
+a paywall, and pressing it on your behalf would be a purchase.
+
+On a flagged site, Guard speaks up when a credential-shaped field takes focus,
+and names what it caught: a password, a one-time code, card details, or a
+wallet recovery phrase, which gets the strongest wording there is because that
+loss is the one with no chargeback. It warns once per kind and stays quiet on
+a search box or an email field.
+
+Signed out, the panel shows your real remaining budget on the public graph
+tier, read from the graph itself, so "sign in" is a fact about a ceiling you
+can see rather than an advertisement. The size of the graph behind every
+verdict is read live too, along with the resolvers' own pulse over the last 24
+hours. No figure about our coverage is ever written into the build.
 
 Every surface follows your system's light or dark setting, and all of them use
 the same design system as the Whisper console, so moving between the two is

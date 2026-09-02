@@ -60,9 +60,17 @@ body {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  /* 260, measured rather than guessed. The content column is 1200px minus
+     40px of padding, so four cards plus three 14px gaps have 1160px: 300
+     needs 1242 and 280 needs 1162, and both wrap the fourth card onto a row
+     of its own beside two card-widths of nothing. 260 needs 1082 and fits.
+     The four breakdowns (kind, company, network, country) are one row. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
-  align-items: start;
+  /* Cards in one row share a bottom edge. A ragged row of boxes reads as
+     an unfinished layout rather than as three findings, and the fix is
+     alignment rather than padding the shortest card with filler. */
+  align-items: stretch;
 }
 .wide2 { grid-column: span 2; }
 @media (max-width: 760px) { .wide2 { grid-column: span 1; } }
@@ -216,3 +224,80 @@ body {
 #d-status:empty { display: none; }
 
 footer { padding: 12px 20px 18px; width: min(1200px, 100%); margin: 0 auto; }
+
+/* --------------------------------------------------------- the scale band
+
+   The masthead of the browser view: how big the graph behind every verdict
+   on this page is, and how hard the resolvers in front of it are working.
+   Both are read live on every load and neither is ever a constant.
+
+   It leads the page because it is the one thing here that is true about the
+   product rather than about this browser, and because a page whose top is a
+   button asking for something is a page that has nothing to show. */
+
+.scale-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 20px;
+  align-items: center;
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+
+.sb-figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.sb-fig { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sb-num {
+  font: 300 26px/1 var(--w-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--w-text);
+}
+/* Ink-dim, not --w-faint: these are words a reader reads. --w-faint is the
+   theme's decoration ink (3.12:1 on the panel ground) and carrying a caption
+   in it is how a label ends up invisible in a published figure that nobody
+   looked at closely. */
+.sb-cap {
+  font: 500 9.5px/1.4 var(--w-font-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+.sb-pulse { min-width: 0; }
+.sb-pulse-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sb-chart {
+  margin-top: 8px;
+  height: 52px;
+  color: var(--w-accent);
+}
+.sb-chart svg { display: block; width: 100%; height: 52px; }
+
+@media (max-width: 900px) {
+  .scale-band { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ------------------------------------------------- the chain, in a ledger
+
+   A destination row opens the join path behind it in place. Same spine, same
+   module, same words as the panel: there is one chain and it looks like one
+   thing wherever it is read. */
+
+.ledger-chain {
+  padding: 12px 6px 14px 14px;
+  border-bottom: 1px solid var(--w-line);
+  background: var(--w-surface);
+  animation: chain-open 260ms ease-out;
+}
+@keyframes chain-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.ledger-chain .ch-head { margin-bottom: 8px; }
+.w-ledger-row.open { background: var(--w-hover); }
+.w-ledger-row.expandable { cursor: pointer; }

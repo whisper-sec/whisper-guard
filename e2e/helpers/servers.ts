@@ -59,6 +59,11 @@ export const GRAPH_CONTROL_HOST = "graph.whisper.online";
 export const CONSOLE_HOST = "console.whisper.security";
 export const RDAP_HOST = "rdap.whisper.online";
 export const CORPUS_HOST = "get.whisper.online";
+/** The public network statistics document: the live graph scale and the
+ *  resolvers' pulse. Named here for the same reason as the rest - a
+ *  "nothing browsing-related reached it" assertion against a stale literal
+ *  passes for the wrong reason. */
+export const NIC_HOST = "nic.whisper.online";
 
 /**
  * The mock API key every spec signs in with. Deliberately NOT in the shape of
@@ -99,6 +104,20 @@ export interface EnrichRow {
   asnName?: string;
   prefix?: string;
   verdict?: string;
+  /** Flagged neighbours sharing the announcing prefix: the chain's one
+   *  rung that can carry risk of its own. */
+  threatNeighbors?: number;
+  /** Popularity RANK (lower is more prevalent), as whisper.enrich returns it. */
+  prevalence?: number;
+}
+
+/** The physical layer behind one ASN: the buildings and the exchanges. */
+export interface PresenceRow {
+  facilities: string[];
+  exchanges: string[];
+  /** The real totals when the sample above is a sample. */
+  facilityCount?: number;
+  exchangeCount?: number;
 }
 
 /** One control-plane endpoint (device or agent) the mock account holds. */
@@ -119,6 +138,18 @@ export interface MockEndpoint {
 export class E2ENetwork {
   readonly log: CapturedRequest[] = [];
   graphMode: GraphMode = "mock";
+  /**
+   * Substrings of a Cypher query that this graph refuses to answer, with a
+   * 500. One query failing while the rest succeed is the state a partial
+   * outage actually has, and it is the only way to prove that a step the
+   * client COULD NOT READ renders differently from a step the graph
+   * answered with nothing. Those two look identical in every product that
+   * gets this wrong.
+   */
+  readonly failQueries = new Set<string>();
+  /** When true the public statistics document is unreachable. The surfaces
+   *  must then show NO scale rather than a remembered one. */
+  statsDown = false;
   graphDelayMs = 0;
   private verdicts = new Map<string, Verdict>();
   private explainRows = new Map<string, Record<string, unknown>[]>();
@@ -127,6 +158,46 @@ export class E2ENetwork {
   private variantRows = new Map<string, Record<string, unknown>[]>();
   private historyRows = new Map<string, Record<string, unknown>[]>();
   private cohostRows = new Map<string, Record<string, unknown>>();
+  private presence = new Map<string, PresenceRow>();
+  private density = new Map<string, { listedIps: number; announcedIpv4: number; routedPrefixes: number }>();
+  /** The keyless tier the mock graph reports. Mutable so a spec can drive
+   *  the panel's tier meter to a nearly-spent state and to a spent one. */
+  readonly quota: Record<string, string | number | boolean> = {
+    plan: "ANONYMOUS",
+    isAnonymous: true,
+    hourlyLimit: 100,
+    hourlyUsed: 6,
+    hourlyRemaining: 94,
+    dailyLimit: 500,
+    dailyRemaining: 466,
+    maxQueryDepth: 2,
+  };
+  /** The public statistics document. Figures are the fixture's own and are
+   *  deliberately NOT the production ones: a published capture must not
+   *  claim a graph size we did not read at capture time. */
+  readonly stats: Record<string, unknown> = {
+    updated: Date.now(),
+    degraded: false,
+    windowHours: 24,
+    totals: { queries: 5_699_066, agents: 665, identities: 649, zoneRecords: 12_203 },
+    latency: { p50Us: 30, p99Us: 76_083 },
+    timeseries: {
+      bucketSec: 300,
+      // A diurnal swell plus deterministic jitter. Deterministic because a
+      // committed capture that re-randomises on every run can never settle;
+      // jittered because a clean sine is visibly not traffic, and a figure
+      // published from a security product should not look invented.
+      queries: Array.from({ length: 96 }, (_, i) => {
+        const jitter = Math.sin(i * 2.399963) * Math.cos(i * 0.7853982);
+        return {
+          t: i,
+          ns1: Math.round(60 + 40 * Math.sin(i / 9) + 14 * jitter),
+          ns2: Math.round(18_000 + 7_000 * Math.sin(i / 11 + 1) + 2_400 * jitter),
+        };
+      }),
+    },
+    graph: { nodes: 7_482_240_523, edges: 39_546_784_832, objects: 47_029_025_355 },
+  };
   private pages = new Map<string, string>();
   readonly endpoints: MockEndpoint[] = [];
   /** Monotonic per-instance counter behind every minted identity. */
@@ -184,6 +255,14 @@ export class E2ENetwork {
   }
   setCohost(host: string, row: Record<string, unknown>): void {
     this.cohostRows.set(host.toLowerCase(), row);
+  }
+  /** The physical presence of one ASN: the chain's last rung. */
+  setPresence(asn: string, row: PresenceRow): void {
+    this.presence.set(asn, row);
+  }
+  /** How much of an ASN's announced space is listed: the network drill. */
+  setDensity(asn: string, row: { listedIps: number; announcedIpv4: number; routedPrefixes: number }): void {
+    this.density.set(asn, row);
   }
   /** Serve custom HTML for one fake site (e.g. a page full of links). */
   setPage(host: string, html: string): void {
@@ -351,6 +430,7 @@ export class E2ENetwork {
     }
     if (host === CONSOLE_HOST) return this.serveConsole(path, body, res);
     if (host === RDAP_HOST) return this.serveRdap(path, res);
+    if (host === NIC_HOST) return this.serveStats(path, res);
     if (host === CORPUS_HOST) {
       res.writeHead(404, { "content-type": "text/plain" }).end("no corpus published in e2e");
       return;
@@ -389,6 +469,14 @@ export class E2ENetwork {
       return;
     }
     const q = parsed.query ?? "";
+    for (const needle of this.failQueries) {
+      if (q.includes(needle)) {
+        res
+          .writeHead(500, { "content-type": "application/json" })
+          .end('{"title":"deliberate partial outage for this query"}');
+        return;
+      }
+    }
     const params = parsed.parameters ?? {};
     const rows: Record<string, unknown>[] = [];
 
@@ -425,6 +513,89 @@ export class E2ENetwork {
     } else if (q.includes("whisper.submit")) {
       this.submits.push(params["a"] as Record<string, unknown>);
       rows.push({ accepted: true });
+    } else if (q.includes("whisper.quota")) {
+      // The keyless tier, as key/value rows - the shape the real procedure
+      // answers in. Configurable so a spec can drive the meter to its edges.
+      for (const [k, v] of Object.entries(this.quota)) rows.push({ key: k, value: v });
+    } else if (q.includes("whisper.asnThreatDensity")) {
+      const asn = String(params["a"] ?? "");
+      const d = this.density.get(asn);
+      // Unseeded answers with NO ROWS rather than with zeroes: "the graph
+      // holds no measurement" and "the measurement is zero" are different
+      // facts and the client has to be able to tell them apart.
+      if (d) {
+        rows.push({
+          asn,
+          listedIps: d.listedIps,
+          announcedIpv4: d.announcedIpv4,
+          densityRatio: d.announcedIpv4 > 0 ? d.listedIps / d.announcedIpv4 : 0,
+          routedPrefixes: d.routedPrefixes,
+          coverage: "computed",
+        });
+      }
+    } else if (q.includes("whisper.enrich")) {
+      // Both the single ($h) and the batched ($hs) form, because the product
+      // uses both: the chain walks one name, the dashboard enriches a page
+      // of destinations in one request.
+      const hs = Array.isArray(params["hs"])
+        ? (params["hs"] as string[])
+        : [String(params["h"] ?? "")];
+      for (const raw of hs) {
+        const h = raw.toLowerCase();
+        const e = this.enrichRows.get(h);
+        rows.push(
+          e
+            ? {
+                name: h,
+                owner: e.owner ?? null,
+                country: e.country ?? null,
+                asn: e.asn ?? null,
+                band: e.verdict ?? "UNKNOWN",
+                prevalence: e.prevalence ?? null,
+                coverage: e.owner ? "full" : "no-data",
+              }
+            : { name: h, owner: null, country: null, asn: null, band: "UNKNOWN", prevalence: null, coverage: "no-data" },
+        );
+      }
+    } else if (q.includes("whisper.resolve")) {
+      const h = String(params["h"] ?? "").toLowerCase();
+      const e = this.enrichRows.get(h);
+      rows.push({
+        host: h,
+        a: e?.ip ? [e.ip] : [],
+        aaaa: [],
+        freshest_observation_ms: null,
+        coverage: e?.ip ? "resolved" : "no-data",
+      });
+    } else if (q.includes("ANNOUNCED_BY") && q.includes("ROUTES")) {
+      // The chain's route rung: IP -> ANNOUNCED_PREFIX -> ASN.
+      const ip = String(params["ip"] ?? "");
+      for (const e of this.enrichRows.values()) {
+        if (e.ip !== ip || !e.prefix) continue;
+        rows.push({ prefix: e.prefix, threatNeighbors: e.threatNeighbors ?? null, asn: e.asn ?? null });
+        break;
+      }
+    } else if (q.includes("LOCATED_IN") && !q.includes("RESOLVES_TO")) {
+      // The chain's place rung: which city the representative address sits in.
+      const ip = String(params["ip"] ?? "");
+      for (const e of this.enrichRows.values()) {
+        if (e.ip !== ip || !e.city) continue;
+        rows.push({ city: e.city, country: e.country ?? null });
+        break;
+      }
+    } else if (q.includes("AS_PRESENT_AT")) {
+      // The chain's physical rung: the buildings and exchanges the operator
+      // of this network is present in.
+      const asn = String(params["a"] ?? "");
+      const pres = this.presence.get(asn);
+      if (pres) {
+        if (pres.facilities.length > 0) {
+          rows.push({ t: "AS_PRESENT_AT", n: pres.facilityCount ?? pres.facilities.length, sample: pres.facilities.slice(0, 3) });
+        }
+        if (pres.exchanges.length > 0) {
+          rows.push({ t: "IX_MEMBER", n: pres.exchangeCount ?? pres.exchanges.length, sample: pres.exchanges.slice(0, 3) });
+        }
+      }
     } else if (q.includes("ANNOUNCED_BY") && q.includes("cohosted")) {
       // The destination drill (co-hosting fan-in).
       const h = String(params["h"] ?? "").toLowerCase();
@@ -598,6 +769,26 @@ export class E2ENetwork {
 
   // ------------------------------------------------ mock rdap (keyless)
 
+  /**
+   * The public statistics document. A plain GET with no query string, no
+   * header and no body: this method deliberately ignores everything about
+   * the request except the path, because that is the whole privacy claim
+   * the surface makes about this endpoint.
+   */
+  private serveStats(path: string, res: http.ServerResponse): void {
+    if (this.statsDown) {
+      res.destroy();
+      return;
+    }
+    if (!path.startsWith("/stats/data.json")) {
+      res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+      return;
+    }
+    res
+      .writeHead(200, { "content-type": "application/json;charset=utf-8", "cache-control": "public, max-age=30" })
+      .end(JSON.stringify(this.stats));
+  }
+
   private serveRdap(path: string, res: http.ServerResponse): void {
     const url = new URL(path, "https://rdap.whisper.online");
     if (url.pathname === "/verify-identity") {
@@ -651,7 +842,7 @@ export class E2ENetwork {
     if (path.startsWith("/activate")) {
       this.device.approveVisited = true;
       res
-        .writeHead(200, { "content-type": "text/html" })
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
         .end("<!doctype html><title>Whisper console</title><h1>Sign-in approved (e2e mock)</h1>");
       return;
     }
@@ -663,10 +854,10 @@ export class E2ENetwork {
   private serveFakeSite(host: string, path: string, res: http.ServerResponse): void {
     const custom = this.pages.get(host + path.split("?")[0]) ?? this.pages.get(host);
     if (custom !== undefined) {
-      res.writeHead(200, { "content-type": "text/html" }).end(custom);
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(custom);
       return;
     }
-    res.writeHead(200, { "content-type": "text/html" }).end(
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(
       `<!doctype html>
 <html><head><title>${host}</title></head>
 <body>
