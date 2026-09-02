@@ -34,9 +34,14 @@ is flagged. No account needed.
 
 Sign in free (one tap, no API key to handle) to unlock your whole fleet: every
 device and agent on your Whisper account in one view, per-endpoint drill-downs
-with an explainable identity-health score, and the option to route this browser
-itself through Whisper egress so it becomes a first-class endpoint with its own
-routable identity.
+with an explainable identity-health score, and one control that gives this
+browser its own routable Whisper IPv6 identity and routes its traffic out
+through it, so it becomes a first-class endpoint anyone can verify by public
+RDAP. The same one control is in the toolbar panel and on the dashboard.
+
+Every surface follows your system's light or dark setting, and all of them use
+the same design system as the Whisper console, so moving between the two is
+moving inside one product.
 
 Privacy is the product:
 - Only a site's NAME is ever checked. Never the page, the path, what you type,
@@ -65,20 +70,28 @@ and the on-device protection keeps running.
 
 - **Homepage URL:** https://whisper.online/docs/whisper-guard
 - **Support URL:** https://github.com/whisper-sec/whisper-guard/issues
-- **Privacy policy URL:** https://whisper.online/docs/whisper-guard (the
-  privacy model section; a dedicated policy URL can replace this at review
-  time if CWS requires a standalone page)
+- **Privacy policy URL:** https://whisper.online/privacy
 
 ## Screenshots (1280x800 or 640x400)
 
 Use the gallery in `shots/` (regenerate with
 `npx playwright test e2e/screenshots.spec.ts`):
 
-1. `dashboard-this-browser.png` (where this browser goes, keyless)
-2. `dashboard-endpoint.png` (per-endpoint drill-down, identity health + receipts)
-3. `popup-keyed-malicious.png` (evidenced verdict + composed picture)
-4. `toolbar-states.png` (the six states)
-5. `warning.png` (the full-page stop)
+Upload them in the order `scripts/frame-store-shots.mjs` numbers them, so the
+listing order and the filenames agree:
+
+1. `01-toolbar-states.png` (the six states) <- `toolbar-states.png`
+2. `02-popup-keyed-malicious.png` (evidenced verdict + composed picture) <- `popup-keyed-malicious.png`
+3. `03-dashboard-this-browser.png` (where this browser goes, keyless) <- `dashboard-this-browser-store.png`
+4. `04-warning.png` (the full-page stop) <- `warning-store.png`
+5. `05-dashboard-endpoint.png` (per-endpoint drill-down, identity health + receipts) <- `dashboard-endpoint-store.png`
+
+The three `-store` captures are the page-scale surfaces taken at the store's
+own 1280x800 aspect. Their tall full-page twins (`dashboard-this-browser.png`
+and friends) are gallery figures: framing one of those for the store shrinks it
+to a 531px-wide strip with black either side and nothing legible in it, which
+is what shipped before 2.4.0. `scripts/frame-store-shots.mjs` composes exactly
+the five named above; run it rather than framing by hand.
 
 The gallery also captures `preempt-interstitial.png` (a click held before it
 lands) and `popup-today.png` (the session block ledger plus what Guard handled
@@ -125,9 +138,11 @@ pre-emptive story on the docs page instead.
     `get.whisper.online`, `rdap.whisper.online`): the graph, carrying both the
     safety check + destination enrichment (hostname only) and the signed-in
     control plane (the user's own fleet, always keyed, never a browsing
-    hostname); then the sign-in flow, corpus updates, and public identity
-    verification of the user's own endpoints (IP literals only).
-    No other host is ever contacted.
+    hostname); then the sign-in flow (two unauthenticated RFC 8628 endpoints
+    only), corpus updates, and public identity verification of the user's own
+    endpoints (IP literals only). No other host is ever contacted. The
+    extension also OPENS console.whisper.online in a tab when the user asks
+    for the console; it is never fetched from, so it needs no host permission.
   - `proxy` (REQUIRED), `webRequest`, `webRequestAuthProvider`, `privacy`
     (OPTIONAL): power "Protect this browser", which routes this browser through
     Whisper egress so it becomes an endpoint on the user's account. `proxy`

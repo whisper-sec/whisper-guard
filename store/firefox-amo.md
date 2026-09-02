@@ -36,11 +36,15 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   thing a browsing hostname ever reaches; and the signed-in control plane,
   the user's own fleet roster, enrollment and egress, always keyed and never
   carrying a browsing hostname), `console.whisper.security` (RFC 8628
-  device-flow sign-in, no browsing data), `get.whisper.online` (signed
+  device-flow sign-in only, two unauthenticated endpoints, no browsing data;
+  it is a sign-in origin and never a destination), `get.whisper.online` (signed
   brand-corpus updates, no browsing data), and `rdap.whisper.online` (public
   identity verification of the user's own endpoints, IP literals only, no
-  browsing hostname). The e2e suite (`e2e/mocked.spec.ts`) proves the
-  hostname-only invariant with a full network capture.
+  browsing hostname). The add-on also OPENS `console.whisper.online` in a tab
+  when the user asks for the console; it is never fetched from, which is why
+  it is not in the host permissions. The e2e suite (`e2e/mocked.spec.ts`)
+  proves the hostname-only invariant with a full network capture, and
+  `e2e/console-links.spec.ts` proves where each console link actually lands.
 - No remote code, no analytics, no external scripts. All assets are bundled.
 - There is NO declared content script. `content.js` is injected programmatically
   with `scripting.executeScript`, and only where the browser's own permission

@@ -86,8 +86,9 @@ history.
   connection constellation from the endpoint to where it went, and destination
   receipts with co-hosting fan-in and announcing-prefix threat neighbours. Every
   identity is anchored by an RDAP provenance link.
-- **Protect this browser (opt-in, off by default).** One control in the panel
-  does the whole thing: it reserves this browser's own routable Whisper
+- **Protect this browser (opt-in, off by default).** One control does the
+  whole thing, and the panel and the dashboard mount the same one: it
+  reserves this browser's own routable Whisper
   identity (a real IPv6 address with reverse-DNS, verifiable by anyone via
   public RDAP) and routes the browser's traffic out through that identity, so
   it joins your fleet as a device whose activity you can audit. WebRTC is
@@ -102,6 +103,12 @@ history.
   way out. Routing is never a dead end, and the same button turns it off.
 - Sign-in is the RFC 8628 device flow: you approve in the Whisper console and
   the extension receives its credential. You never see or paste a key.
+- **Every surface follows your system's colour scheme**, light or dark, and
+  every one of them is the Whisper console's design system in the browser: the
+  same tokens, type scale, spacing and component grammar, so moving between
+  the console and the extension is moving inside one product. Contrast is
+  measured on what actually renders, in both schemes, and the suite fails
+  under the WCAG AA floor.
 
 **Active Shield (optional, off by default):**
 
@@ -155,10 +162,13 @@ public identity verification all work with no key.
   calls with separate rules, and the rules are properties of the request, not
   of the hostname: a read is keyless-capable and carries a bare hostname, a
   control call is always keyed and carries no browsing datum.
-- `console.whisper.security` is contacted only during sign-in (no browsing
-  data). `get.whisper.online` is contacted only for signed brand-corpus
-  updates (no browsing data). `rdap.whisper.online` is contacted only to verify
-  the identity of your own endpoints, and only receives IP literals of those
+- `console.whisper.security` is contacted only during sign-in, for the two
+  unauthenticated RFC 8628 device-flow endpoints and nothing else (no browsing
+  data). It is a sign-in origin, never a destination: the one place Guard ever
+  sends you is `console.whisper.online`, the console itself.
+  `get.whisper.online` is contacted only for signed brand-corpus updates (no
+  browsing data). `rdap.whisper.online` is contacted only to verify the
+  identity of your own endpoints, and only receives IP literals of those
   endpoints, never a browsing hostname.
 - Verdicts are cached locally and navigations debounced, so revisits paint
   from cache with zero network.
@@ -171,6 +181,11 @@ public identity verification all work with no key.
 
 Docs: [whisper.online/docs/whisper-guard](https://whisper.online/docs/whisper-guard) ·
 Screenshots: [`shots/`](shots/index.html)
+
+A fresh clone's `npm audit` reports 3 high-severity findings, from 2 advisories, all in
+`web-ext`'s dependency tree and none of them in the extension: it declares no
+runtime dependencies at all, and `npm audit --omit=dev` is zero. They are
+named, explained and tracked in [SECURITY.md](SECURITY.md#known-advisories-in-build-tooling).
 
 ## Install
 
@@ -218,17 +233,32 @@ npm run e2e              # hermetic: protection, dashboard, egress, Active Shiel
 npm run e2e:firefox      # web-ext lint (zero findings) + headless load gate
 WHISPER_GUARD_E2E_KEY=... npm run e2e:live   # against the real production graph
 npx playwright test e2e/screenshots.spec.ts  # regenerate shots/
+npx playwright test e2e/review.spec.ts       # render every surface, both
+                                             # schemes, into shots-review/
 ```
+
+`e2e/review.spec.ts` ships nothing. It exists so a design can be LOOKED at
+rather than reasoned about: every surface and every state of the one control,
+in both colour schemes, from the real built extension against the same
+hermetic mock. Contrast is measured by `e2e/theme.spec.ts`; layout, hierarchy
+and whether a thing reads at all are not measurable, so they get looked at.
 
 The browser-as-endpoint feature has its own hard dual-engine e2e
 (`e2e/egress.spec.ts`): it flips the toggle, then proves the browser is actually
 routed through the Whisper egress endpoint (its own registered identity), that
 the identity appears in the account roster, and that keyless RDAP
 verify-identity of the routed address returns `is_whisper_agent: true`. It is
-never a structural pass. `e2e/enroll.spec.ts` proves the split: enrollment
-succeeds with zero proxy permissions granted (and no traffic routed), and a
-REAL second proxy-holding extension cannot dead-end the flow: the browser
-still enrolls, and the conflict renders as an explanation with a way forward.
+never a structural pass. `e2e/enroll.spec.ts` proves the control's two
+guarantees: the identity is reserved with zero proxy permissions granted (and
+no traffic routed), and a REAL second proxy-holding extension cannot dead-end
+the flow: the browser still enrols and the conflict renders as an explanation
+with a way forward. It also reads the state chip, the routing sentence and the
+button label off BOTH surfaces and compares them, so the panel and the
+dashboard cannot drift into two vocabularies for one thing.
+`e2e/theme.spec.ts` measures every rendered glyph on every surface, composited
+against the real ground behind it, in both colour schemes, against the WCAG AA
+floor. `e2e/console-links.spec.ts` clicks the console links and reads the tab
+that opens, because a link is only correct if it arrives somewhere.
 `e2e/links.spec.ts` proves the page-link sweep against the full capture: only
 registrable hostnames reach the graph; the links' paths, queries and the
 page's text never leave the browser.

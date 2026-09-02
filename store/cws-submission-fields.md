@@ -1,4 +1,4 @@
-# Chrome Web Store: paste-ready fields (Whisper Guard 2.3.0)
+# Chrome Web Store: paste-ready fields (Whisper Guard 2.4.0)
 
 Open this file in your editor and copy each block into the matching CWS field.
 
@@ -27,7 +27,9 @@ An on-device detector also checks every site against 800+ heavily phished brands
 
 The "This browser" dashboard shows where this browser goes, enriched through the graph: which companies answer, in which countries, on which networks, and what is flagged. No account needed.
 
-Sign in free (one tap, no API key to handle) to unlock your whole fleet: every device and agent on your Whisper account in one view, per-endpoint drill-downs with an explainable identity-health score, and the option to route this browser itself through Whisper egress so it becomes a first-class endpoint with its own routable identity.
+Sign in free (one tap, no API key to handle) to unlock your whole fleet: every device and agent on your Whisper account in one view, per-endpoint drill-downs with an explainable identity-health score, and one control that gives this browser its own routable Whisper IPv6 identity and routes its traffic out through it, so it becomes a first-class endpoint anyone can verify by public RDAP. The same one control is in the toolbar panel and on the dashboard.
+
+Every surface follows your system's light or dark setting, and all of them use the same design system as the Whisper console, so moving between the two is moving inside one product.
 
 Privacy is the product:
 - Only a site's NAME is ever checked. Never the page, the path, what you type, or your history. Your on-device destination list never leaves the device.
@@ -88,7 +90,7 @@ Provides the proxy authorization for the optional Whisper egress route, so the r
 Hardens WebRTC to proxied-only while the optional Whisper egress route is on, so the browser's real IP cannot leak around the proxy. Applied only when routing is enabled.
 
 --- Host permission justification ---
-graph.whisper.online: the graph, carrying both arms. The safety check + destination enrichment (hostname only) is the only thing a browsing hostname ever reaches. The signed-in control plane (the user's own fleet roster, enrollment and egress) always carries the user's key and never a browsing hostname, and is not called at all when signed out. console.whisper.security: the sign-in device flow (no browsing data). get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). No other host is ever contacted.
+graph.whisper.online: the graph, carrying both arms. The safety check + destination enrichment (hostname only) is the only thing a browsing hostname ever reaches. The signed-in control plane (the user's own fleet roster, enrollment and egress) always carries the user's key and never a browsing hostname, and is not called at all when signed out. console.whisper.security: the sign-in device flow, two unauthenticated endpoints, and nothing else (no browsing data); it is a sign-in origin, never a destination. get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). No other host is ever contacted. The extension also OPENS console.whisper.online in a tab when the user asks for the console; it is never fetched from, so it needs no host permission.
 
 --- Remote code ---
 No, I am not using Remote code.

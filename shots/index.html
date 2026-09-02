@@ -2,23 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <title>Whisper Guard: screenshot gallery</title>
   <style>
-    :root { --bg:#010103; --panel:#0d0d1a; --line:#1e1e33; --text:#e8e8f2; --muted:#9a9ab0; --accent:#8a5cc7; }
+    /* The extension's own tokens, so the gallery is the product rather than
+       a page about it - and it follows the reader's scheme, like every
+       surface it documents. */
+    :root {
+      color-scheme: dark;
+      --bg:#0a0a10; --panel:#12121a; --line:#1e1e2a;
+      --text:#ececf1; --muted:#9a9aae; --accent:#6ea8ff;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --bg:#f2f3f7; --panel:#ffffff; --line:#dfe2ea;
+        --text:#1a1c26; --muted:#565b6f; --accent:#3563b8;
+      }
+    }
     * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    body { margin:0; background:var(--bg); color:var(--text); font:13px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
     main { max-width: 1080px; margin: 0 auto; padding: 40px 20px 80px; }
-    h1 { font-size: 26px; margin: 0 0 6px; font-weight: 300; }
+    h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; letter-spacing:-0.01em; }
     .sub { color: var(--muted); margin: 0 0 30px; }
-    h2 { font-size: 17px; margin: 40px 0 14px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+    h2 { font-size: 15px; margin: 40px 0 14px; border-bottom: 1px solid var(--line); padding-bottom: 8px; font-weight:600; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
-    figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
     figure.wide { grid-column: 1 / -1; }
-    img { width: 100%; height: auto; border-radius: 8px; display: block; background: #000; }
-    figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; }
+    img { width: 100%; height: auto; border-radius: 4px; display: block; border: 1px solid var(--line); }
+    figcaption { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
     figcaption strong { color: var(--text); }
-    .note { color: var(--muted); font-size: 13px; }
+    .note { color: var(--muted); font-size: 12.5px; }
+    code { font-family: ui-monospace,"SF Mono",monospace; font-size: 0.92em; }
+    a { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -27,7 +43,10 @@
   <p class="sub">Every screenshot below is captured by the e2e suite from the real built
   extension (<code>e2e/screenshots.spec.ts</code>) against a hermetic mock network.
   No key appears anywhere; regenerate any time with
-  <code>npx playwright test e2e/screenshots.spec.ts</code>.</p>
+  <code>npx playwright test e2e/screenshots.spec.ts</code>. Every surface is shown in both
+  colour schemes. The three <code>*-store.png</code> files the same run produces are not
+  figures: they are the store-aspect captures <code>scripts/frame-store-shots.mjs</code>
+  composes into the 1280x800 listing screenshots.</p>
 
   <h2>The toolbar mark</h2>
   <div class="grid">
@@ -40,17 +59,37 @@
   </div>
 
   <h2>The popup panel</h2>
+  <p class="note">The panel answers three questions and nothing else: is this site safe,
+  am I protected right now, and what has Guard actually done. The verdict is the headline
+  and is said exactly once; coverage sits with the evidence rather than beside the verdict,
+  where a second badge reads as a grade.</p>
   <div class="grid">
+    <figure>
+      <img src="popup-keyed-malicious.png" alt="Keyed popup on an evidenced-malicious site">
+      <figcaption><strong>Evidenced-malicious.</strong> One badge, one sentence carrying the
+      graph's own label, then the evidence: who runs it, where it sits, and the named weighted
+      feeds behind the score. The heading counts the threat feeds so the list does not have to
+      be summarised again underneath itself.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-benign.png" alt="Keyed popup on a known-clean site">
+      <figcaption><strong>No known threat.</strong> Said once. "Nothing in the graph lists this
+      site" is a claim about what was checked, which is stronger than a disclaimer; the
+      known-clean coverage line below says how much the graph knows, and that it is not a
+      safety score.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-keyed-unknown.png" alt="Keyed popup on an unknown site">
+      <figcaption><strong>UNKNOWN, the honest common state.</strong> Slate, not green:
+      "not confirmed safe or unsafe" is the truth for most of the web. Where the graph cannot
+      name the operator the panel says "not identified" rather than echoing the hostname back
+      as if it were an answer.</figcaption>
+    </figure>
     <figure>
       <img src="popup-keyless-lookalike.png" alt="Keyless popup with an on-device look-alike hit">
       <figcaption><strong>Keyless, the on-device hero.</strong> A look-alike of paypal.com caught
       entirely in the browser; one tap goes to the real site. Shown with the live check off, so the
       on-device detector is the whole story.</figcaption>
-    </figure>
-    <figure>
-      <img src="popup-keyed-malicious.png" alt="Keyed popup on an evidenced-malicious site">
-      <figcaption><strong>Keyed, evidenced-malicious.</strong> The band chip, the categorical
-      coverage chip (never a score), the impersonation row, and the per-host privacy line.</figcaption>
     </figure>
     <figure>
       <img src="popup-keyed-explain.png" alt="Keyed popup with the why-this-verdict expander open">
@@ -62,15 +101,97 @@
       <figcaption><strong>Look-alike neighborhood.</strong> Candidates generated on-device,
       each confirmed against the graph; confirmed, not guesses.</figcaption>
     </figure>
+  </div>
+
+  <h2>One control puts this browser on the network</h2>
+  <p class="note">Reserving this browser's routable identity and routing its traffic through
+  that identity used to be two steps in two surfaces. It is one button now, which asks for the
+  permission routing needs at the moment it needs it. Every capture below is taken by
+  <code>e2e/protect.spec.ts</code>, which proves the state it shows: the routed one really
+  carries traffic through the egress endpoint, and the two refusals really keep the identity.</p>
+  <div class="grid">
     <figure>
-      <img src="popup-keyed-benign.png" alt="Keyed popup on a known-clean site">
-      <figcaption><strong>No known threat.</strong> Green, with the known-clean coverage chip,
-      and still explicitly not a warranty.</figcaption>
+      <img src="popup-protect-offer.png" alt="The panel offering to protect this browser">
+      <figcaption><strong>Offered.</strong> One control, and it is the only primary action on
+      the panel. The chip says what this browser is on the network; the line says what it is
+      doing.</figcaption>
     </figure>
     <figure>
-      <img src="popup-keyed-unknown.png" alt="Keyed popup on an unknown site">
-      <figcaption><strong>UNKNOWN, the honest common state.</strong> Slate, not green:
-      "not confirmed safe or unsafe" is the truth for most of the web.</figcaption>
+      <img src="popup-protected.png" alt="The panel with this browser routed through its Whisper identity">
+      <figcaption><strong>Protected.</strong> Address, reverse-DNS name, and the public RDAP
+      registration anyone can check. The /128 is drawn the way the Whisper console draws every
+      identity: the /32 every Whisper endpoint shares recedes, and the part that is only this
+      browser's stays in full ink. WebRTC is hardened to proxied-only on Chromium, and the same
+      button turns it off.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-protect-refused.png" alt="The panel after the routing permission was refused">
+      <figcaption><strong>Permission refused.</strong> The identity still stands, verified,
+      with its proof link. The refusal cost the routing and only the routing, and the panel
+      names it instead of failing quietly.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-protect-conflict.png" alt="The panel when another extension owns the proxy setting">
+      <figcaption><strong>Proxy taken.</strong> A VPN or proxy manager holds the browser's
+      single-owner proxy setting. Named in plain words, with the page that fixes it one click
+      away, and the identity untouched.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-signedout.png" alt="The panel signed out">
+      <figcaption><strong>Signed out.</strong> One action, and an honest sentence about what it
+      unlocks. Everything above it already works without an account.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Every surface, in daylight</h2>
+  <p class="note">Every surface follows the reader's system preference, not just the panel.
+  The structure, the hierarchy and every meaning are the same; the ground and the ink swap,
+  and the verdict hues darken rather than change identity, because a red that reads as red on
+  black is pink on white. The lockup is the mark plus an ink wordmark, so it survives a light
+  ground rather than vanishing into it. The full-page stop stays a red room in daylight
+  because its ground is mixed from the verdict colour itself. Contrast is measured on what
+  actually renders, composited against the real ground behind it, in both schemes
+  (<code>e2e/theme.spec.ts</code>) - which is how the shared quiet ink was caught landing at
+  4.49:1 on the interstitial's tinted ground, one hundredth under the floor.</p>
+  <div class="grid">
+    <figure>
+      <img src="popup-signedout-light.png" alt="The panel signed out, light colour scheme">
+      <figcaption><strong>The panel, signed out.</strong></figcaption>
+    </figure>
+    <figure>
+      <img src="popup-protect-offer-light.png" alt="The panel offering to protect this browser, light colour scheme">
+      <figcaption><strong>The panel, offering the one control.</strong></figcaption>
+    </figure>
+    <figure>
+      <img src="popup-protected-light.png" alt="The panel with this browser routed, light colour scheme">
+      <figcaption><strong>The panel, protected.</strong></figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="dashboard-this-browser-light.png" alt="This-browser dashboard, light colour scheme">
+      <figcaption><strong>The dashboard.</strong> The same donut, tiles and ledger, in daylight;
+      the charts are canvases and read the same tokens as everything else, so they repaint when
+      the scheme flips instead of staying dark.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="dashboard-endpoint-light.png" alt="Per-endpoint drill-down, light colour scheme">
+      <figcaption><strong>The per-endpoint drill-down.</strong> Identity health and the
+      connection constellation, both drawn from the shared palette.</figcaption>
+    </figure>
+    <figure>
+      <img src="warning-light.png" alt="The full-page stop, light colour scheme">
+      <figcaption><strong>The full-page stop.</strong> Still a red room.</figcaption>
+    </figure>
+    <figure>
+      <img src="settings-light.png" alt="Settings, light colour scheme">
+      <figcaption><strong>Settings.</strong></figcaption>
+    </figure>
+    <figure>
+      <img src="firstrun-light.png" alt="First run, light colour scheme">
+      <figcaption><strong>First run.</strong></figcaption>
+    </figure>
+    <figure>
+      <img src="precheck-keyless-light.png" alt="Pre-click check window, light colour scheme">
+      <figcaption><strong>The pre-click check window.</strong></figcaption>
     </figure>
   </div>
 
@@ -99,16 +220,25 @@
       provenance link anchors every identity.</figcaption>
     </figure>
     <figure>
-      <img src="dashboard-egress.png" alt="Protect this browser: the egress toggle">
-      <figcaption><strong>Protect this browser (opt-in, off by default).</strong> One toggle gives
-      this browser its own routable Whisper identity and routes its traffic through Whisper egress,
-      so it joins your fleet as a device. WebRTC hardened to proxied-only; the honest limits are
+      <img src="dashboard-egress.png" alt="Protect this browser: the one control, on the dashboard">
+      <figcaption><strong>Protect this browser (opt-in, off by default).</strong> The dashboard
+      mounts the SAME control as the panel, from the same module: same words, same states, same
+      failures, plus the one affordance that belongs to this surface, because the browser is a
+      fleet endpoint like any other. WebRTC hardened to proxied-only; the honest limits are
       stated in place.</figcaption>
     </figure>
     <figure>
-      <img src="popup-mini-dashboard.png" alt="Popup mini-dashboard summary">
-      <figcaption><strong>The popup carries a mini-dashboard.</strong> A four-tile summary of where
-      this browser goes, one click from the full view.</figcaption>
+      <img src="dashboard-egress-light.png" alt="Protect this browser: the one control, light colour scheme">
+      <figcaption><strong>The same control, in daylight.</strong> Offered, not yet taken: this
+      browser has no Whisper identity in either capture, which is what a signed-in reader sees
+      before the one click. The enrolled state, with its address and RDAP proof, is in the panel
+      captures above.</figcaption>
+    </figure>
+    <figure>
+      <img src="popup-activity.png" alt="The popup's activity line">
+      <figcaption><strong>The panel's activity line.</strong> The four-tile summary became one
+      sentence: the only number on it a reader can act on is how many destinations were flagged,
+      and the full view is one click away.</figcaption>
     </figure>
   </div>
 
@@ -151,9 +281,9 @@
   <h2>What it handled, quietly</h2>
   <div class="grid">
     <figure>
-      <img src="popup-today.png" alt="The popup showing the session block ledger and the handled-quietly-today card">
+      <img src="popup-today.png" alt="The panel showing the session block ledger and today's quiet tally">
       <figcaption><strong>Counted, never announced.</strong> Held clicks, verified identities and
-      declined cookie prompts land in one calm card in the popup, shown on your own click. There is
+      declined cookie prompts land in one calm line in the panel, shown on your own click. There is
       no toast anywhere: the extension holds no notifications permission at all. The record is a
       category and a count, keyed by today's date, so it resets on its own and can never learn a
       site you visited. Above it, the host whose click was just held, listed with a one-click
