@@ -266,3 +266,106 @@ test("keyed: the popup's display-time re-verification never inflates the tally",
   expect(raw).not.toContain(address as string);
   await page.close();
 });
+
+// The daily RESET is the whole reason this tally is safe to keep with no
+// cleanup, and until now nothing exercised it. The restart test above is
+// titled "and stay date-keyed" but only ever proves persistence: it reads
+// the record back unchanged, which a build with no date key at all does
+// too. Deleting the `rec.date === date` guard in background/wins.ts left
+// the entire wins suite green, so the promise in that module's own header
+// ("resets daily on its own with nothing to clean up") rested on nothing.
+//
+// A regression here is silent and permanent in the direction that matters:
+// yesterday's tally would read as today's, for ever, and the number in the
+// popup would quietly stop meaning "today".
+test("the tally resets by calendar date: yesterday's record reads as zero", async () => {
+  // Sign back out, which is this suite's documented baseline ("keyless
+  // throughout: wins are a keyless feature"). The preceding test leaves a key
+  // set, and while one is set every popup OPEN re-verifies the enrolled
+  // identity and books that day's win. That is correct product behaviour and
+  // it would make the reads below race their own instrumentation.
+  await setKey(ext, null);
+  const original = (await storedWins()).rec;
+  // CONTROL: the record this test is about to displace is a real one, from
+  // today, with something in it. Without this, "reads as zero" below could
+  // simply be an empty tally that was never written.
+  expect(original.date, "the live record must carry today's date").toBe(
+    await ext.sw.evaluate(() => {
+      const d = new Date();
+      const p = (n: number): string => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }),
+  );
+  const originalTotal = Object.values(original.counts ?? {}).reduce((a, b) => a + b, 0);
+  expect(originalTotal, "the live record must be non-empty for this test to mean anything").toBeGreaterThan(0);
+
+  // The planted counts are deliberately unlike anything this suite produces,
+  // so a leak of them into a later assertion is unmistakable.
+  const PLANTED = { preemptBlock: 41, identityVerified: 5, cookieDecline: 13 };
+  const plant = async (dayOffset: number): Promise<void> => {
+    await ext.sw.evaluate(
+      async ([offset, counts]: [number, Record<string, number>]) => {
+        const d = new Date();
+        d.setDate(d.getDate() + offset);
+        const p = (n: number): string => String(n).padStart(2, "0");
+        const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        await chrome.storage.local.set({ wins: { date, counts } });
+      },
+      [dayOffset, PLANTED] as [number, Record<string, number>],
+    );
+  };
+  // Read it the way the product does: popup.ts asks the background for
+  // { kind: "getWins" }. A service worker cannot message itself, and going
+  // round the real caller is the point anyway.
+  const readThroughTheRealPath = async (): Promise<{
+    date: string;
+    total: number;
+    counts: Record<string, number>;
+  }> => {
+    const { page, tabId } = await visit(ext, `https://${START.silent}/`);
+    const popup = await openPopup(ext, tabId);
+    const wins = await popup.evaluate(async () => {
+      const r = (await chrome.runtime.sendMessage({ kind: "getWins" })) as {
+        ok: boolean;
+        wins: { date: string; total: number; counts: Record<string, number> };
+      };
+      return r.wins;
+    });
+    await popup.close();
+    await page.close();
+    return wins;
+  };
+
+  // CONTROL, and it is the half that makes the assertion below mean
+  // something: the SAME planted counts dated TODAY must come back in full.
+  // If planting were broken, or getWins simply returned zeros, this fails
+  // here rather than passing as a fake reset.
+  await plant(0);
+  const sameDay = await readThroughTheRealPath();
+  expect(sameDay.total, "a record dated today must read back in full").toBe(59);
+  expect(sameDay.counts["preemptBlock"]).toBe(41);
+
+  // The assertion. One calendar day earlier, everything else identical.
+  await plant(-1);
+  const yesterday = await readThroughTheRealPath();
+  expect(yesterday.total, "yesterday's counts must not be served as today's").toBe(0);
+  expect(yesterday.counts).toEqual({ preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
+  expect(yesterday.date, "the tally re-keys to today").toBe(sameDay.date);
+
+  // And the one place a user ever sees it agrees. The hero is pinned to the
+  // exact value rather than merely "not 59", because a negated matcher is
+  // satisfied by an element that never rendered.
+  const { page, tabId } = await visit(ext, `https://${START.silent}/`);
+  const popup = await openPopup(ext, tabId);
+  await expect(popup.locator("#today-hero")).toHaveText("0");
+  await expect(popup.locator("#today-breakdown")).not.toContainText("41");
+  await popup.close();
+  await page.close();
+
+  // Put the real record back and prove the restore landed, so this test
+  // cannot leave a planted tally behind for anything that runs after it.
+  await ext.sw.evaluate(async (rec: unknown) => {
+    await chrome.storage.local.set({ wins: rec });
+  }, original);
+  expect((await storedWins()).rec).toEqual(original);
+});
