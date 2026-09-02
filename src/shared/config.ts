@@ -269,3 +269,14 @@ export const FEED_RING_MAX = 500;
 // browsing and leave nothing for the verdict that actually protects them.
 // A composed chain is memoised for this long.
 export const CHAIN_TTL_MS = 10 * 60_000;
+
+
+// The two facts only a graph holds, both keyless.
+//
+// A Tor exit relay is a different thing from an address with no listings, and
+// nothing else in a browser says which one you are looking at.
+export const TOR_RELAY_QUERY = "CALL whisper.lookupTorRelay($h)";
+// Registration age and registrar. "Registered eleven days ago through a
+// registrar with no abuse contact" is the signal that separates a phishing
+// domain from a merely obscure one; "unknown domain" is not.
+export const HISTORY_QUERY_ONE = "CALL whisper.history($h)";

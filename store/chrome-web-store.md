@@ -6,39 +6,40 @@ Everything the CWS dashboard asks for, ready to paste. Upload
 ## Listing
 
 - **Name:** Whisper Guard
-- **Summary (132 max):** A live safety verdict on every site, and the join path behind the name: address, prefix, network, operator, building.
+- **Summary (132 max):** The chain behind every site: address, prefix, network, operator, building - and what its neighbours are listed for.
 - **Category:** Privacy & Security
 - **Language:** English
 
 **Description:**
 
-Whisper Guard brings the Whisper security graph into your browser: a live
-verdict on every site, and a dashboard of where your devices actually go.
+Whisper Guard shows you the CHAIN behind a site, not just a verdict on it. Click
+the toolbar mark and Guard walks the graph: the name and how long ago it was
+registered, what runs on it, the address it answers on and the city that address
+is in, the prefix that address is announced in, the network that announces the
+prefix, the operator that holds the network, and the buildings and internet
+exchanges that operator is physically present in. Seven rungs, seven joins, no
+account needed.
 
-The moment you install it, the toolbar mark answers "is THIS site safe?" on
-every page you visit, with no account needed: green for no known threat, amber
-for suspicious, a red stop plate reserved for evidenced-malicious sites, and an
-honest UNKNOWN for the internet's long tail.
+That walk answers what a verdict cannot. A name can be clean while the block it
+sits in is not: neighbouring addresses in the same prefix listed as threats, an
+operator present in over a thousand facilities, a domain observed for years.
+Guard shows which of those it found and what it concludes from them.
+Expand any rung for what is behind it: how much of that network's announced space
+is actually listed, how many other names answer on that address, every facility
+by name.
 
-Then click the mark, and Guard shows you something no other extension can:
-THE CHAIN. Not a lookup, a walk. The name and how long ago it was registered.
-What runs on it. The address it answers on and the city that address is in.
-The prefix that address is announced in, and how many of that prefix's
-neighbours are listed as threats. The network that announces the prefix. The
-operator that holds the network. The buildings and internet exchanges that
-operator is physically present in. Seven rungs, seven joins, no account
-needed. Expand any rung for what is behind it: how much of that network's
-announced space is actually listed, how many other names answer on that
-address, every facility by name.
+Each rung says one of three things and never confuses them: it has a value, the
+graph answered and holds nothing there, or the read did not come back. The third
+is drawn in amber and says so, because an outage that renders as an empty row is
+an outage that reads as safety.
 
-Each rung says one of three things and never confuses them: it has a value,
-the graph answered and holds nothing there, or the read did not come back.
-The third is drawn in amber and says so, because an outage that renders as an
-empty row is an outage that reads as safety.
+Guard also does what every extension in this category does, and does it with no
+account: the toolbar mark answers "is THIS site safe?" on every page you visit -
+green for no known threat, amber for suspicious, a red stop plate reserved for
+evidenced-malicious sites, and an honest UNKNOWN for the internet's long tail.
 
-The panel also shows the graph's own score and the named, weighted feed
-listings behind the verdict, plus a look-alike neighborhood confirmed against
-the graph.
+The panel also shows the graph's own score and the named, weighted feed listings
+behind the verdict, plus a look-alike neighborhood confirmed against the graph.
 
 An on-device detector also checks every site against 800+ heavily phished
 brands: homoglyph tricks (paypa1.com, Cyrillic lookalikes), swapped endings

@@ -50,6 +50,7 @@ for (const [entry, out] of [
   ["src/pages/firstrun.ts", "firstrun.js"],
   ["src/pages/dashboard.ts", "dashboard.js"],
   ["src/content/guard.ts", "content.js"],
+  ["src/inpage/ioc-collect.ts", "ioc-collect.js"],
 ]) {
   await build({
     ...common,

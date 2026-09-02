@@ -64,6 +64,7 @@ import {
 import { egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
 import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
 import { scanTabLinks } from "./link-scan";
+import { scanTabIocs } from "./page-scan";
 import { rdapIpUrl, verifyIdentity } from "./rdap";
 import { getWins, recordWin, recordWinOnce } from "./wins";
 
@@ -641,6 +642,19 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
           };
         }
         return { ok: false, error: String(e instanceof Error ? e.message : e) };
+      }
+    case "scanIocs":
+      // Same shape as scanLinks deliberately, including the host-access
+      // recovery: both inject on the reader's gesture, and both dead-end the
+      // same way without access to this tab, so they must fail the same way too.
+      try {
+        return { ok: true, scan: await scanTabIocs(msg.tabId, msg.ignore ?? []) };
+      } catch (e) {
+        const m = String(e instanceof Error ? e.message : e);
+        if (/cannot access|host permission|permission to access|missing host/i.test(m)) {
+          return { ok: false, nohost: true, error: m };
+        }
+        return { ok: false, error: m };
       }
     case "scanLinks":
       try {
