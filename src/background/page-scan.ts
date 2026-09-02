@@ -22,12 +22,13 @@
 //
 // See extractIocs for why defanged forms are the point rather than a nicety.
 
-import { LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP } from "../shared/config";
+import { HISTORY_QUERY_ONE, LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP, TOR_RELAY_QUERY } from "../shared/config";
 import { isPrivateHost } from "../shared/hostname";
 import { applyIgnoreList, extractIocs, type Ioc } from "../shared/ioc";
 import type { GraphBand } from "../shared/types";
 import { assessHosts } from "./assess";
 import { explainHost } from "./cognition";
+import { graphQuery } from "./graph-client";
 import { cacheGet, cachePut } from "./cache";
 
 /**
@@ -52,6 +53,19 @@ export interface IocExplain {
   sources: string[];
 }
 
+/**
+ * The facts only a graph holds, attached to one indicator. Both of these are
+ * things nothing else in a browser says, and both are keyless.
+ */
+export interface IocContext {
+  /** The address is a Tor exit relay. Absent means we asked and it is not. */
+  torExit?: boolean;
+  /** When the name was first registered, and by whom - the phishing signal. */
+  created?: string;
+  registrar?: string;
+  registrant?: string;
+}
+
 /** One extracted indicator plus whatever the graph could say about it. */
 export interface IocRow {
   kind: Ioc["kind"];
@@ -62,6 +76,8 @@ export interface IocRow {
   label: string | null;
   /** Present when the graph had an account of this indicator to give. */
   why?: IocExplain;
+  /** Registration age for a name, Tor-exit status for an address. */
+  context?: IocContext;
 }
 
 export interface PageScanResult {
@@ -197,6 +213,43 @@ export async function scanTabIocs(
     });
   }
 
+  // The two facts a browser has never been able to state, both keyless.
+  //
+  // An IP that is a Tor exit relay is a different thing from an IP that merely
+  // has no listings, and no other extension in this category will tell you.
+  // A name's registration date and registrar turn "unknown domain" into
+  // "registered eleven days ago through a registrar with no abuse contact",
+  // which is the signal that actually separates phishing from an obscure site.
+  //
+  // Both are bounded to the same cap, both are best-effort, and neither can
+  // fail the scan. Absent means we asked and got nothing, which the UI must
+  // render differently from "we never asked".
+  const context = new Map<string, IocContext>();
+  for (const i of rows0.slice(0, LINK_SCAN_BATCH)) {
+    const subject = i.host;
+    if (!subject || context.has(subject) || isPrivateHost(subject)) continue;
+    try {
+      if (i.kind === "ipv4" || i.kind === "ipv6") {
+        const r = await graphQuery(TOR_RELAY_QUERY, { h: subject }, undefined, { keyless: true });
+        if (r[0]?.["found"] === true) context.set(subject, { torExit: true });
+      } else if (i.kind === "domain" || i.kind === "url") {
+        const r = await graphQuery(HISTORY_QUERY_ONE, { h: subject }, undefined, { keyless: true });
+        const row = r[0];
+        if (row) {
+          const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+          const c: IocContext = {
+            created: str(row["createDate"]),
+            registrar: str(row["registrar"]),
+            registrant: str(row["registrant"]),
+          };
+          if (c.created || c.registrar || c.registrant) context.set(subject, c);
+        }
+      }
+    } catch {
+      // Enrichment. Never fails the scan.
+    }
+  }
+
   const rows: IocRow[] = rows0.map((i) => {
     if (!i.host || isPrivateHost(i.host)) {
       const w0 = why.get(i.host ?? i.value);
@@ -211,6 +264,7 @@ export async function scanTabIocs(
     }
     const v = verdicts.get(i.host);
     const w = why.get(i.host);
+    const c = context.get(i.host);
     return {
       kind: i.kind,
       value: i.value,
@@ -218,6 +272,7 @@ export async function scanTabIocs(
       band: v ? v.band : "UNKNOWN",
       label: v ? v.label : null,
       ...(w ? { why: w } : {}),
+      ...(c ? { context: c } : {}),
     };
   });
 
