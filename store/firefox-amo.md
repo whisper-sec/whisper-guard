@@ -8,7 +8,7 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 - **Name:** Whisper Guard
 - **Add-on ID:** `guard@whisper.security` (already in the manifest)
-- **Summary:** A live safety verdict on every site, and the join path behind the name: address, prefix, network, operator, building.
+- **Summary:** The chain behind every site: address, prefix, network, operator, building - and what its neighbours are listed for.
 - **Categories:** Privacy & Security
 - **License:** MIT
 - **Homepage:** https://whisper.online/docs/whisper-guard
