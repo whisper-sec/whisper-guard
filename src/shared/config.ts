@@ -269,3 +269,13 @@ export const FEED_RING_MAX = 500;
 // browsing and leave nothing for the verdict that actually protects them.
 // A composed chain is memoised for this long.
 export const CHAIN_TTL_MS = 10 * 60_000;
+
+// #1205: the vulnerability posture of a host, for the page indicator scan.
+//
+// The competing extension resolves a CVE id the analyst is already looking at.
+// This is the more useful question and the one only a graph can answer: given a
+// host that appeared on this page, what is its open-CVE posture, is any of it
+// known-exploited, is any of it used by ransomware. `coverage` is returned and
+// MUST be surfaced: "partial" and "unsupported-spec" are different answers from
+// a clean bill of health, and rendering either as zero would be a lie of omission.
+export const VULN_POSTURE_QUERY = "CALL whisper.vulnPosture($h)";

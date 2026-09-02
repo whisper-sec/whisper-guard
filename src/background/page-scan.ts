@@ -22,12 +22,24 @@
 //
 // See extractIocs for why defanged forms are the point rather than a nicety.
 
-import { LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP } from "../shared/config";
+import { LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP, VULN_POSTURE_QUERY } from "../shared/config";
 import { isPrivateHost } from "../shared/hostname";
 import { applyIgnoreList, extractIocs, type Ioc } from "../shared/ioc";
 import type { GraphBand } from "../shared/types";
 import { assessHosts } from "./assess";
+import { graphQuery } from "./graph-client";
 import { cacheGet, cachePut } from "./cache";
+
+/** A host's open-CVE posture. `coverage` is load-bearing, see VULN_POSTURE_QUERY. */
+export interface VulnPosture {
+  openCveCount: number;
+  kevCount: number;
+  ransomwareCount: number;
+  maxCvss: number;
+  maxEpss: number;
+  /** "partial" / "unsupported-spec" / etc. NEVER render this as a clean result. */
+  coverage: string | null;
+}
 
 /** One extracted indicator plus whatever the graph could say about it. */
 export interface IocRow {
@@ -37,6 +49,8 @@ export interface IocRow {
   /** UNKNOWN when the graph holds nothing; null when we did not ask (hash/CVE). */
   band: GraphBand | null;
   label: string | null;
+  /** Present only for a host we asked about and that answered. */
+  vuln?: VulnPosture;
 }
 
 export interface PageScanResult {
@@ -125,17 +139,48 @@ export async function scanTabIocs(
     }
   }
 
+  // #1205 item 5. A per-CVE lookup is what the competing tool does; we do the
+  // question a graph is actually for - the posture of a host that appeared on
+  // this page. Bounded to the hosts we already assessed, one call each, and any
+  // failure is simply an absent posture rather than a failed scan.
+  const posture = new Map<string, VulnPosture>();
+  for (const host of hosts.slice(0, LINK_SCAN_BATCH)) {
+    try {
+      const rows = await graphQuery(VULN_POSTURE_QUERY, { h: host }, undefined, { keyless: true });
+      const r = rows[0];
+      if (!r) continue;
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+      const open = num(r["openCveCount"]);
+      const cov = typeof r["coverage"] === "string" ? (r["coverage"] as string) : null;
+      // Nothing open AND nothing to say is not worth a row; an unsupported or
+      // partial coverage IS worth saying, because it is not the same as clean.
+      if (open === 0 && (cov === null || cov === "none")) continue;
+      posture.set(host, {
+        openCveCount: open,
+        kevCount: num(r["kevCount"]),
+        ransomwareCount: num(r["ransomwareCount"]),
+        maxCvss: num(r["maxCvss"]),
+        maxEpss: num(r["maxEpss"]),
+        coverage: cov,
+      });
+    } catch {
+      // A posture read is enrichment. It never fails the scan.
+    }
+  }
+
   const rows: IocRow[] = rows0.map((i) => {
     if (!i.host || isPrivateHost(i.host)) {
       return { kind: i.kind, value: i.value, host: i.host, band: null, label: null };
     }
     const v = verdicts.get(i.host);
+    const p = posture.get(i.host);
     return {
       kind: i.kind,
       value: i.value,
       host: i.host,
       band: v ? v.band : "UNKNOWN",
       label: v ? v.label : null,
+      ...(p ? { vuln: p } : {}),
     };
   });
 
