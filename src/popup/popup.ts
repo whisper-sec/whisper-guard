@@ -24,11 +24,8 @@ import { send, type BrowserReport } from "../shared/messages";
 import {
   WIN_CATEGORIES,
   type CandidateVerdict,
-  type EgressStatus,
-  type Enrollment,
   type ExplainResult,
   type GraphBand,
-  type IdentityVerification,
   type LinkScanResult,
   type Protection,
   type Settings,
@@ -38,9 +35,9 @@ import {
   type WinsToday,
 } from "../shared/types";
 import { CATEGORY_LABEL, flagEmoji, type ReportCategory } from "../shared/report";
-import { ext } from "../shared/api";
-import { EGRESS_REQUEST, GRAPH_HOST } from "../shared/config";
-import { IS_FIREFOX } from "../shared/engine";
+import { CONSOLE_URL, GRAPH_HOST } from "../shared/config";
+import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
+import { CANVAS_MONO, onThemeChange, themeColor } from "../shared/theme";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -91,11 +88,6 @@ function verdictSentence(band: GraphBand, label: string | null): string {
 /** One CSS custom property, resolved. The canvas cannot use var(), so the
  *  neighborhood graph reads the live theme instead of hard-coding one, and
  *  stays legible when the reader's system is in light mode. */
-function themeColor(name: string, fallback: string): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v === "" ? fallback : v;
-}
-
 /** Render key/value rows as a table, DOM-built (no HTML strings). */
 function renderKV(rows: Record<string, unknown>[]): Node {
   if (rows.length === 0) return document.createTextNode("The graph returned nothing for this host.");
@@ -136,20 +128,23 @@ function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates:
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  ctx.font = "10px ui-monospace, monospace";
+  ctx.font = `10px ${CANVAS_MONO}`;
   const cx = W / 2;
   const cy = H / 2;
 
-  const line = themeColor("--w-line-strong", "#2a2a44");
-  const faint = themeColor("--w-faint", "#62627a");
-  const muted = themeColor("--w-muted", "#9a9ab0");
-  const text = themeColor("--w-text", "#e8e8f2");
-  const accent = themeColor("--w-accent", "#8a5cc7");
-  const crit = themeColor("--w-v-crit", "#dc2626");
+  const line = themeColor("--w-line-strong", "#2c2c3c");
+  const muted = themeColor("--w-muted", "#9a9aae");
+  const text = themeColor("--w-text", "#ececf1");
+  const accent = themeColor("--w-accent", "#6ea8ff");
+  // --w-v-crit is the FILLED plate colour (white text sits on it), and as
+  // a dot on the panel ground it measures under the 3:1 non-text floor.
+  // The outer ring below is what says CRITICAL; both draw in the hue that
+  // is meant to be drawn rather than filled.
+  const crit = themeColor("--w-v-high", "#f87171");
   const colors: Record<string, string> = {
     CRITICAL: crit,
-    HIGH: themeColor("--w-v-high", "#ef4444"),
-    MEDIUM: themeColor("--w-v-low", "#f59e0b"),
+    HIGH: crit,
+    MEDIUM: themeColor("--w-v-low", "#fbbf24"),
   };
   const n = candidates.length;
   candidates.forEach((c, i) => {
@@ -162,7 +157,7 @@ function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates:
     ctx.moveTo(cx, cy);
     ctx.lineTo(x, y);
     ctx.stroke();
-    ctx.fillStyle = colors[c.band] ?? faint;
+    ctx.fillStyle = colors[c.band] ?? muted;
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, 2 * Math.PI);
     ctx.fill();
@@ -436,324 +431,19 @@ async function loadProtection(host: string): Promise<void> {
 }
 
 // ---------------------------------------- this browser: the ONE control
+//
+// The control itself lives in shared/protect-control.ts and is mounted
+// identically here and on the dashboard, so both surfaces offer the same
+// one control with the same words. Nothing about it is panel-specific.
 
-/** RDAP verification of the enrolled address; null until it lands. */
-let identityVerified: boolean | null = null;
-
-/** The permissions ROUTING needs, per engine. On Chromium `proxy` is a
- *  REQUIRED manifest permission (Chrome forbids it as optional), so it is
- *  not in the runtime set there; config.ts owns both sets. */
-function routingPermissions(): chrome.permissions.Permissions {
-  const set = IS_FIREFOX ? EGRESS_REQUEST.firefox : EGRESS_REQUEST.chromium;
-  return { permissions: [...set.permissions], origins: [...set.origins] };
-}
-
-/** The control-plane messages are written to follow a "\u26a0 " prefix, so they
- *  open in lower case. Here they follow a full stop instead. */
-function asSentence(text: string): string {
-  return text.length === 0 ? text : text[0]!.toUpperCase() + text.slice(1);
-}
-
-function routeLine(dot: "on" | "blocked" | "off", lead: string, rest: string): void {
-  const d = document.createElement("span");
-  d.className = `w-dot ${dot}`;
-  const text = document.createElement("span");
-  text.className = "rl-text";
-  const strong = document.createElement("span");
-  strong.className = "rl-lead";
-  strong.textContent = lead;
-  text.append(strong, document.createTextNode(` ${rest}`));
-  $("route-line").replaceChildren(d, text);
-}
-
-function identityLine(label: string, value: string, mono = true): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "protect-kv";
-  const k = document.createElement("span");
-  k.className = "k";
-  k.textContent = label;
-  const v = document.createElement("span");
-  v.className = mono ? "v w-mono" : "v";
-  v.textContent = value;
-  row.append(k, v);
-  return row;
-}
-
-function identityDetail(s: EgressStatus): void {
-  const detail = $("identity-detail");
-  if (!s.address) {
-    detail.hidden = true;
-    return;
-  }
-  detail.hidden = false;
-  const lines: HTMLElement[] = [identityLine("Address", s.address)];
-  if (s.fqdn) lines.push(identityLine("Name", s.fqdn));
-  if (s.rdapUrl) {
-    const row = document.createElement("div");
-    row.className = "protect-kv";
-    const k = document.createElement("span");
-    k.className = "k";
-    k.textContent = "Proof";
-    const v = document.createElement("span");
-    v.className = "v";
-    const a = document.createElement("a");
-    a.href = s.rdapUrl;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = "RDAP registration (anyone can check)";
-    v.appendChild(a);
-    row.append(k, v);
-    lines.push(row);
-  }
-  detail.replaceChildren(...lines);
-}
-
-/**
- * One status, one control, and never a dead end. The chip is what this
- * browser IS on the network (an identity fact, which survives every routing
- * failure); the line and the button are what it is DOING (a routing fact).
- * Both are always shown, because collapsing them would hide a real state.
- */
-function renderIdentity(s: EgressStatus): void {
-  const chip = $("identity-state");
-  const btn = $<HTMLButtonElement>("btn-protect");
-  const fix = $<HTMLButtonElement>("btn-route-fix");
-  btn.disabled = false;
-  btn.hidden = false;
-  fix.hidden = true;
-
-  if (!s.enrolled || !s.address) {
-    chip.className = "w-chip unknown";
-    chip.textContent = "NOT ENROLLED";
-    chip.title = "This browser has no Whisper identity yet.";
-    identityDetail(s);
-    routeLine(
-      "off",
-      "Not protected.",
-      "One click gives this browser its own routable Whisper IPv6 address and sends its traffic out through it. Anyone can check that address by RDAP.",
-    );
-    btn.className = "w-btn primary";
-    btn.textContent = "Protect this browser";
-    btn.onclick = protectThisBrowser;
-    setIdentityNote(s.error);
-    return;
-  }
-
-  // Enrolled. The identity stands whatever routing does.
-  if (identityVerified === true) {
-    chip.className = "w-chip ok";
-    chip.textContent = "VERIFIED";
-    chip.title = "This address resolves as a Whisper endpoint via keyless RDAP verify-identity.";
-  } else {
-    chip.className = "w-chip accent";
-    chip.textContent = "ENROLLED";
-    chip.title =
-      identityVerified === false ? "Identity reserved; public verification pending." : "Identity reserved.";
-  }
-  identityDetail(s);
-
-  if (s.on) {
-    // The WebRTC half is stated either way. Chromium lets an extension pin
-    // the handling policy, so the claim "everything sources from the /128"
-    // is true there; Firefox exposes no such control, and a limit we cannot
-    // close is one we say out loud rather than leave the reader to assume.
-    const webrtc =
-      s.webrtcHardened === true
-        ? " WebRTC is hardened to proxied-only."
-        : " WebRTC cannot be pinned on this browser, so a peer connection can still reveal a local address.";
-    routeLine("on", "Protected.", `Every window in this profile leaves from this address.${webrtc}`);
-    btn.className = "w-btn small";
-    btn.textContent = "Turn routing off";
-    btn.onclick = unprotectThisBrowser;
-    setIdentityNote(s.error);
-    return;
-  }
-
-  btn.className = "w-btn primary";
-  btn.onclick = protectThisBrowser;
-  if (s.controlledByOther) {
-    // Named, not a bare "cannot": the identity is real, the verdicts still
-    // run, and the one thing that would let routing engage is spelled out.
-    routeLine(
-      "blocked",
-      "Not routed.",
-      "Another extension (a VPN or proxy manager) holds this browser's proxy setting. Your identity and site verdicts keep working. Turn that extension's proxy control off, then try again.",
-    );
-    btn.textContent = "Try again";
-    if (!IS_FIREFOX) {
-      fix.hidden = false;
-      fix.textContent = "Open the extensions page";
-      fix.onclick = () => {
-        chrome.tabs.create({ url: "chrome://extensions" }).catch(() => undefined);
-      };
-    }
-    setIdentityNote(null);
-    return;
-  }
-  if (s.error) {
-    routeLine("blocked", "Not routed.", asSentence(s.error));
-    btn.textContent = "Turn routing on";
-    setIdentityNote(null);
-    return;
-  }
-  routeLine("off", "Identity reserved.", "This browser holds its address but does not route through it yet.");
-  btn.textContent = "Turn routing on";
-  setIdentityNote(null);
-}
-
-function setIdentityNote(text: string | null): void {
-  const note = $("identity-note");
-  note.hidden = text === null;
-  note.textContent = text ?? "";
-}
-
-/** Render a status, then upgrade the chip when keyless RDAP confirms it. */
-async function applyEgress(s: EgressStatus): Promise<void> {
-  renderIdentity(s);
-  if (!s.enrolled || !s.address) return;
-  const v = await send<{ ok: true; verification: IdentityVerification | null }>({
-    kind: "verifyIdentity",
-    ip: s.address,
-  });
-  if (!v.ok || !v.verification) return;
-  identityVerified = v.verification.isWhisperAgent;
-  renderIdentity(s.fqdn ? s : { ...s, fqdn: v.verification.fqdn });
-}
-
-/**
- * How long to wait for the browser's answer to the permission prompt before
- * saying, honestly, that we do not have one.
- *
- * The request promise cannot be trusted to settle. On a real toolbar popup
- * the prompt takes the focus and closes this page while the dialog is still
- * up; in a headless browser the dialog never appears and the promise stays
- * pending forever (measured, not assumed). So the browser's own permission
- * STATE is polled alongside the promise, and whichever answers first wins.
- */
-const ROUTING_PERMISSION_WAIT_MS = 12_000;
-const ROUTING_PERMISSION_POLL_MS = 400;
-
-async function routingPermissionAnswer(request: Promise<boolean>): Promise<boolean> {
-  const want = routingPermissions();
-  let settled: boolean | null = null;
-  void request.then(
-    (granted) => {
-      settled = granted;
-    },
-    () => {
-      settled = false;
-    },
-  );
-  const deadline = Date.now() + ROUTING_PERMISSION_WAIT_MS;
-  for (;;) {
-    // Already held is the common case on every click after the first, and it
-    // answers with no wait at all.
-    if (await ext.permissions.contains(want).catch(() => false)) return true;
-    if (settled !== null) return settled;
-    if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, ROUTING_PERMISSION_POLL_MS));
-  }
-}
-
-/**
- * THE one control: reserve the identity AND route through it.
- *
- * Ordering is the whole design here.
- *
- *   - The permission request is the FIRST thing on the gesture. An await in
- *     front of it and the browser drops the request as un-gestured.
- *   - The identity is reserved by the BACKGROUND, and nothing waits on the
- *     permission first. That call outlives this page, needs no permission of
- *     any kind, and must not be downstream of a promise that may never
- *     settle: a reader who refuses the prompt, or whose popup the prompt
- *     closed, still ends up with the address they asked for.
- *   - Routing comes last and is allowed to fail. When it does, the status
- *     that comes back names what is in the way, and the panel shows it.
- *
- * Nothing here hands the reader to another page to finish the job.
- */
-function protectThisBrowser(): void {
-  let request: Promise<boolean>;
-  try {
-    request = Promise.resolve(chrome.permissions.request(routingPermissions()));
-  } catch {
-    // Some engines throw for a set they will not offer rather than resolving
-    // false. Either way the identity half below still runs.
-    request = Promise.resolve(false);
-  }
-  const btn = $<HTMLButtonElement>("btn-protect");
-  btn.disabled = true;
-  btn.textContent = "Working...";
-  $("btn-route-fix").hidden = true;
-  setIdentityNote("Reserving this browser's identity. A few seconds.");
-  void runProtect(request);
-}
-
-async function runProtect(request: Promise<boolean>): Promise<void> {
-  const enrolled = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({
-    kind: "enroll",
-  });
-  if (!enrolled.ok) {
-    renderIdentity(await currentEgress());
-    setIdentityNote(enrolled.error);
-    return;
-  }
-  // The identity is real from here on. Show it before routing is even tried,
-  // so what the reader gets is never contingent on what happens next.
-  identityVerified = enrolled.enrollment.verification?.isWhisperAgent ?? null;
-  renderIdentity(await currentEgress());
-  const btn = $<HTMLButtonElement>("btn-protect");
-  btn.disabled = true;
-  btn.textContent = "Working...";
-  setIdentityNote("Identity reserved. Waiting for the browser's permission before routing.");
-
-  // The answer is waited for, not read: enabling re-checks the permission
-  // itself and reports the honest reason when it is missing, so there is one
-  // place that decides whether routing may engage rather than two that can
-  // disagree. All this wait buys is not asking before the reader answered.
-  await routingPermissionAnswer(request);
-  const res = await send<{ ok: true; egress: EgressStatus } | { ok: false; error: string }>({
-    kind: "egressEnable",
-  });
-  if (!res.ok) {
-    renderIdentity(await currentEgress());
-    setIdentityNote(res.error);
-    return;
-  }
-  await applyEgress(res.egress);
-}
-
-function unprotectThisBrowser(): void {
-  const btn = $<HTMLButtonElement>("btn-protect");
-  btn.disabled = true;
-  btn.textContent = "Turning off...";
-  void send<{ ok: true; egress: EgressStatus }>({ kind: "egressDisable" }).then(async (res) => {
-    if (res.ok) await applyEgress(res.egress);
-  });
-}
-
-async function currentEgress(): Promise<EgressStatus> {
-  const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
-  if (res.ok) return res.egress;
-  return {
-    on: false,
-    enrolled: false,
-    agent: null,
-    address: null,
-    label: null,
-    fqdn: null,
-    rdapUrl: null,
-    controlledByOther: false,
-    webrtcHardened: null,
-    error: null,
-  };
-}
+let protectControl: ProtectControl | null = null;
 
 async function loadIdentity(): Promise<void> {
-  const s = await currentEgress();
   $("identity-card").hidden = false;
-  await applyEgress(s);
+  protectControl ??= mountProtectControl({ root: $("identity-control") });
+  await protectControl.refresh();
 }
+
 
 // ----------------------------------------------------------- link sweep
 
@@ -1110,7 +800,7 @@ function render(): void {
     $("footer-actions").hidden = false;
     $("btn-console").hidden = false;
     $("btn-console").addEventListener("click", () => {
-      chrome.tabs.create({ url: "https://console.whisper.security" });
+      chrome.tabs.create({ url: CONSOLE_URL });
     });
     $("btn-dossier").hidden = false;
     $("btn-dossier").addEventListener("click", async () => {
@@ -1148,6 +838,12 @@ function render(): void {
 }
 
 async function init(): Promise<void> {
+  // A <canvas> keeps the ink it was drawn with, so a colour-scheme flip
+  // has to redraw the look-alike neighbourhood.
+  onThemeChange(() => {
+    const open = ($("exp-neighborhood") as HTMLDetailsElement).open;
+    if (open && state?.hostname) void loadNeighborhood(state.hostname);
+  });
   $("btn-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("btn-refresh").addEventListener("click", () => window.location.reload());
 

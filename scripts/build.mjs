@@ -59,7 +59,13 @@ for (const [entry, out] of [
   });
 }
 
-// 2) Static pages + styles + the brand asset.
+// 2) Static pages + styles + the brand asset. knot.png is the mark every
+// extension page draws, because it survives both colour schemes. The white
+// wordmark is NOT shipped: the one surface that still uses it is the
+// injected on-page banner, which cannot load a bundled file without making
+// it web-accessible and so carries its own data URI (src/shared/brand.ts).
+// assets/logo.png stays in the repo as the source those are generated from,
+// and ships nowhere.
 for (const [from, to] of [
   ["src/popup/popup.html", "popup.html"],
   ["src/popup/popup.css", "popup.css"],
@@ -74,7 +80,7 @@ for (const [from, to] of [
   ["src/pages/dashboard.html", "dashboard.html"],
   ["src/pages/dashboard.css", "dashboard.css"],
   ["src/shared/theme.css", "theme.css"],
-  ["assets/logo.png", "logo.png"],
+  ["assets/knot.png", "knot.png"],
 ]) {
   copyFileSync(join(ROOT, from), join(OUT, to));
 }
@@ -113,7 +119,7 @@ for (const war of manifest.web_accessible_resources ?? []) {
 for (const extra of [
   "content.js", "check-link.html", "warning.html", "firstrun.html", "firstrun.js",
   "popup.js", "options.js", "warning.js", "check-link.js",
-  "dashboard.html", "dashboard.css", "dashboard.js", "theme.css", "logo.png",
+  "dashboard.html", "dashboard.css", "dashboard.js", "theme.css", "knot.png",
 ]) {
   referenced.add(extra);
 }

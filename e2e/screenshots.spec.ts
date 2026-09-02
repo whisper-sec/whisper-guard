@@ -13,7 +13,7 @@
 // light rendering are captured by e2e/protect.spec.ts, which proves them.
 
 import { test, expect } from "@playwright/test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +45,11 @@ test.beforeAll(async () => {
   await net.start();
   net.setVerdict(LOOKALIKE, { band: "CRITICAL", coverage: "partial", label: "credential-phishing suspect" });
   net.setVerdict("news-blog-example.com", { band: "UNKNOWN", coverage: "no-data", label: null });
+  // The first-run page fetches one real verdict for github.com to show the
+  // check working. Unseeded, the hermetic mock answers UNKNOWN/no-data and the
+  // published figure reads as the product not knowing a top-1000 site - true
+  // of the fixture, false of the product. Seeded like every other host here.
+  net.setVerdict("github.com", { band: "NONE", coverage: "known-clean", label: "clean" });
   net.setVerdict("intranet-tools-vendor.com", { band: "NONE", coverage: "known-clean", label: "clean" });
   net.setVerdict("paypa1-secure-login.net", { band: "CRITICAL", coverage: "malicious-evidenced", label: "malicious" });
   net.setVerdict("paypa1-secure-login.org", { band: "MEDIUM", coverage: "partial", label: "suspicious" });
@@ -55,7 +60,7 @@ test.beforeAll(async () => {
       found: true,
       level: "CRITICAL",
       score: 17.2,
-      explanation: `${LOOKALIKE} is listed in 5 threat feed(s).`,
+      explanation: `${LOOKALIKE} is listed in 2 threat feed(s).`,
       sources: [
         { feedId: "openphish", firstSeen: "2026-07-02T00:00:00Z" },
         { feedId: "phishtank", firstSeen: "2026-07-01T00:00:00Z" },
@@ -63,11 +68,19 @@ test.beforeAll(async () => {
     },
   ]);
   // A believable "where my devices go" spread for the dashboard gallery.
+  //
+  // Every hostname here is verified unregistered over RDAP and every vendor
+  // invented, BEFORE use rather than after: a published screenshot from a
+  // security product must not carry a verdict about a real party we have
+  // never assessed, whichever way the verdict points. The rule is about this
+  // fixture and nothing else - the squat patterns quoted as examples in
+  // README.md and the store listing are a separate matter, and none of them
+  // is ever shown carrying a verdict.
   const dests: [string, Parameters<typeof net.setEnrich>[1], string, string][] = [
     ["mail.workmail-vendor.com", { ip: "203.0.113.5", city: "Frankfurt am Main, DE", country: "DE", asn: "AS64500", owner: "WorkMail Cloud GmbH", asnName: "WORKMAIL - WorkMail Cloud GmbH", verdict: "NONE", prefix: "203.0.113.0/24" }, "saas", "WorkMail Cloud"],
-    ["cdn.mediastream-vendor.com", { ip: "198.51.100.7", city: "Amsterdam, NL", country: "NL", asn: "AS64510", owner: "Fastly, Inc.", asnName: "FASTLY - Fastly, Inc.", verdict: "NONE", prefix: "198.51.100.0/24" }, "cdn", "Fastly"],
+    ["cdn.mediastream-vendor.com", { ip: "198.51.100.7", city: "Amsterdam, NL", country: "NL", asn: "AS64510", owner: "Swiftpipe Edge B.V.", asnName: "SWIFTPIPE - Swiftpipe Edge B.V.", verdict: "NONE", prefix: "198.51.100.0/24" }, "cdn", "Swiftpipe Edge"],
     ["ads.tracker-vendor.com", { ip: "192.0.2.9", city: "Ashburn, US", country: "US", asn: "AS64520", owner: "Tracky Ads Inc.", asnName: "TRACKY - Tracky Ads Inc.", verdict: "NONE", prefix: "192.0.2.0/24" }, "ads", "Tracky Ads"],
-    ["search-vendor.com", { ip: "203.0.113.30", city: "Dublin, IE", country: "IE", asn: "AS64530", owner: "Searchy Ltd.", asnName: "SEARCHY - Searchy Ltd.", verdict: "NONE", prefix: "203.0.113.0/24" }, "search", "Searchy"],
+    ["searchy-vendor.com", { ip: "203.0.113.30", city: "Dublin, IE", country: "IE", asn: "AS64530", owner: "Searchy Ltd.", asnName: "SEARCHY - Searchy Ltd.", verdict: "NONE", prefix: "203.0.113.0/24" }, "search", "Searchy"],
     ["news.mediaco-vendor.com", { ip: "198.51.100.40", city: "London, GB", country: "GB", asn: "AS64540", owner: "MediaCo plc", asnName: "MEDIACO - MediaCo plc", verdict: "NONE", prefix: "198.51.100.0/24" }, "media", "MediaCo"],
     [LOOKALIKE, { ip: "192.0.2.66", city: "Montreal, CA", country: "CA", asn: "AS64550", owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC", verdict: "CRITICAL", prefix: "192.0.2.0/24" }, "unresolved", "Bad Hosting"],
   ];
@@ -79,24 +92,28 @@ test.beforeAll(async () => {
     }
   }
 
-  // A small fleet for the keyed views.
+  // A small fleet for the keyed views. Ages are MINUTES, not seconds: these
+  // render as relative labels ("6m ago") in published figures, and a
+  // seconds-scale age re-renders on every run, so the committed captures
+  // could never settle. Minutes read just as recent and survive the drift
+  // between two runs.
   const now = Date.now();
   net.addEndpoint({
     agent: "agent-shotphone", address: "2a04:2a01:5ec5:1::a1", label: "My iPhone", device: true, created: now - 3 * 86400000,
-    counters: { dns_queries: 4821, dns_blocked: 132, dns_nxdomain: 44, connections_total: 61, bytes_up: 1_800_000, bytes_down: 24_500_000, last_seen: now - 40_000 },
+    counters: { dns_queries: 4821, dns_blocked: 132, dns_nxdomain: 44, connections_total: 61, bytes_up: 1_800_000, bytes_down: 24_500_000, last_seen: now - 5 * 60_000 },
     logs: [
-      { ts: now - 5000, kind: "dns", qname: "mail.workmail-vendor.com.", qtype: "A", decision: "allow", agent: "agent-shotphone" },
-      { ts: now - 9000, kind: "dns", qname: "cdn.mediastream-vendor.com.", qtype: "AAAA", decision: "allow", agent: "agent-shotphone" },
-      { ts: now - 12000, kind: "dns", qname: "ads.tracker-vendor.com.", qtype: "A", decision: "block", agent: "agent-shotphone" },
-      { ts: now - 16000, kind: "conn", peer: LOOKALIKE, agent: "agent-shotphone" },
+      { ts: now - 6 * 60_000, kind: "dns", qname: "mail.workmail-vendor.com.", qtype: "A", decision: "allow", agent: "agent-shotphone" },
+      { ts: now - 7 * 60_000, kind: "dns", qname: "cdn.mediastream-vendor.com.", qtype: "AAAA", decision: "allow", agent: "agent-shotphone" },
+      { ts: now - 8 * 60_000, kind: "dns", qname: "ads.tracker-vendor.com.", qtype: "A", decision: "block", agent: "agent-shotphone" },
+      { ts: now - 11 * 60_000, kind: "conn", peer: LOOKALIKE, agent: "agent-shotphone" },
     ],
   });
   net.addEndpoint({
     agent: "agent-shotlaptop", address: "2a04:2a01:5ec5:2::b2", label: "Work laptop", created: now - 6 * 86400000,
-    counters: { dns_queries: 2210, dns_blocked: 18, connections_total: 30, last_seen: now - 120_000 },
+    counters: { dns_queries: 2210, dns_blocked: 18, connections_total: 30, last_seen: now - 9 * 60_000 },
     logs: [
-      { ts: now - 7000, kind: "dns", qname: "search-vendor.com.", qtype: "A", decision: "allow", agent: "agent-shotlaptop" },
-      { ts: now - 11000, kind: "dns", qname: "news-blog-example.com.", qtype: "A", decision: "allow", agent: "agent-shotlaptop" },
+      { ts: now - 12 * 60_000, kind: "dns", qname: "searchy-vendor.com.", qtype: "A", decision: "allow", agent: "agent-shotlaptop" },
+      { ts: now - 14 * 60_000, kind: "dns", qname: "news-blog-example.com.", qtype: "A", decision: "allow", agent: "agent-shotlaptop" },
     ],
   });
   net.setCohost(LOOKALIKE, { ip: "192.0.2.66", cohosted: 37, prefix: "192.0.2.0/24", threatNeighbors: 9 });
@@ -108,15 +125,95 @@ test.afterAll(async () => {
   await net?.stop();
 });
 
+
+/**
+ * NOTE on determinism: mock identities are counter-minted and fixture ages
+ * are minutes-scale, so a re-run reproduces 34 of the 35 captures byte for
+ * byte. The exception is dashboard-this-browser.png, whose activity card's
+ * bottom edge can land ~3px apart between runs; the content is identical.
+ * Not worth chasing, but worth knowing before assuming a diff means change.
+ *
+ * Capture a full page in BOTH schemes. Nothing here may rely on a default:
+ * these pages follow the reader's colour scheme now, and headless Chromium
+ * prefers light, so a capture that does not say which scheme it wants is a
+ * capture of whichever one the browser happened to pick. That is exactly how
+ * the "dark" gallery shots came back light the first time this ran.
+ */
+async function pageShots(
+  page: import("@playwright/test").Page,
+  name: string,
+  size: { width: number; height: number },
+): Promise<void> {
+  for (const [scheme, file] of [
+    ["dark", `${name}.png`],
+    ["light", `${name}-light.png`],
+  ] as const) {
+    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+    await page.setViewportSize(size);
+    await page.waitForTimeout(350);
+    await assertScheme(page, scheme, file);
+    await page.screenshot({ path: join(SHOTS, file), fullPage: true });
+  }
+}
+
+/**
+ * The store canvas is 1280x800. A capture meant for it is taken at that
+ * aspect and NOT full-page, so the framed result fills the canvas instead
+ * of shrinking a tall page into an illegible strip.
+ */
+async function storeShot(page: import("@playwright/test").Page, name: string): Promise<void> {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  await assertScheme(page, "dark", `${name}.png`);
+  await page.screenshot({ path: join(SHOTS, `${name}.png`) });
+}
+
+/**
+ * A capture named "dark" that came out light is a published figure lying
+ * about the product, and it is invisible to every other assertion in this
+ * file. Read the ground the page actually painted and refuse to save a shot
+ * that does not match the scheme it is filed under.
+ */
+async function assertScheme(
+  page: import("@playwright/test").Page,
+  scheme: "dark" | "light",
+  file: string,
+): Promise<void> {
+  const luminance = await page.evaluate(() => {
+    const c = getComputedStyle(document.body).backgroundColor;
+    const m = c.match(/-?[\d.]+/g) ?? ["255", "255", "255"];
+    const scale = c.startsWith("color(") ? 255 : 1;
+    const [r, g, b] = m.slice(0, 3).map((v) => Number(v) * scale);
+    const f = (v: number): number => {
+      const x = v / 255;
+      return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * f(r!) + 0.7152 * f(g!) + 0.0722 * f(b!);
+  });
+  if (scheme === "dark") {
+    expect(luminance, `${file} is filed as dark but its ground is light`).toBeLessThan(0.15);
+  } else {
+    expect(luminance, `${file} is filed as light but its ground is dark`).toBeGreaterThan(0.3);
+  }
+}
+
 async function popupShot(tabId: number, file: string, prep?: (p: import("@playwright/test").Page) => Promise<void>) {
   const popup = await openPopup(ext, tabId);
-  // The panel follows the reader's colour scheme. The gallery is captured
-  // dark, which is what the rest of the product's surfaces are; the light
-  // rendering has its own captures in e2e/protect.spec.ts.
-  await popup.emulateMedia({ colorScheme: "dark" });
+  // reducedMotion: the live-feed dot and the CHECKING ring breathe, so a
+  // still capture otherwise freezes a random animation phase and every run
+  // rewrites the file. The product's own prefers-reduced-motion rule turns
+  // every animation off, so this captures the resting state deliberately.
+  // Every surface follows the reader's colour scheme now. The gallery leads
+  // dark and carries a light capture of each surface beside it, so the claim
+  // is shown rather than asserted; the panel's own protection states are
+  // captured in both by e2e/protect.spec.ts.
+  await popup.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await popup.setViewportSize({ width: 380, height: 650 });
   await popup.waitForTimeout(400);
   if (prep) await prep(popup);
+  await assertScheme(popup, "dark", file);
   await popup.screenshot({ path: join(SHOTS, file), fullPage: true });
   await popup.close();
 }
@@ -205,32 +302,57 @@ test("popup: keyed benign and honest UNKNOWN", async () => {
 test("pre-click check window, keyless and keyed", async () => {
   await setKey(ext, null);
   const w1 = await ext.context.newPage();
+  await w1.emulateMedia({ colorScheme: "dark" });
   await w1.setViewportSize({ width: 420, height: 560 });
   await w1.goto(`chrome-extension://${ext.id}/check-link.html?host=${LOOKALIKE}`);
   await expect(w1.locator("#detector-text")).toContainText("paypal.com");
+  // The graph band on this surface is KEYLESS, so it lands here too - and the
+  // byte-compare below is only meaningful once BOTH captures have it. Waiting
+  // only for the detector row raced the band under load and produced two
+  // shots that differed by a row nobody had asked to differ.
+  await expect(w1.locator("#band-tag")).toHaveText("CRITICAL");
+  // The graph band on this surface is KEYLESS, so it lands here too - and the
+  // comparison below is only meaningful once BOTH renders have it. Waiting
+  // only for the detector row raced the band under load.
+  const keyless = await w1.evaluate(() => document.body.innerHTML);
   await w1.screenshot({ path: join(SHOTS, "precheck-keyless.png"), fullPage: true });
+  await w1.emulateMedia({ colorScheme: "light" });
+  await w1.waitForTimeout(250);
+  await w1.screenshot({ path: join(SHOTS, "precheck-keyless-light.png"), fullPage: true });
   await w1.close();
 
   await setKey(ext, MOCK_KEY);
   const w2 = await ext.context.newPage();
+  await w2.emulateMedia({ colorScheme: "dark" });
   await w2.setViewportSize({ width: 420, height: 560 });
   await w2.goto(`chrome-extension://${ext.id}/check-link.html?host=${LOOKALIKE}`);
   await expect(w2.locator("#band-tag")).toHaveText("CRITICAL");
-  const keyed = await w2.screenshot({ fullPage: true });
+  const keyed = await w2.evaluate(() => document.body.innerHTML);
   await w2.close();
 
   // The gallery used to ship this twice, captioned "keyless" and "signed in,
-  // the live band joins the on-device verdict". The two files were always
-  // byte-identical, because the band on this surface is KEYLESS: signing in
-  // adds nothing here. That was a documented sample claiming a difference it
-  // never had. The gallery now shows one shot and says so, and this asserts
-  // the reason, so if the keyed view ever does diverge the caption goes red
+  // the live band joins the on-device verdict". The two were always the same
+  // view, because the band on this surface is KEYLESS: signing in adds
+  // nothing here. That was a documented sample claiming a difference it never
+  // had. The gallery now shows one shot and says so, and this asserts the
+  // reason, so if the keyed view ever does diverge the caption goes red
   // instead of quietly becoming true again.
-  const keyless = readFileSync(join(SHOTS, "precheck-keyless.png"));
+  //
+  // The claim is about what the surface RENDERS, so that is what is compared.
+  // This was a byte-compare of the two PNGs, which measured the claim plus
+  // the rasteriser: the two renders were proved identical in the DOM
+  // (innerText and innerHTML both equal, measured) while the encoded images
+  // still differed intermittently under load. A test that goes red for a
+  // reason its own message cannot explain is worse than no test.
+  //
+  // CONTROL: an empty or error-only body would compare equal to itself, so
+  // pin that the render being compared is the real one.
+  expect(keyless, "the keyless render must carry the verdict, or equality proves nothing").toContain("CRITICAL");
+  expect(keyless).toContain("paypal.com");
   expect(
-    Buffer.compare(keyed, keyless),
+    keyed,
     "the keyed pre-click view now differs from the keyless one; the gallery caption says they are identical and needs updating",
-  ).toBe(0);
+  ).toBe(keyless);
 });
 
 test("full-page warning", async () => {
@@ -240,7 +362,8 @@ test("full-page warning", async () => {
     `chrome-extension://${ext.id}/warning.html?host=${LOOKALIKE}&brand=PayPal&brandDomain=paypal.com`,
   );
   await expect(page.locator("h1")).toContainText("Whisper stopped a dangerous page");
-  await page.screenshot({ path: join(SHOTS, "warning.png"), fullPage: true });
+  await pageShots(page, "warning", { width: 1100, height: 720 });
+  await storeShot(page, "warning-store");
   await page.close();
 });
 
@@ -248,7 +371,8 @@ test("first-run", async () => {
   const page = await ext.context.newPage();
   await page.setViewportSize({ width: 900, height: 860 });
   await page.goto(`chrome-extension://${ext.id}/firstrun.html`);
-  await page.screenshot({ path: join(SHOTS, "firstrun.png"), fullPage: true });
+  await page.waitForTimeout(600);
+  await pageShots(page, "firstrun", { width: 900, height: 860 });
   await page.close();
 });
 
@@ -276,7 +400,7 @@ test("settings (no key anywhere on screen)", async () => {
   await page.goto(`chrome-extension://${ext.id}/options.html`);
   await page.waitForTimeout(300);
   expect(await page.content()).not.toContain(MOCK_KEY);
-  await page.screenshot({ path: join(SHOTS, "settings.png"), fullPage: true });
+  await pageShots(page, "settings", { width: 900, height: 1100 });
   await page.close();
 });
 
@@ -286,23 +410,30 @@ test("dashboard: This browser (keyless keystone), graph-enriched destinations", 
   // Drive the browser so the on-device destination log has a real spread.
   for (const host of [
     "mail.workmail-vendor.com", "cdn.mediastream-vendor.com", "ads.tracker-vendor.com",
-    "search-vendor.com", "news.mediaco-vendor.com", `${LOOKALIKE}`,
+    "searchy-vendor.com", "news.mediaco-vendor.com", `${LOOKALIKE}`,
   ]) {
     const v = await visit(ext, `https://${host}/`);
     await waitForIcon(ext, v.tabId, ["benign", "unknown", "suspicious", "malicious", "signedout"]);
     await v.page.close();
   }
   const dash = await openDashboard(ext, "browser");
+  await dash.emulateMedia({ colorScheme: "dark" });
   await dash.setViewportSize({ width: 1180, height: 1500 });
   await expect(dash.locator("#b-ledger")).toContainText("WorkMail", { timeout: 15_000 });
   await dash.waitForTimeout(700);
-  await dash.screenshot({ path: join(SHOTS, "dashboard-this-browser.png"), fullPage: true });
+  await pageShots(dash, "dashboard-this-browser", { width: 1180, height: 1500 });
+  // A store screenshot is 1280x800, so a 1180x1500 full-page capture scales
+  // to a 531px-wide thumbnail with black either side and nothing legible in
+  // it. Capture the viewport instead: it fills the store canvas and a reader
+  // can actually read it. (Only visible by looking at the framed result.)
+  await storeShot(dash, "dashboard-this-browser-store");
   await dash.close();
 });
 
 test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () => {
   await setKey(ext, MOCK_KEY);
   const fleet = await openDashboard(ext, "fleet");
+  await fleet.emulateMedia({ colorScheme: "dark" });
   await fleet.setViewportSize({ width: 1180, height: 1500 });
   await expect(fleet.locator("#f-roster")).toContainText("My iPhone", { timeout: 15_000 });
   await fleet.waitForTimeout(700);
@@ -310,6 +441,7 @@ test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () =
   await fleet.close();
 
   const ep = await openDashboard(ext, "endpoint");
+  await ep.emulateMedia({ colorScheme: "dark" });
   await ep.setViewportSize({ width: 1180, height: 1600 });
   // A negated matcher is satisfied by an element that is not there, and this
   // capture becomes a published figure: an empty or missing address would ship
@@ -323,18 +455,28 @@ test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () =
   await ep.locator("#e-hosts .w-ledger-row", { hasText: LOOKALIKE }).first().click();
   await expect(ep.locator("#e-drill-body")).toContainText("Co-hosted", { timeout: 15_000 });
   await ep.waitForTimeout(800);
-  await ep.screenshot({ path: join(SHOTS, "dashboard-endpoint.png"), fullPage: true });
+  await pageShots(ep, "dashboard-endpoint", { width: 1180, height: 1600 });
+  await storeShot(ep, "dashboard-endpoint-store");
   await ep.close();
 });
 
-test("dashboard: Protect this browser (egress toggle, off by default)", async () => {
+test("dashboard: the ONE control, the same one the panel offers", async () => {
   await setKey(ext, MOCK_KEY);
   const dash = await openDashboard(ext, "browser");
+  await dash.emulateMedia({ colorScheme: "dark" });
   await dash.setViewportSize({ width: 1180, height: 900 });
   await expect(dash.locator("#egress-card")).toBeVisible();
+  // The capture is only worth anything if it is the control: pin that the
+  // one button is on screen and the two-step idiom it replaced is not.
+  await expect(dash.locator("#btn-protect")).toBeVisible({ timeout: 15_000 });
+  await expect(dash.locator("#enroll-btn")).toHaveCount(0);
+  await expect(dash.locator("#egress-toggle")).toHaveCount(0);
   await dash.locator("#egress-card").scrollIntoViewIfNeeded();
   await dash.waitForTimeout(400);
   await dash.locator("#egress-card").screenshot({ path: join(SHOTS, "dashboard-egress.png") });
+  await dash.emulateMedia({ colorScheme: "light" });
+  await dash.waitForTimeout(400);
+  await dash.locator("#egress-card").screenshot({ path: join(SHOTS, "dashboard-egress-light.png") });
   await dash.close();
 });
 
@@ -466,7 +608,7 @@ test("popup: the calm 'handled quietly today' line, with the counts that interru
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
   const popup = await openPopup(ext, tabId);
-  await popup.emulateMedia({ colorScheme: "dark" });
+  await popup.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await popup.setViewportSize({ width: 380, height: 650 });
   // Pinned to the exact number, not merely "not 0". A negated matcher is
   // satisfied by a missing element, so not.toHaveText("0") would survive the

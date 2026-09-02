@@ -38,14 +38,19 @@ import {
 let net: E2ENetwork;
 let ext: Extension;
 
+// Hostnames deliberately carry no consent-ish word: the privacy invariant
+// at the bottom of this file sweeps the whole wire log for
+// /cookie|consent|banner|reject|.../ to prove the feature puts nothing
+// about banners on the network, and a fixture name containing one of
+// those words fails it. "fx" is filler chosen to collide with none.
 const SITE = {
-  onetrust: "site-a-574-guard-e2e.com",
-  generic: "site-b-574-guard-e2e.com",
-  late: "site-c-574-guard-e2e.com",
-  none: "site-d-574-guard-e2e.com",
-  decoy: "site-e-574-guard-e2e.com",
-  modals: "site-f-574-guard-e2e.com",
-  wrapper: "site-g-574-guard-e2e.com",
+  onetrust: "site-a-fx-guard-e2e.com",
+  generic: "site-b-fx-guard-e2e.com",
+  late: "site-c-fx-guard-e2e.com",
+  none: "site-d-fx-guard-e2e.com",
+  decoy: "site-e-fx-guard-e2e.com",
+  modals: "site-f-fx-guard-e2e.com",
+  wrapper: "site-g-fx-guard-e2e.com",
 };
 
 /** Any injected Guard UI mounts on a max-z-index host element. */

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <title>Whisper Guard settings</title>
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
@@ -10,9 +10,10 @@
 </head>
 <body>
   <main>
-    <div class="brand">
-      <img src="logo.png" alt="Whisper" class="w-logo">
-      <span class="product">Guard</span>
+    <div class="w-lockup brand">
+      <img src="knot.png" alt="Whisper" class="w-knot">
+      <span class="w-wordmark">Whisper</span>
+      <span class="w-product">Guard</span>
     </div>
 
     <section class="card">
@@ -54,23 +55,25 @@
         </details>
       </div>
       <div id="account-signedin" hidden>
-        <p>Signed in. The fleet dashboard and browser egress are unlocked.</p>
+        <p>Signed in. The fleet dashboard and this browser's own Whisper identity are unlocked.</p>
         <div class="row gap">
           <button id="btn-dashboard" class="w-btn">Open dashboard</button>
+          <button id="btn-console" class="w-btn">Open the console</button>
           <button id="btn-signout" class="w-btn">Sign out</button>
         </div>
       </div>
     </section>
 
     <section class="card">
-      <h2>Protect this browser (egress)</h2>
-      <p class="w-note">Route this browser through Whisper egress so it gets its own routable
-      IPv6 identity and joins your fleet as a device. Off by default. Turning it on asks for
-      the browser's proxy permission; the setting is profile-global and WebRTC is hardened to
-      proxied-only on Chromium so nothing leaks around the route. Manage it from the
-      dashboard's "This browser" view.</p>
+      <h2>Protect this browser</h2>
+      <p>One control gives this browser its own routable Whisper IPv6 address
+      and sends its traffic out through it, so it joins your fleet as a device and anyone can
+      check that address by RDAP. Off by default. Turning it on asks for the browser's proxy
+      permission; the route is profile-global and WebRTC is hardened to proxied-only on
+      Chromium so nothing leaks around it. The control lives in the toolbar panel and on the
+      dashboard - it is the same control in both places.</p>
       <div class="row gap">
-        <button id="btn-egress-dash" class="w-btn small">Open in dashboard</button>
+        <button id="btn-egress-dash" class="w-btn small">Open it on the dashboard</button>
         <span id="egress-state" class="w-note"></span>
       </div>
     </section>

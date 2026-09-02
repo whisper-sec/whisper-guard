@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT
    Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 
-   Popup layout on top of the shared theme tokens.
+   Popup layout on top of the shared theme.
 
    Three rules hold the panel together:
 
@@ -10,64 +10,20 @@
       is spent only on something that needs a boundary because it demands a
       decision (a look-alike, a session block, this browser's protection).
       Everything else is a .panel: a quiet group separated by one hairline.
-   2. ONE TYPE SCALE. 10 (mono labels), 11.5 (fine print), 12 (body),
-      13 (emphasis), 14 (the hostname), 22 (the one hero number). Nothing
-      else. Spacing is 4 / 8 / 12 / 16 and nothing else.
+   2. ONE TYPE SCALE, and it is the shared one (theme.css): 9.5 (eyebrow),
+      10.5 (mono metadata), 11 (caption), 12 (mono rows), 12.5 (body),
+      13.5 (the hostname), 26 (the one hero number). Nothing else. Spacing
+      is 4 / 8 / 12 / 16 and nothing else.
    3. COLOUR IS MEANING. The verdict scale is the only saturated colour on
-      the panel; the accent carries identity. Everything else is ink. */
+      the panel; the accent carries identity. Everything else is ink.
+
+   The panel carries no colours of its own. Every token it draws with is
+   defined once in theme.css and flips whole with the reader's colour
+   scheme, so the panel cannot drift from the dashboard or from the
+   console. */
 
 body {
   width: 390px;
-  background: var(--w-bg);
-}
-
-:root {
-  /* The header carries the wordmark, which is white by construction, so the
-     brand bar keeps its dark ground in both themes rather than swallowing
-     the logo on a light one. These are the only fixed colours on the panel. */
-  --w-brand-bar: #06060c;
-  --w-brand-line: #1e1e33;
-  --w-brand-ink: #9a9ab0;
-  --w-brand-ink-strong: #e8e8f2;
-  --w-brand-hover: #16162a;
-}
-
-/* ------------------------------------------------------------ light mode
-
-   The tokens are defined dark-first in theme.css. Here the popup, and only
-   the popup, answers the reader's system preference: same structure, same
-   meanings, a ground and an ink that swap. Verdict hues darken rather than
-   change identity, because a red that reads as red on black is pink on
-   white and a verdict must not soften with the lights. */
-@media (prefers-color-scheme: light) {
-  :root {
-    --w-bg: #f2f2f6;
-    --w-surface: #ffffff;
-    --w-card: #ffffff;
-    --w-elev: #ececf3;
-    --w-line: #e0e0e9;
-    --w-line-strong: #c9c9d8;
-
-    --w-text: #15151c;
-    --w-muted: #55555f;
-    --w-faint: #71717f;
-
-    --w-accent: #6b3fa0;
-    --w-accent-soft: rgba(107, 63, 160, 0.1);
-    --w-accent-line: rgba(107, 63, 160, 0.4);
-
-    --w-ok: #047857;
-    --w-v-none: #6b6b78;
-    --w-v-info: #4338ca;
-    --w-v-low: #b45309;
-    --w-v-med: #c2410c;
-    --w-v-high: #dc2626;
-    --w-v-crit: #b91c1c;
-  }
-  /* On white the flat elevated fill is the only thing separating a
-     secondary button from the card behind it, so give it its own edge. */
-  .w-btn { background: var(--w-surface); }
-  .w-btn:hover { background: var(--w-elev); }
 }
 
 /* ----------------------------------------------------------- the shell */
@@ -77,29 +33,21 @@ header {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--w-brand-line);
-  background: var(--w-brand-bar);
+  border-bottom: 1px solid var(--w-line);
+  background: var(--w-surface);
 }
-header .product {
-  font-weight: 400;
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--w-brand-ink);
-}
-header .w-logo { height: 18px; }
 
 .icon-btn {
   background: transparent;
-  color: var(--w-brand-ink);
+  color: var(--w-muted);
   border: none;
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: 4px;
 }
-.icon-btn:hover { color: var(--w-brand-ink-strong); background: var(--w-brand-hover); }
+.icon-btn:hover { color: var(--w-text); background: var(--w-hover); }
 
 main { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
@@ -118,7 +66,7 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 #host-row { display: flex; gap: 12px; align-items: flex-start; }
 
 .glyph {
-  width: 32px; height: 32px; border-radius: 9px; flex: none;
+  width: 32px; height: 32px; border-radius: 8px; flex: none;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; font-weight: 700; background: transparent;
   border: 2px solid var(--w-line-strong);
@@ -126,11 +74,11 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 .glyph.benign { border-color: var(--w-ok); color: var(--w-ok); }
 .glyph.suspicious { border-color: var(--w-v-low); color: var(--w-v-low); }
 .glyph.malicious { border-color: var(--w-v-crit); background: var(--w-v-crit); color: #fff; }
-.glyph.unknown { border-style: dashed; border-color: var(--w-line-strong); color: var(--w-faint); }
-.glyph.signedout { border-color: var(--w-line-strong); color: var(--w-faint); }
+.glyph.unknown { border-style: dashed; border-color: var(--w-line-strong); color: var(--w-muted); }
+.glyph.signedout { border-color: var(--w-line-strong); color: var(--w-muted); }
 
 .host-meta { min-width: 0; flex: 1; }
-.hostname { font-weight: 600; font-size: 14px; line-height: 1.35; word-break: break-all; }
+.hostname { font-weight: 600; font-size: 13.5px; line-height: 1.35; word-break: break-all; }
 .chips { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
 
 /* The one sentence about this site. It never restates the badge above it. */
@@ -138,7 +86,6 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 
 /* ------------------------------------------------------- evidence block */
 
-.w-card { padding: 12px; }
 .w-card.warn { border-color: var(--w-v-low); }
 .w-card.muted { color: var(--w-muted); font-size: 12px; }
 .w-card p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
@@ -146,12 +93,12 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 .protect-rows { display: flex; flex-direction: column; gap: 4px; }
 .protect-rows:empty { display: none; }
 .protect-kv { display: flex; gap: 8px; font-size: 12px; min-width: 0; }
-.protect-kv .k { flex: 0 0 5.5em; color: var(--w-faint); }
+.protect-kv .k { flex: 0 0 5.5em; color: var(--w-muted); }
 .protect-kv .v { color: var(--w-text); min-width: 0; word-break: break-word; }
 
 .why-chips { display: flex; flex-direction: column; gap: 3px; }
 .why-chips:not(:empty) { margin-top: 8px; }
-.why-line { font-size: 11.5px; line-height: 1.45; color: var(--w-muted); }
+.why-line { font-size: 11px; line-height: 1.5; color: var(--w-muted); }
 /* When the graph gave no structured factors, the first cited line IS the
    evidence and carries the weight the factor rows otherwise would. */
 .why-line.threat { color: var(--w-v-med); }
@@ -160,24 +107,23 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 .protect-rows:not(:empty) + #why-panel { border-top: 1px solid var(--w-line); padding-top: 9px; }
 .why-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .why-factors { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
-.why-factor { display: flex; align-items: center; gap: 7px; font-size: 11.5px; min-width: 0; }
+.why-factor { display: flex; align-items: center; gap: 7px; font-size: 11px; min-width: 0; }
 .why-factor .w-dot { width: 6px; height: 6px; }
 .why-factor.threat .w-dot { background: var(--w-v-high); }
 .why-factor.good .w-dot { background: var(--w-ok); }
 .why-factor .wf-name { font-family: var(--w-mono); color: var(--w-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .why-factor.threat .wf-name { color: var(--w-v-high); }
-.why-factor .wf-meta { color: var(--w-faint); white-space: nowrap; margin-left: auto; }
-.why-factor.more { color: var(--w-faint); }
+.why-factor .wf-meta { color: var(--w-muted); white-space: nowrap; margin-left: auto; }
+.why-factor.more { color: var(--w-muted); }
 
 /* Coverage: what the graph KNOWS, said in the evidence block where machine
-   vocabulary belongs, never beside the verdict where it reads as a score. */
-/* Subordinated by size and position, not by fading the ink: --w-faint on a
-   card is about 3.3:1 in the dark theme, and these are sentences a reader is
-   meant to be able to read, not decoration. */
-.coverage-line { margin-top: 8px; font-size: 11.5px; color: var(--w-muted); }
+   vocabulary belongs, never beside the verdict where it reads as a score.
+   Subordinated by size and position, never by fading the ink below the
+   readable floor: these are sentences a reader is meant to read. */
+.coverage-line { margin-top: 8px; font-size: 11px; color: var(--w-muted); }
 .coverage-line .cov { font-family: var(--w-mono); color: var(--w-text); }
 
-.chip-muted { color: var(--w-muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.chip-muted { color: var(--w-muted); letter-spacing: 0; }
 
 /* ------------------------------------------------ page-link pre-verdicts */
 
@@ -187,44 +133,33 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
   margin-top: 6px; display: flex; flex-direction: column; gap: 2px;
   max-height: 190px; overflow-y: auto;
 }
-#linkscan-note { margin-top: 8px; font-size: 11.5px; color: var(--w-muted); }
+#linkscan-note { margin-top: 8px; }
 .link-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; min-width: 0; }
 .link-row .w-chip { flex: none; min-width: 74px; text-align: center; }
-.link-host { font-family: var(--w-mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-n { margin-left: auto; color: var(--w-faint); font-family: var(--w-mono); font-size: 11px; }
+.link-host { font-family: var(--w-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-n { margin-left: auto; color: var(--w-muted); font-family: var(--w-mono); font-size: 10.5px; }
 
-/* --------------------------------------------- 2. this browser (protect) */
+/* --------------------------------------------- 2. this browser (protect)
 
-/* One status line, one control. The dot carries the routing state and the
-   sentence says what that means and what is in the way when it is off. */
-.route-line { display: flex; gap: 8px; margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
-.route-line .w-dot { align-self: flex-start; margin-top: 5px; }
-.route-line .w-dot.on { background: var(--w-ok); }
-.route-line .w-dot.blocked { background: var(--w-v-low); }
-.route-line .w-dot.off { background: var(--w-line-strong); }
-.route-line .rl-text { min-width: 0; }
-.route-line .rl-lead { color: var(--w-text); font-weight: 600; }
+   The control's own layout is in theme.css beside the module that builds
+   it, because the dashboard mounts the same thing. */
 
-.identity-detail { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
-.identity-actions { margin-top: 10px; }
-.identity-actions:empty { margin-top: 0; }
-#identity-note { margin-top: 8px; }
 
 /* --------------------------------------------------------- 3. activity */
 
-.today-row { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; }
+.today-row { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
 .today-hero {
-  font: 300 22px/1.1 var(--w-font);
+  font: 300 26px/1 var(--w-mono);
   font-variant-numeric: tabular-nums;
   color: var(--w-text);
 }
 .today-caption { font-size: 12px; color: var(--w-muted); }
 .today-breakdown { display: flex; flex-direction: column; gap: 2px; }
 .today-breakdown:not(:empty) { margin-top: 4px; }
-.today-line { color: var(--w-muted); font-size: 11.5px; }
+.today-line { color: var(--w-muted); font-size: 11px; }
 #browser-24h { margin-top: 8px; font-size: 12px; }
 #browser-24h.hot { color: var(--w-v-high); }
-#today-note { margin-top: 6px; font-size: 11.5px; color: var(--w-muted); }
+#today-note { margin-top: 6px; }
 
 /* ------------------------------------------------------------- drawers */
 
@@ -240,29 +175,39 @@ details summary {
 }
 details summary:hover { color: var(--w-text); }
 details[open] summary { color: var(--w-text); }
-.exp-body { padding: 2px 2px 10px; color: var(--w-muted); font-size: 11.5px; }
+.exp-body { padding: 2px 2px 10px; color: var(--w-muted); font-size: 11px; }
 .exp-body table { width: 100%; border-collapse: collapse; }
 .exp-body td { padding: 2px 6px 2px 0; vertical-align: top; word-break: break-word; }
-.exp-body td:first-child { color: var(--w-faint); white-space: nowrap; }
+.exp-body td:first-child { color: var(--w-muted); white-space: nowrap; }
 
-#graph-canvas { width: 100%; height: auto; background: var(--w-surface); border-radius: 8px; border: 1px solid var(--w-line); }
+#graph-canvas { width: 100%; height: auto; background: var(--w-surface); border-radius: 6px; border: 1px solid var(--w-line); }
 
 .session-item { display: flex; gap: 6px; padding: 3px 0; }
-.session-host { flex: 1; word-break: break-all; color: var(--w-text); font-family: var(--w-mono); font-size: 11.5px; }
+.session-host { flex: 1; word-break: break-all; color: var(--w-text); font-family: var(--w-mono); font-size: 11px; }
 .session-reason { color: var(--w-muted); }
 
 /* --------------------------------------- the session block ledger + banner */
 
-.w-card.crit { border-color: var(--w-v-crit); }
-.blocked-title { font: 600 10px/1.4 var(--w-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--w-faint); margin-bottom: 6px; }
-.blocked-banner { color: var(--w-v-crit); font-size: 12px; line-height: 1.45; margin-bottom: 8px; font-weight: 600; }
+.w-card.crit { border-color: var(--w-v-high); }
+.blocked-title {
+  font: 600 9.5px/1.4 var(--w-font-sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  margin-bottom: 6px;
+}
+.blocked-banner { color: var(--w-v-high); font-size: 12px; line-height: 1.45; margin-bottom: 8px; font-weight: 600; }
 .blocked-body { display: flex; flex-direction: column; gap: 4px; }
 .blocked-item { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.blocked-item.blocked-active .blocked-host { color: var(--w-v-crit); font-weight: 600; }
-.blocked-host { flex: 1; word-break: break-all; color: var(--w-text); font-family: var(--w-mono); font-size: 11.5px; }
-.blocked-clear { border: 1px solid var(--w-line-strong); background: var(--w-surface); color: var(--w-text); font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-.blocked-clear:hover { border-color: var(--w-v-crit); color: var(--w-v-crit); }
-.blocked-clear:disabled { opacity: 0.6; cursor: default; }
+.blocked-item.blocked-active .blocked-host { color: var(--w-v-high); font-weight: 600; }
+.blocked-host { flex: 1; word-break: break-all; color: var(--w-text); font-family: var(--w-mono); font-size: 11px; }
+.blocked-clear {
+  border: 1px solid var(--w-line-strong); background: var(--w-elev); color: var(--w-muted);
+  font: 500 11px/1.4 var(--w-font-sans); padding: 3px 10px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap;
+}
+.blocked-clear:hover { border-color: var(--w-v-high); color: var(--w-v-high); }
+.blocked-clear:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* -------------------------------------------------------------- footer */
 
@@ -272,4 +217,3 @@ footer {
   background: var(--w-surface);
 }
 #footer-actions:not([hidden]) + .w-privacy { margin-top: 8px; }
-.w-privacy { line-height: 1.45; }

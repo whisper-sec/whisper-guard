@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// Browser-as-endpoint, hermetic Chromium proof. This is the hard
-// e2e the design demands, not a structural pass: flip the toggle and prove
+// Browser-as-endpoint, hermetic Chromium proof, driven from the DASHBOARD
+// half of the one control (the panel's half is e2e/protect.spec.ts). This
+// is the hard e2e the design demands, not a structural pass: click the one
+// control and prove
 //   (a) the browser is actually routed through the Whisper egress endpoint
 //       (its own registered identity), captured on the proxy;
 //   (b) that identity appears in the account's op:list roster;
@@ -42,13 +44,13 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
   net.clearEndpoints();
 
   const dash = await openDashboard(ext, "browser");
-  await expect(dash.locator("#egress-toggle")).toHaveText("Turn on", { timeout: 10_000 });
+  await expect(dash.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
 
-  // Flip it on. The page requests the (pre-granted) permissions on the
+  // One click. The page requests the (pre-granted) permissions on the
   // gesture, then the background registers the device + provisions egress.
-  await dash.locator("#egress-toggle").click();
-  await expect(dash.locator("#egress-toggle")).toHaveText("Turn off", { timeout: 20_000 });
-  await expect(dash.locator("#egress-detail")).toContainText("ROUTED");
+  await dash.locator("#btn-protect").click();
+  await expect(dash.locator("#route-line")).toContainText("Protected", { timeout: 25_000 });
+  await expect(dash.locator("#btn-protect")).toHaveText("Turn routing off");
 
   // (b) The browser now appears in the account roster as a device.
   const registered = net.endpoints.find((e) => e.label.includes("This browser"));
@@ -70,9 +72,9 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
   ).toBeGreaterThan(0);
   await page.close();
 
-  // Turning it off restores a direct route (no more egress CONNECTs).
-  await dash.locator("#egress-toggle").click();
-  await expect(dash.locator("#egress-toggle")).toHaveText("Turn on", { timeout: 15_000 });
+  // The same button turns it off and restores a direct route.
+  await dash.locator("#btn-protect").click();
+  await expect(dash.locator("#route-line")).toContainText("Identity reserved", { timeout: 20_000 });
   net.clearEgressLog();
   net.clearLog(); // so the control below counts THIS navigation, not the routed one above
   const page2 = await ext.context.newPage();
@@ -100,14 +102,15 @@ test("browser-as-endpoint: the identity is register-once and reused, never dupli
   expect(before, "the browser must already be registered from the previous test, or reuse is untested").toBe(1);
 
   const dash = await openDashboard(ext, "browser");
-  await dash.locator("#egress-toggle").click();
-  await expect(dash.locator("#egress-toggle")).toHaveText("Turn off", { timeout: 20_000 });
+  await expect(dash.locator("#btn-protect")).toHaveText("Turn routing on", { timeout: 10_000 });
+  await dash.locator("#btn-protect").click();
+  await expect(dash.locator("#route-line")).toContainText("Protected", { timeout: 25_000 });
 
   // No SECOND device row was minted: the stored identity was reused.
   const after = net.endpoints.filter((e) => e.label.includes("This browser")).length;
   expect(after).toBe(before);
 
-  await dash.locator("#egress-toggle").click();
-  await expect(dash.locator("#egress-toggle")).toHaveText("Turn on", { timeout: 15_000 });
+  await dash.locator("#btn-protect").click();
+  await expect(dash.locator("#route-line")).toContainText("Identity reserved", { timeout: 20_000 });
   await dash.close();
 });

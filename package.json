@@ -1,6 +1,6 @@
 {
   "name": "whisper-guard",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "description": "Whisper Guard browser extension: the Whisper security graph native in your browser. Live per-site safety verdicts, a where-your-devices-go dashboard, on-device look-alike protection, and optional browser-as-endpoint egress. MIT, MV3, Chromium + Firefox.",
   "type": "module",
@@ -12,7 +12,7 @@
     "build:chromium": "npm run typecheck && node scripts/build.mjs chromium",
     "build:firefox": "npm run typecheck && node scripts/build.mjs firefox",
     "package": "npm run build && node scripts/package.mjs",
-    "e2e": "playwright test e2e/mocked.spec.ts e2e/dashboard.spec.ts e2e/egress.spec.ts e2e/enroll.spec.ts e2e/protect.spec.ts e2e/links.spec.ts e2e/link-permission.spec.ts e2e/permissions.spec.ts e2e/shield.spec.ts e2e/preempt.spec.ts e2e/preempt-decision.spec.ts e2e/preempt-activetab.spec.ts e2e/escalation-decision.spec.ts e2e/wins.spec.ts e2e/consent.spec.ts e2e/consent-frames.spec.ts e2e/graph-endpoints.spec.ts",
+    "e2e": "playwright test e2e/mocked.spec.ts e2e/dashboard.spec.ts e2e/egress.spec.ts e2e/enroll.spec.ts e2e/protect.spec.ts e2e/links.spec.ts e2e/link-permission.spec.ts e2e/permissions.spec.ts e2e/shield.spec.ts e2e/preempt.spec.ts e2e/preempt-decision.spec.ts e2e/preempt-activetab.spec.ts e2e/escalation-decision.spec.ts e2e/wins.spec.ts e2e/consent.spec.ts e2e/consent-frames.spec.ts e2e/graph-endpoints.spec.ts e2e/console-links.spec.ts e2e/theme.spec.ts",
     "e2e:live": "playwright test e2e/live.spec.ts",
     "e2e:consent-live": "playwright test e2e/consent-live.spec.ts",
     "e2e:all": "playwright test",

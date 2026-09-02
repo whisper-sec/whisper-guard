@@ -1,45 +1,46 @@
 /* SPDX-License-Identifier: MIT
    Copyright (c) 2026 viaGraph B.V. (Whisper Security)
-   First-run layout on top of the shared theme tokens. */
+   First-run layout on top of the shared theme. No colour is defined here;
+   every token comes from theme.css and flips with the reader's scheme. */
 
-body { font-size: 15px; line-height: 1.65; }
+body { font-size: 13px; line-height: 1.65; }
 
 main { max-width: 640px; margin: 0 auto; padding: 48px 20px 60px; }
 
-.hero { display: flex; align-items: center; gap: 18px; margin-bottom: 26px; }
-.hero-logo { height: 44px; width: auto; flex: none; }
+.hero { display: flex; align-items: center; gap: 16px; margin-bottom: 26px; }
+.hero-knot { height: 40px; width: 40px; flex: none; display: block; }
 
-h1 { font-size: 26px; margin: 0; font-weight: 300; }
+h1 { font-size: 22px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .tagline { margin: 4px 0 0; color: var(--w-muted); }
 
-h2 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
+h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; letter-spacing: 0.01em; }
 
 .card {
   background: var(--w-card);
   border: 1px solid var(--w-line);
-  border-radius: 12px;
-  padding: 18px 20px;
-  margin-bottom: 16px;
+  border-radius: 6px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
 }
 .card p { margin: 0 0 12px; }
 
-code { background: var(--w-surface); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
+code { background: var(--w-elev); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
 
 .sample {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--w-surface);
+  background: var(--w-elev);
   border: 1px solid var(--w-line);
-  border-radius: 9px;
+  border-radius: 6px;
   padding: 10px 14px;
   flex-wrap: wrap;
 }
-.sample .w-host { font-size: 14px; }
+.sample .w-host { font-size: 13px; }
 
 .status { margin-top: 10px; }
 
 .row { display: flex; align-items: center; }
 .gap { gap: 10px; flex-wrap: wrap; }
 
-.footer-note { color: var(--w-muted); font-size: 12px; text-align: center; }
+.footer-note { color: var(--w-muted); font-size: 11px; text-align: center; }

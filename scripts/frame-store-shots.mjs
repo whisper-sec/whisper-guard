@@ -29,12 +29,17 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Raw capture -> store filename. Only surfaces we actually submit.
+// The three page-scale surfaces use their own STORE captures, taken at the
+// store's own 1280x800 aspect. Framing a tall full-page capture instead
+// scaled it down to a 531px-wide strip with black either side and nothing
+// legible in it - which is what shipped, because nobody looked at the framed
+// result.
 const MAP = {
   "toolbar-states": "01-toolbar-states",
   "popup-keyed-malicious": "02-popup-keyed-malicious",
-  "dashboard-this-browser": "03-dashboard-this-browser",
-  "warning": "04-warning",
-  "dashboard-endpoint": "05-dashboard-endpoint",
+  "dashboard-this-browser-store": "03-dashboard-this-browser",
+  "warning-store": "04-warning",
+  "dashboard-endpoint-store": "05-dashboard-endpoint",
 };
 
 const wanted = process.argv.slice(2);

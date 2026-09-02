@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// The Whisper wordmark as a data URI, for the one surface that cannot
-// load a bundled file without becoming web-accessible: the closed-shadow-DOM
-// on-page banner. Every extension page uses the bundled logo.png instead.
+// The Whisper wordmark as a data URI, for the one surface that cannot load
+// a bundled file without becoming web-accessible: the closed-shadow-DOM
+// on-page banner. It is the ONLY place the wordmark is still used - every
+// extension page draws the knot plus an ink wordmark instead, because the
+// wordmark PNG is white by construction and vanishes on a light ground.
 // Regenerate: convert assets/logo.png -resize 280x -strip small.png && base64 -w0
 
 export const LOGO_DATAURI =

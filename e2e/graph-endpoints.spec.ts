@@ -307,13 +307,27 @@ test("no file names a graph host in a literal, or a credential prefix at all", (
   // than in a spec, and a rule whose stated scope and actual scope disagree is
   // the same defect class the rule exists to catch.
   const files = walk(root, /\.(ts|tsx|mjs|js)$/);
-  const textFiles = walk(root, /\.(md|ya?ml|json|html)$/);
+  // Everything else that is text, by exclusion rather than by list. An
+  // allow-list of extensions is the same defect one level down: the previous
+  // version named md/yml/json/html and so walked past .css, .svg and every
+  // extensionless file (LICENSE, NOTICE, .gitignore). A credential does not
+  // care what suffix it lands under, so the walk stops guessing and takes
+  // everything that is not a known binary.
+  const textFiles = walk(root, /^(?!.*\.(png|jpg|jpeg|gif|webp|ico|woff2?|ttf|zip|pdf)$).*$/i).filter(
+    (f) => !/\.(ts|tsx|mjs|js)$/.test(f),
+  );
   const credFiles = [...files, ...textFiles];
 
   // CONTROL: the walk must actually reach the tree it is auditing, or an
   // empty result would read as a clean one.
   expect(files.length).toBeGreaterThan(30);
   expect(files).toContain(resolve(root, "src/shared/config.ts"));
+
+  // CONTROL for the by-exclusion walk: name one file per format that the
+  // previous allow-list walked past, so a future narrowing fails here.
+  for (const rel of ["src/shared/theme.css", "assets/icons/base.svg", "LICENSE", "NOTICE"]) {
+    expect(credFiles, `${rel} must be inside the credential walk`).toContain(resolve(root, rel));
+  }
 
   // CONTROL for the widened half, and it is NOT a count: a count drifts and
   // then gets lowered. These are the specific files that once went unscanned,

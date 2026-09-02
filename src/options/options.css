@@ -1,36 +1,29 @@
 /* SPDX-License-Identifier: MIT
    Copyright (c) 2026 viaGraph B.V. (Whisper Security)
-   Options layout on top of the shared theme tokens. */
+   Options layout on top of the shared theme. No colour is defined here;
+   every token comes from theme.css and flips with the reader's scheme. */
 
-body { font-size: 14px; line-height: 1.6; }
+body { font-size: 12.5px; line-height: 1.6; }
 
 main { max-width: 680px; margin: 0 auto; padding: 28px 20px 60px; }
 
-.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-.brand .w-logo { height: 26px; }
-.brand .product {
-  font-weight: 300;
-  font-size: 18px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--w-muted);
-}
+.brand { margin-bottom: 18px; }
 
-h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
-h3 { font-size: 13px; margin: 14px 0 4px; color: var(--w-muted); }
+h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; letter-spacing: 0.01em; }
+h3 { font-size: 12.5px; margin: 14px 0 4px; color: var(--w-muted); font-weight: 600; }
 
 .card {
   background: var(--w-card);
   border: 1px solid var(--w-line);
-  border-radius: 12px;
-  padding: 16px 18px;
-  margin-bottom: 14px;
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
 }
 .card p { margin: 0 0 10px; }
 
-code { background: var(--w-surface); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
+code { background: var(--w-elev); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
 
-.toggle { display: flex; gap: 10px; margin: 10px 0; cursor: pointer; }
+.toggle { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0; cursor: pointer; }
 .toggle.sub { margin-left: 26px; }
 .toggle input { margin-top: 3px; flex: none; accent-color: var(--w-accent); }
 
@@ -39,12 +32,12 @@ code { background: var(--w-surface); padding: 1px 5px; border-radius: 4px; font-
 
 textarea, input[type="password"] {
   width: 100%;
-  background: var(--w-surface);
+  background: var(--w-elev);
   color: var(--w-text);
-  border: 1px solid var(--w-line);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font: 13px/1.5 var(--w-mono);
+  border: 1px solid var(--w-line-strong);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: 12px/1.5 var(--w-mono);
 }
 input[type="password"] { width: auto; flex: 1; }
 
@@ -52,4 +45,4 @@ input[type="password"] { width: auto; flex: 1; }
 .fallback summary { color: var(--w-muted); cursor: pointer; font-size: 12px; }
 .fallback .row { margin-top: 8px; }
 
-.footer-note { color: var(--w-muted); font-size: 12px; text-align: center; }
+.footer-note { color: var(--w-muted); font-size: 11px; text-align: center; }

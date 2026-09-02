@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// All endpoints and tunables in one place. Four Whisper endpoints exist,
-// each with one narrow purpose; browsing hostnames go to exactly ONE of them:
+// All endpoints and tunables in one place. Five Whisper hosts exist, each
+// with one narrow purpose; browsing hostnames go to exactly ONE of them:
 //
 //   graph.whisper.online      the graph front door. Two arms on one host: the
 //                             safety check + enrichment (hostname only, keyed
@@ -11,7 +11,13 @@
 //                             plane (whisper.agents) for the fleet roster,
 //                             enrollment and egress, which is never called
 //                             without a key and never carries a hostname
-//   console.whisper.security  sign-in only (RFC 8628 device flow, no browsing data)
+//   console.whisper.online    the Whisper console. The ONE place this
+//                             extension ever SENDS a reader. Nothing is
+//                             fetched from it
+//   console.whisper.security  the sign-in origin, and nothing else. Two
+//                             unauthenticated device-flow endpoints are
+//                             fetched from it; no browsing data is sent and
+//                             no reader is ever navigated there by us
 //   get.whisper.online        detector corpus updates only (no browsing data)
 //   rdap.whisper.online       public endpoint-identity verification (IP literals only)
 //
@@ -43,9 +49,35 @@ export const CONTROL_QUERY_URL = "https://graph.whisper.online/api/query";
  * actually goes.
  */
 export const GRAPH_HOST = new URL(GRAPH_QUERY_URL).hostname;
-export const CONSOLE_URL = "https://console.whisper.security";
+
+/**
+ * The console, and the ONE address this extension ever sends a reader to.
+ * Every "open the console" affordance in the product resolves here.
+ *
+ * It is deliberately NOT the host the sign-in flow talks to, and the split
+ * is not cosmetic: measured against both hosts on 2026-09-01, the sign-in
+ * origin answers a signed-out visitor with HTTP 404 on every page, while
+ * this one answers 307 to the sign-in and returns the reader afterwards.
+ * Sending someone to the former is sending them to a dead end, so we do
+ * not.
+ */
+export const CONSOLE_URL = "https://console.whisper.online";
+
+/**
+ * The sign-in ORIGIN: where the RFC 8628 device-authorization endpoints
+ * actually live, and the only thing this constant is for. It is auth
+ * machinery, never a destination: nothing in the extension navigates here.
+ *
+ * They are not on CONSOLE_URL and cannot be moved there by us: CONSOLE_URL
+ * gates its whole /api surface behind a session, which a browserless device
+ * flow by definition does not have, and it answers 401 UNAUTHENTICATED
+ * accordingly (probed live, 2026-09-01). The device-flow endpoints exist
+ * only on this origin. Repointing this at CONSOLE_URL would silently break
+ * sign-in for everyone, so it stays, named for what it is.
+ */
+export const DEVICE_FLOW_ORIGIN = "https://console.whisper.security";
+
 export const CORPUS_URL = "https://get.whisper.online/guard/corpus.v1.json";
-export const CONSOLE_KEYS_URL = "https://console.whisper.security/settings";
 export const RDAP_BASE = "https://rdap.whisper.online";
 
 // The public assess contract, the same one the Whisper platform exposes.

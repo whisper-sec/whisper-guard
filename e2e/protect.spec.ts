@@ -27,7 +27,7 @@
 // the browser's own address may not silently fail with it.
 
 import { test, expect, type Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
@@ -282,6 +282,12 @@ test.describe("another extension owns the proxy setting", () => {
     await setKey(ext, MOCK_KEY);
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
+    // Wait for the verdict, as the other two cases do. Without it the panel is
+    // opened mid-flight and the capture this test publishes showed "UNKNOWN -
+    // no verdict yet" for a host the fixture seeds as clean, differently on
+    // every run. The conflict being captured is about ROUTING; the site
+    // verdict above it should be settled, not racing.
+    await waitForIcon(ext, tabId, ["benign"]);
     const popup = await openPopup(ext, tabId);
 
     await expect(popup.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
@@ -300,4 +306,55 @@ test.describe("another extension owns the proxy setting", () => {
     await popup.close();
     await page.close();
   });
+});
+
+// ------------------------------------------------- the ordering, statically
+
+/**
+ * The one failure in this control that no behavioural test can see.
+ *
+ * chrome.permissions.request only counts as user-gestured if it is reached
+ * synchronously from the click. Put ONE await in front of it - make protect()
+ * async, read a status first, look something up - and the browser drops the
+ * request: no dialog appears, the promise never settles, and the control
+ * waits out its 12s deadline and then reports, truthfully but uselessly, that
+ * it has no answer. Every test in this file still passes, because the e2e
+ * dists either pre-grant the permissions or refuse them outright, and a
+ * headless browser never shows the dialog either way. It fails only for real
+ * users, in a real Chrome, forever.
+ *
+ * So it is pinned where it can be seen: in the SHIPPED bundles, on both
+ * surfaces, because the control is one module mounted twice and a regression
+ * would reach both at once.
+ */
+test("the permission request is first on the gesture, in both shipped bundles", () => {
+  const dist = resolve(dirname(fileURLToPath(import.meta.url)), "../dist/chromium");
+  for (const file of ["popup.js", "dashboard.js"]) {
+    const src = readFileSync(join(dist, file), "utf8");
+    const at = src.indexOf("function protect()");
+    // CONTROL: a bundle without the control at all would satisfy every
+    // "does not contain an await" check below by containing nothing.
+    expect(at, `${file} does not ship the one control`).toBeGreaterThan(-1);
+
+    // Not async: an async function cannot help but be a suspension point for
+    // anything that awaits it, and the temptation to await inside is the
+    // whole risk.
+    expect(
+      src.slice(Math.max(0, at - 12), at),
+      `${file}: protect() must not be async - the request has to run on the gesture`,
+    ).not.toContain("async");
+
+    const body = src.slice(at, at + 4000);
+    const request = body.indexOf("chrome.permissions.request");
+    expect(request, `${file}: protect() must call chrome.permissions.request`).toBeGreaterThan(-1);
+    const firstAwait = body.indexOf("await");
+    // Either there is no await at all in the function, or the request comes
+    // first. Both are fine; an await in front of it is not.
+    if (firstAwait !== -1) {
+      expect(
+        request,
+        `${file}: an await runs before chrome.permissions.request; the browser will drop it as un-gestured`,
+      ).toBeLessThan(firstAwait);
+    }
+  }
 });

@@ -2,12 +2,20 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // Sign in with Whisper: the RFC 8628 device-authorization flow, the same
-// one the Whisper CLI uses against console.whisper.security:
+// one the Whisper CLI uses. It runs against DEVICE_FLOW_ORIGIN, which is
+// the sign-in origin and NOT the console this extension sends readers to:
+// these two endpoints are unauthenticated by design and live only there
+// (config.ts records the live probe behind that split).
 //
 //   POST /api/device/authorize  (no auth) -> device_code, user_code,
 //                                            verification_uri[_complete],
 //                                            interval, expires_in
 //   POST /api/device/token      (no auth) -> { status, api_key } (polled)
+//
+// The approval page the reader lands on is the one the SERVER names in
+// verification_uri; we open exactly what it hands us and never synthesise
+// a console URL of our own, because only the server knows where a given
+// code can be approved.
 //
 // The user never sees the string "API key": they approve in the console and
 // the key lands in storage.local. Neither the device_code nor the key is
@@ -15,7 +23,7 @@
 // storage.session so a sleeping worker resumes polling on wake.
 
 import {
-  CONSOLE_URL,
+  DEVICE_FLOW_ORIGIN,
   DEVICE_LIFETIME_DEFAULT_MS,
   DEVICE_POLL_DEFAULT_MS,
 } from "../shared/config";
@@ -54,7 +62,7 @@ export function deviceFlowState(): DeviceFlowState {
 }
 
 async function postJson(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const res = await fetch(`${CONSOLE_URL}${path}`, {
+  const res = await fetch(`${DEVICE_FLOW_ORIGIN}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify(body),

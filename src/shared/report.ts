@@ -36,17 +36,22 @@ export const CATEGORY_LABEL: Record<ReportCategory, string> = {
   unresolved: "Not yet classified",
 };
 
-/** One hue per category (dark surface), disjoint from the verdict scale. */
+/**
+ * One hue per category, disjoint from the verdict scale by construction.
+ * These are the DARK values and they are the fallback only: a canvas reads
+ * --w-cat-<name> off the document root (shared/theme.ts) so a chart follows
+ * the reader's colour scheme like everything else.
+ */
 export const CATEGORY_HEX: Record<ReportCategory, string> = {
-  search: "#2263bd",
-  ads: "#c026d3",
-  media: "#9061e8",
-  social: "#e0448c",
-  work: "#1a7fa8",
-  platform: "#9085e9",
-  cloud: "#1aa0d6",
-  cdn: "#4f97dc",
-  infrastructure: "#a1751f",
+  search: "#4f8fe0",
+  ads: "#c05fd0",
+  media: "#9d7bf0",
+  social: "#e0669c",
+  work: "#3fa2c8",
+  platform: "#8f8ff0",
+  cloud: "#35b4e0",
+  cdn: "#6aa8e8",
+  infrastructure: "#c49a3a",
   unresolved: "#9098a8",
 };
 

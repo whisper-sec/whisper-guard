@@ -38,7 +38,7 @@ test.beforeAll(async () => {
       indicator: "evil-known-guard-e2e.com",
       level: "CRITICAL",
       score: 16.9,
-      explanation: "listed in 5 threat feed(s)",
+      explanation: "listed in 1 threat feed(s)",
       sources: [{ feedId: "e2e-feed", firstSeen: "2026-07-01T00:00:00Z" }],
     },
   ]);
@@ -157,7 +157,15 @@ test("keyless: 'Go to the real site' navigates the tab to the brand", async () =
   const { page, tabId } = await visit(ext, "https://paypa1-secure-login.com/");
   await waitForIcon(ext, tabId, ["suspicious"]);
   const popup = await openPopup(ext, tabId);
-  await popup.locator("#btn-goto").click();
+  // The handler navigates the tab and then closes the panel it was clicked
+  // in (src/popup/popup.ts), so the post-click work Playwright does on that
+  // page races window.close() and rejects with "Target page has been
+  // closed". Wait for the close the click is SUPPOSED to cause instead of
+  // pretending the click is an ordinary one.
+  await Promise.all([
+    popup.waitForEvent("close"),
+    popup.locator("#btn-goto").click({ noWaitAfter: true }),
+  ]);
   await expect
     .poll(async () => page.url(), { timeout: 8000 })
     .toBe("https://paypal.com/");

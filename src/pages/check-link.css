@@ -1,70 +1,78 @@
 /* SPDX-License-Identifier: MIT
-   Copyright (c) 2026 viaGraph B.V. (Whisper Security) */
+   Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 
-* { box-sizing: border-box; }
+   The pre-click check window, on the shared theme. It used to carry its
+   own slate palette in literal hex, which made it the one surface a
+   colour-scheme change could not reach; nothing here defines a colour any
+   more, so it flips with theme.css like everything else. */
 
 body {
-  margin: 0;
-  background: #0b1220;
-  color: #e5e7eb;
-  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 0;
+  font: 13px/1.6 var(--w-font-sans);
 }
 
 main { padding: 22px 20px; }
 
-h1 { font-size: 16px; margin: 0 0 10px; }
+h1 { font-size: 15px; margin: 0 0 10px; font-weight: 600; letter-spacing: 0.01em; }
 
 .host {
-  font: 600 15px/1.4 ui-monospace, monospace;
+  font: 600 14px/1.4 var(--w-mono);
   word-break: break-all;
   margin-bottom: 14px;
-  color: var(--w-accent);
+  color: var(--w-text);
 }
 
 .card {
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 10px;
-  padding: 14px;
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
+  border-radius: 6px;
+  padding: 12px 14px;
   margin-bottom: 16px;
 }
 
 .row { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
 
+/* The band tag, same grammar as the shared chip: a small mono rectangle
+   whose colour never has to carry the state on its own, because the word
+   inside it says it too. */
 .tag {
   flex: none;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid #1f2937;
-  color: #9ca3af;
+  font: 500 10px/1.6 var(--w-mono);
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--w-line-strong);
+  color: var(--w-muted);
+  white-space: nowrap;
 }
-.tag.warn { color: #f59e0b; border-color: #f59e0b; }
-.tag.malicious { color: #fff; background: #dc2626; border-color: #dc2626; }
-.tag.suspicious { color: #f59e0b; border-color: #f59e0b; }
-.tag.benign { color: #10b981; border-color: #10b981; }
-.tag.unknown { color: #6b7280; border-style: dashed; }
+.tag.warn { color: var(--w-v-low); border-color: var(--w-v-low); }
+.tag.malicious { color: #fff; background: var(--w-v-crit); border-color: var(--w-v-crit); }
+.tag.suspicious { color: var(--w-v-low); border-color: var(--w-v-low); }
+.tag.benign { color: var(--w-ok); border-color: var(--w-ok); }
+.tag.unknown { color: var(--w-muted); border-style: dashed; }
 
-.note { color: #9ca3af; font-size: 12px; margin-top: 8px; }
+.note { color: var(--w-muted); font-size: 11px; margin-top: 8px; line-height: 1.5; }
 
-.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .btn {
-  display: inline-block;
-  background: #111827;
-  color: #e5e7eb;
-  border: 1px solid #1f2937;
-  border-radius: 8px;
-  padding: 8px 14px;
-  font: inherit;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  background: var(--w-elev);
+  color: var(--w-muted);
+  border: 1px solid var(--w-line-strong);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: 500 12.5px/1.4 var(--w-font-sans);
   cursor: pointer;
   text-decoration: none;
 }
-.btn:hover { border-color: #6b7280; }
-.btn.primary { background: var(--w-gradient); border-color: transparent; color: #fff; }
+.btn:hover { background: var(--w-hover); color: var(--w-text); }
+.btn.primary {
+  border-color: var(--w-accent-line);
+  background: var(--w-accent-soft);
+  color: var(--w-text);
+}
+.btn.primary:hover { border-color: var(--w-accent); background: color-mix(in srgb, var(--w-accent) 18%, transparent); }
 
-.privacy { font-size: 11px; color: #6b7280; margin-top: 20px; }
-
-[hidden] { display: none !important; }
+.privacy { font-size: 11px; color: var(--w-muted); margin-top: 20px; }

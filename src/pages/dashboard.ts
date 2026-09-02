@@ -16,9 +16,9 @@
 // empty states, and never shows a number it cannot back.
 
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
-import { EGRESS_REQUEST } from "../shared/config";
-import { IS_FIREFOX } from "../shared/engine";
-import type { EgressStatus, Enrollment, FleetEndpoint } from "../shared/types";
+import { addressNode, mountProtectControl, type ProtectControl } from "../shared/protect-control";
+import { CANVAS_MONO, CANVAS_SANS, categoryColor, chartInk, onThemeChange } from "../shared/theme";
+import type { EgressStatus, FleetEndpoint } from "../shared/types";
 import {
   CATEGORY_HEX,
   CATEGORY_LABEL,
@@ -136,24 +136,25 @@ function renderDonut(canvas: HTMLCanvasElement, legendEl: HTMLElement, hosts: Re
     ctx.arc(cx, cy, r, a, a + sweep);
     ctx.arc(cx, cy, r * 0.62, a + sweep, a, true);
     ctx.closePath();
-    ctx.fillStyle = CATEGORY_HEX[cat];
+    ctx.fillStyle = categoryColor(cat);
     ctx.fill();
     a += sweep;
   }
-  ctx.fillStyle = "#e8e8f2";
-  ctx.font = "300 26px system-ui";
+  const ink = chartInk();
+  ctx.fillStyle = ink.text;
+  ctx.font = `300 26px ${CANVAS_MONO}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(String(total), cx, cy - 6);
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.fillStyle = "#62627a";
+  ctx.font = `9px ${CANVAS_SANS}`;
+  ctx.fillStyle = ink.muted;
   ctx.fillText("DESTINATIONS", cx, cy + 14);
 
   legendEl.replaceChildren(
     ...cats.slice(0, 8).map(([cat, n]) => {
       const row = el("div", "legend-row");
       const dot = el("span", "w-dot");
-      dot.style.background = CATEGORY_HEX[cat];
+      dot.style.background = categoryColor(cat);
       row.append(dot, el("span", "name", CATEGORY_LABEL[cat]), el("span", "n", String(n)));
       return row;
     }),
@@ -297,7 +298,9 @@ function rosterCard(e: FleetEndpoint): HTMLElement {
   if (e.device) label.appendChild(el("span", "w-chip accent", "DEVICE"));
   const meta = el("div", "rc-meta");
   meta.appendChild(el("span", `w-chip ${e.state === "active" ? "ok" : "unknown"}`, e.state.toUpperCase()));
-  card.append(label, el("div", "rc-addr", e.address), meta);
+  const addr = el("div", "rc-addr");
+  addr.append(addressNode(e.address));
+  card.append(label, addr, meta);
   card.addEventListener("click", () => {
     void openEndpoint(e.agent);
   });
@@ -382,23 +385,32 @@ function drawGauge(canvas: HTMLCanvasElement, score: number, level: string): voi
   const r = Math.min(W, H) / 2 - 8;
   ctx.lineWidth = 10;
   ctx.lineCap = "round";
-  ctx.strokeStyle = "#16162a";
+  const ink = chartInk();
+  ctx.strokeStyle = ink.track;
   ctx.beginPath();
   ctx.arc(cx, cy, r, -Math.PI / 2, 1.5 * Math.PI);
   ctx.stroke();
-  const color = level === "strong" ? "#10b981" : level === "partial" ? "#f59e0b" : "#ef4444";
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = level === "strong" ? ink.ok : level === "partial" ? ink.warn : ink.crit;
   ctx.beginPath();
   ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (score / 100) * 2 * Math.PI);
   ctx.stroke();
-  ctx.fillStyle = "#e8e8f2";
-  ctx.font = "300 30px system-ui";
+  ctx.fillStyle = ink.text;
+  ctx.font = `300 30px ${CANVAS_MONO}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(String(score), cx, cy - 4);
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.fillStyle = "#62627a";
+  ctx.font = `9px ${CANVAS_SANS}`;
+  ctx.fillStyle = ink.muted;
   ctx.fillText("OF 100", cx, cy + 16);
+}
+
+/** Trim `text` to the widest ellipsised form that fits `maxWidth` px. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let out = text;
+  while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) out = out.slice(0, -1);
+  return `${out}…`;
 }
 
 function drawConstellation(canvas: HTMLCanvasElement, d: EndpointDetail): void {
@@ -407,24 +419,25 @@ function drawConstellation(canvas: HTMLCanvasElement, d: EndpointDetail): void {
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  ctx.font = "10px ui-monospace, monospace";
+  ctx.font = `10px ${CANVAS_MONO}`;
+  const ink = chartInk();
 
   const top = d.topHosts.slice(0, 9);
   const cx = 80;
   const cy = H / 2;
 
   // The device node.
-  ctx.fillStyle = "#8a5cc7";
+  ctx.fillStyle = ink.accent;
   ctx.beginPath();
   ctx.arc(cx, cy, 9, 0, 2 * Math.PI);
   ctx.fill();
-  ctx.fillStyle = "#e8e8f2";
+  ctx.fillStyle = ink.text;
   ctx.textAlign = "center";
   const label = d.endpoint.label.length > 18 ? `${d.endpoint.label.slice(0, 17)}…` : d.endpoint.label;
   ctx.fillText(label, cx, cy - 16);
 
   if (top.length === 0) {
-    ctx.fillStyle = "#62627a";
+    ctx.fillStyle = ink.muted;
     ctx.fillText("no destinations in the last 24h", W / 2, cy);
     return;
   }
@@ -434,39 +447,41 @@ function drawConstellation(canvas: HTMLCanvasElement, d: EndpointDetail): void {
     const hx = W * 0.42;
     const flagged = isFlagged(h.verdict);
     // Edge device -> hostname.
-    ctx.strokeStyle = flagged ? "rgba(239,68,68,0.7)" : "#2a2a44";
+    ctx.strokeStyle = flagged ? ink.crit : ink.line;
     ctx.lineWidth = flagged ? 1.6 : 1;
     ctx.beginPath();
     ctx.moveTo(cx + 9, cy);
     ctx.lineTo(hx - 6, y);
     ctx.stroke();
     // Hostname node.
-    ctx.fillStyle = flagged ? "#ef4444" : CATEGORY_HEX[h.category];
+    ctx.fillStyle = flagged ? ink.crit : categoryColor(h.category);
     ctx.beginPath();
     ctx.arc(hx, y, 4.5, 0, 2 * Math.PI);
     ctx.fill();
-    ctx.fillStyle = flagged ? "#ef4444" : "#9a9ab0";
+    ctx.fillStyle = flagged ? ink.crit : ink.muted;
     ctx.textAlign = "left";
-    const hostLabel = h.host.length > 30 ? `${h.host.slice(0, 29)}…` : h.host;
-    ctx.fillText(hostLabel, hx + 9, y + 3);
+    ctx.fillText(fitText(ctx, h.host, W * 0.72 - 6 - (hx + 9)), hx + 9, y + 3);
 
     // Hostname -> network/owner chain, when resolved.
     const net = h.asn ?? h.prefix;
     if (net) {
       const nx = W * 0.72;
-      ctx.strokeStyle = "#2a2a44";
+      ctx.strokeStyle = ink.line;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(hx + 6, y);
       ctx.lineTo(nx - 6, y);
       ctx.stroke();
-      ctx.fillStyle = "#62627a";
+      ctx.fillStyle = ink.muted;
       ctx.beginPath();
       ctx.arc(nx, y, 3.5, 0, 2 * Math.PI);
       ctx.fill();
+      // Clipped to what actually fits: the label used to be cut at a
+      // fixed 30 characters and ran off the canvas' right edge, which is
+      // only visible by looking at the drawing.
       const ownerLabel = `${net} ${shortOwner(h.owner)}`;
-      ctx.fillStyle = "#62627a";
-      ctx.fillText(ownerLabel.length > 30 ? `${ownerLabel.slice(0, 29)}…` : ownerLabel, nx + 8, y + 3);
+      ctx.fillStyle = ink.muted;
+      ctx.fillText(fitText(ctx, ownerLabel, W - (nx + 8) - 6), nx + 8, y + 3);
     }
   });
 }
@@ -541,7 +556,7 @@ async function refreshEndpoint(agent: string): Promise<void> {
   const d = res.endpoint;
   endpointHosts = d.topHosts;
 
-  $("e-address").textContent = d.endpoint.address;
+  $("e-address").replaceChildren(addressNode(d.endpoint.address));
   const state = $("e-state");
   state.textContent = d.endpoint.state.toUpperCase();
   state.className = `w-chip ${d.endpoint.state === "active" ? "ok" : "unknown"}`;
@@ -880,213 +895,68 @@ async function revokeClick(): Promise<void> {
 }
 
 // -------------------------------------------------- identity + egress
+//
+// ONE control, mounted from shared/protect-control.ts - the same module,
+// the same markup and the same words the panel offers. The dashboard used
+// to carry its own two-step version of this (an "Enroll this browser"
+// button plus a separate routing toggle), which is the idiom the panel
+// replaced: one thing to do, two places to do it, and two vocabularies
+// for it. Nothing here re-implements the control; it only adds the one
+// affordance that belongs to this surface (the browser is a fleet endpoint
+// like any other, so its policy and revoke live one click away in the
+// endpoint view) and keeps the topbar chip in step.
 
-// The last status the page saw: lets the toggle click decide its direction
-// SYNCHRONOUSLY, so chrome.permissions.request rides the user gesture with
-// no message round-trip in front of it (a round-trip can outlive the
-// gesture and the request then fails as "not granted" without a prompt).
-let lastEgress: EgressStatus | null = null;
+let protectControl: ProtectControl | null = null;
+
+function governAction(s: EgressStatus): HTMLElement[] {
+  const agent = s.agent;
+  if (!agent || !s.enrolled) return [];
+  const govern = el("button", "w-btn small", "Govern this browser") as HTMLButtonElement;
+  govern.type = "button";
+  govern.addEventListener("click", () => {
+    void openEndpoint(agent);
+  });
+  return [govern];
+}
 
 async function refreshEgress(): Promise<void> {
-  const res = await send<{ ok: true; egress: EgressStatus }>({ kind: "egressStatus" });
-  if (!res.ok) return;
-  lastEgress = res.egress;
-  renderIdentity(res.egress);
-  renderEgress(res.egress);
-  await refreshIdentityChip(res.egress);
-}
-
-/** ENROLL: the identity half. Works signed-in, no permission, no proxy. */
-function renderIdentity(s: EgressStatus): void {
-  const btn = $<HTMLButtonElement>("enroll-btn");
-  const detail = $("identity-detail");
-  detail.replaceChildren();
-  if (s.enrolled && s.address) {
-    btn.hidden = true;
-    const line = el("div");
-    line.append(
-      el("span", "w-chip ok", "ENROLLED"),
-      document.createTextNode(" This browser's identity: "),
-      el("span", "w-ip", s.address),
-    );
-    detail.append(line);
-    if (s.fqdn) {
-      const nameLine = el("div", "w-note");
-      nameLine.append(document.createTextNode("Reverse-DNS: "), el("span", "w-mono", s.fqdn));
-      detail.append(nameLine);
-    }
-    if (s.rdapUrl) {
-      const proof = el("div", "w-note");
-      const a = el("a", undefined, "RDAP registration (anyone can verify this address)") as HTMLAnchorElement;
-      a.href = s.rdapUrl;
-      a.target = "_blank";
-      a.rel = "noopener";
-      proof.append(a);
-      detail.append(proof);
-    }
-    const agent = s.agent;
-    if (agent) {
-      // The governor is one click away: this browser is a fleet endpoint
-      // like any other, so its policy and revoke live in the endpoint view.
-      const govern = el("button", "w-btn small", "Govern this browser") as HTMLButtonElement;
-      govern.addEventListener("click", () => {
-        void openEndpoint(agent);
-      });
-      detail.append(govern);
-    }
-  } else {
-    btn.hidden = false;
-  }
-}
-
-async function enrollClick(): Promise<void> {
-  const btn = $<HTMLButtonElement>("enroll-btn");
-  btn.disabled = true;
-  btn.textContent = "Enrolling...";
-  const detail = $("identity-detail");
-  // Honest pending state: register + /128 allocation is a real control-plane
-  // round-trip that legitimately takes a few seconds; say so instead of
-  // looking hung.
-  detail.replaceChildren(
-    el("div", "w-note", "Reserving this browser's identity on the Whisper network. This can take a few seconds..."),
-  );
-  const res = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({
-    kind: "enroll",
+  protectControl ??= mountProtectControl({
+    root: $("identity-control"),
+    extraActions: governAction,
+    onStatus: (s, verified) => {
+      renderIdentityChip(s, verified);
+    },
   });
-  btn.disabled = false;
-  btn.textContent = "Enroll this browser";
-  if (!res.ok) {
-    detail.replaceChildren(el("div", "w-note", `⚠ ${res.error}`));
-    return;
-  }
-  await refreshEgress();
+  await protectControl.refresh();
 }
 
-/** PROTECT: the routing half, honest about everything in its way. */
-function renderEgress(s: EgressStatus): void {
-  const btn = $<HTMLButtonElement>("egress-toggle");
-  const detail = $("egress-detail");
-  btn.textContent = s.on ? "Turn off" : "Turn on";
-  btn.className = s.on ? "w-btn" : "w-btn primary";
-  detail.replaceChildren();
-  if (s.on && s.address) {
-    const line = el("div");
-    line.append(
-      el("span", "w-chip ok", "ROUTED"),
-      document.createTextNode(" This browser egresses as "),
-      el("span", "w-ip", s.address),
-    );
-    detail.append(line);
-    detail.append(
-      el(
-        "div",
-        "w-note",
-        "Profile-global: every profile window rides this route. WebRTC is hardened to proxied-only on Chromium.",
-      ),
-    );
-  } else if (s.controlledByOther) {
-    // Never a dead end: name the situation, keep what works, point at the fix.
-    detail.append(
-      el(
-        "div",
-        "w-note",
-        "Another extension (a VPN or proxy manager) holds this browser's proxy setting, so routing cannot engage. " +
-          "Your identity and site verdicts keep working. Disable that extension's proxy control, then try again.",
-      ),
-    );
-    if (!IS_FIREFOX) {
-      const open = el("button", "w-btn small", "Open the extensions page") as HTMLButtonElement;
-      open.addEventListener("click", () => {
-        chrome.tabs.create({ url: "chrome://extensions" }).catch(() => undefined);
-      });
-      detail.append(open);
-    }
-  }
-  if (s.error && !(s.controlledByOther && !s.on)) detail.append(el("div", "w-note", `⚠ ${s.error}`));
-}
-
-function toggleEgress(): void {
-  const btn = $<HTMLButtonElement>("egress-toggle");
-  const wasOn = lastEgress?.on === true;
-
-  const finish = async (p: Promise<void>): Promise<void> => {
-    try {
-      await p;
-    } finally {
-      btn.disabled = false;
-      await refreshEgress();
-    }
-  };
-
-  btn.disabled = true;
-  if (wasOn) {
-    void finish(send({ kind: "egressDisable" }).then(() => undefined));
-    return;
-  }
-
-  // The permission request is the FIRST thing on this gesture: no awaits in
-  // front of it. The per-engine set is a build-time constant (config.ts):
-  // `proxy` is REQUIRED on Chromium (Chrome forbids it as optional and throws
-  // on request), so it is never in the requested set there; Firefox requests
-  // it at runtime.
-  const set = IS_FIREFOX ? EGRESS_REQUEST.firefox : EGRESS_REQUEST.chromium;
-  const want: chrome.permissions.Permissions = {
-    permissions: [...set.permissions],
-    origins: [...set.origins],
-  };
-  let request: Promise<boolean>;
-  try {
-    request = Promise.resolve(chrome.permissions.request(want));
-  } catch {
-    request = Promise.resolve(false);
-  }
-  void finish(
-    request
-      .catch(() => false)
-      .then(async (granted) => {
-        if (!granted) {
-          $("egress-detail").replaceChildren(
-            el(
-              "div",
-              "w-note",
-              "⚠ the browser did not grant the proxy permission, so routing stayed off. " +
-                "Your identity and verdicts keep working; try again to grant it.",
-            ),
-          );
-          return;
-        }
-        await send({ kind: "egressEnable" });
-      }),
-  );
-}
-
-async function refreshIdentityChip(s: EgressStatus): Promise<void> {
+/**
+ * The topbar chip: the same identity fact the control states, said once
+ * more where a reader who has scrolled away can still see it. It reads
+ * from the control's own status rather than making its own RDAP call, so
+ * the two can never disagree about what this browser is.
+ */
+function renderIdentityChip(s: EgressStatus, verified: boolean | null): void {
   const chip = $("identity-chip");
   if (!s.enrolled || !s.address) {
     chip.className = "w-chip unknown";
     chip.textContent = "NOT ON THE WHISPER NETWORK";
-    chip.title = "Enroll this browser below to give it its own verifiable Whisper identity.";
+    chip.title = "Protect this browser below to give it its own verifiable Whisper identity.";
     return;
   }
-  chip.className = "w-chip accent";
-  chip.textContent = "VERIFYING…";
-  const res = await send<{ ok: true; verification: { isWhisperAgent: boolean; fqdn: string | null } | null }>({
-    kind: "verifyIdentity",
-    ip: s.address,
-  });
   const routed = s.on ? "routed through it" : "identity reserved; routing off";
-  if (res.ok && res.verification?.isWhisperAgent) {
+  if (verified === true) {
     chip.className = "w-chip ok";
     chip.textContent = "VERIFIED WHISPER ENDPOINT";
-    chip.title = `${res.verification.fqdn ?? s.address} (${routed})`;
-  } else if (res.ok && res.verification) {
+    chip.title = `${s.fqdn ?? s.address} (${routed})`;
+  } else if (verified === false) {
     chip.className = "w-chip unknown";
     chip.textContent = "IDENTITY NOT VERIFIED";
     chip.title = `${s.address} (${routed})`;
   } else {
-    chip.className = "w-chip unknown";
-    chip.textContent = "COULD NOT VERIFY";
-    chip.title = "rdap.whisper.online unreachable";
+    chip.className = "w-chip accent";
+    chip.textContent = "VERIFYING…";
+    chip.title = `${s.address} (${routed})`;
   }
 }
 
@@ -1155,10 +1025,6 @@ function init(): void {
   $("tab-browser").addEventListener("click", () => switchView("browser"));
   $("tab-fleet").addEventListener("click", () => switchView("fleet"));
   $("tab-endpoint").addEventListener("click", () => switchView("endpoint"));
-  $("egress-toggle").addEventListener("click", toggleEgress);
-  $("enroll-btn").addEventListener("click", () => {
-    void enrollClick();
-  });
   $("fleet-signin").addEventListener("click", () => {
     void startSignIn("fleet-device-status");
   });
@@ -1208,6 +1074,13 @@ function init(): void {
   }, 15_000);
   void fleetTimer;
   void endpointHosts;
+
+  // A <canvas> keeps whatever ink it was drawn with, so a colour-scheme
+  // flip has to redraw it: without this the donut, gauge and constellation
+  // would sit in the old palette until the next poll.
+  onThemeChange(() => {
+    switchView(view);
+  });
 
   const hash = window.location.hash.replace("#", "");
   switchView(hash === "fleet" || hash === "endpoint" ? (hash as ViewName) : "browser");

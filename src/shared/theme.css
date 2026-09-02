@@ -1,62 +1,145 @@
 /* SPDX-License-Identifier: MIT
    Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 
-   The one Whisper Guard theme: the console's dark violet system, mirrored
-   natively (tokens + primitives only; each surface keeps its own layout).
+   The one Whisper Guard theme, shared by every surface: the panel, the
+   dashboard, settings, first-run, the pre-click check window and the
+   full-page warning. Tokens and primitives only; each surface keeps its
+   own layout.
+
+   It is the EDR console's design system, in the browser. The tokens, the
+   type scale, the spacing rhythm and the component grammar below are the
+   console's, so a reader moving between console.whisper.online and this
+   extension is moving inside one product rather than between two.
 
    Rules the tokens encode:
-   - The verdict scale (none/low/medium/high/critical + ok) is RESERVED for
-     safety meaning and disjoint from the category palette, so a category hue
-     can never impersonate a verdict.
-   - Numbers, IPs and hostnames render in mono with tabular numerals.
-   - Big stats are light-weight; labels are tiny uppercase mono.
-   - Motion is transform/opacity only and yields to prefers-reduced-motion. */
+
+   - BOTH THEMES, EVERY SURFACE. The palette is defined dark-first on
+     :root and flipped whole under prefers-color-scheme: light. Nothing
+     hard-codes a colour outside this file, so a surface cannot be
+     dark-only by accident.
+   - --w-faint NEVER CARRIES MEANING. It is the console's ink-mute and it
+     measures 2.4:1 to 3.2:1 on our surfaces in both themes, below the
+     4.5:1 floor everywhere. Labels, marks and decoration only; a sentence
+     a reader is meant to read is --w-muted (5.6:1 and up) or --w-text.
+   - STATUS HUES COLOUR THE DOT, NOT THE WORDS. --w-ok in the light theme
+     peaks around 4.3:1, so no sentence depends on a status colour; a dot
+     or a border is a non-text indicator and clears its 3:1 easily. Every
+     coloured state also carries a word.
+   - THE VERDICT SCALE IS RESERVED for safety meaning and disjoint from
+     the category palette, so a category hue can never impersonate a
+     verdict.
+   - MONO FOR EVERYTHING MEASURED: numbers, addresses, hostnames, with
+     tabular numerals.
+   - MOTION is transform/opacity only and yields to prefers-reduced-motion. */
 
 :root {
-  /* Surfaces, darkest to raised. */
-  --w-bg: #010103;
-  --w-surface: #06060c;
-  --w-card: #0d0d1a;
-  --w-elev: #16162a;
-  --w-line: #1e1e33;
-  --w-line-strong: #2a2a44;
+  color-scheme: dark;
 
-  /* Ink. */
-  --w-text: #e8e8f2;
-  --w-muted: #9a9ab0;
-  --w-faint: #62627a;
+  /* Surfaces, page ground to raised. */
+  --w-bg: #0a0a10;
+  --w-surface: #0e0e15;
+  --w-card: #12121a;
+  --w-elev: #171721;
+  --w-hover: #1b1b26;
 
-  /* The single accent: Whisper violet (+ the wordmark gradient). */
-  --w-accent: #8a5cc7;
-  --w-accent-soft: rgba(138, 92, 199, 0.16);
-  --w-accent-line: rgba(138, 92, 199, 0.45);
-  --w-gradient: linear-gradient(135deg, #5b67d8 0%, #9d5fd0 100%);
+  --w-line: #1e1e2a;
+  --w-line-strong: #2c2c3c;
+
+  /* Ink. --w-faint is decoration only; see the rule above. */
+  --w-text: #ececf1;
+  --w-muted: #9a9aae;
+  --w-faint: #5e5e72;
+
+  /* The single accent. --w-accent-line is the focus ring and every
+     accent border: it is tuned to clear 3:1 as a non-text indicator on
+     every surface in both themes. */
+  --w-accent: #6ea8ff;
+  --w-accent-line: #3d6db8;
+  --w-accent-soft: color-mix(in srgb, var(--w-accent) 12%, transparent);
 
   /* Verdict scale - RESERVED for safety meaning only. */
-  --w-ok: #10b981;
-  --w-v-none: #555566;
-  --w-v-info: #6366f1;
-  --w-v-low: #f59e0b;
-  --w-v-med: #f97316;
-  --w-v-high: #ef4444;
-  --w-v-crit: #dc2626;
+  --w-ok: #34d399;
+  --w-v-none: #5e5e72;
+  --w-v-info: #6ea8ff;
+  --w-v-low: #fbbf24;
+  --w-v-med: #fb923c;
+  --w-v-high: #f87171;
+  /* The filled malicious plate. A fill carries white text, so it is a
+     darker red than the outline hue above, which is drawn AS text. */
+  --w-v-crit: #b8202a;
 
   /* Category palette (one hue per category, disjoint from the verdict
      scale by construction; grey = exactly one meaning: not yet classified). */
-  --w-cat-search: #2263bd;
-  --w-cat-ads: #c026d3;
-  --w-cat-media: #9061e8;
-  --w-cat-social: #e0448c;
-  --w-cat-work: #1a7fa8;
-  --w-cat-platform: #9085e9;
-  --w-cat-cloud: #1aa0d6;
-  --w-cat-cdn: #4f97dc;
-  --w-cat-infrastructure: #a1751f;
+  --w-cat-search: #4f8fe0;
+  --w-cat-ads: #c05fd0;
+  --w-cat-media: #9d7bf0;
+  --w-cat-social: #e0669c;
+  --w-cat-work: #3fa2c8;
+  --w-cat-platform: #8f8ff0;
+  --w-cat-cloud: #35b4e0;
+  --w-cat-cdn: #6aa8e8;
+  --w-cat-infrastructure: #c49a3a;
   --w-cat-unresolved: #9098a8;
 
-  /* Type. */
-  --w-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Type. The console's stack. */
+  --w-font: var(--w-font-sans);
+  --w-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --w-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* ------------------------------------------------------------ daylight
+
+   The same instrument in daylight: identical geometry, neutrals flipped
+   around white cards on a cool grey field, status hues darkened just
+   enough to keep their contrast on white. A red that reads as red on
+   black is pink on white, and a verdict must not soften with the lights. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --w-bg: #f2f3f7;
+    --w-surface: #f9fafc;
+    --w-card: #ffffff;
+    --w-elev: #eceef4;
+    --w-hover: #e7eaf1;
+
+    --w-line: #dfe2ea;
+    --w-line-strong: #c5cad8;
+
+    --w-text: #1a1c26;
+    --w-muted: #565b6f;
+    --w-faint: #9096a8;
+
+    --w-accent: #3563b8;
+    --w-accent-line: #487bce;
+    --w-accent-soft: color-mix(in srgb, var(--w-accent) 9%, transparent);
+
+    /* The console's daylight status hues, each darkened just enough to
+       clear 4.5:1 on --w-elev (#eceef4), the lowest-contrast ground a chip
+       sits on here. The console's own audit records that these peak around
+       4.35:1 and so never carries a sentence in them; Guard draws short
+       status WORDS in them (a chip is a word plus a colour, never a colour
+       alone), so it pays the few points to clear the text floor outright.
+       Measured, not assumed: ok 4.79, low 4.80, med 4.83, high 4.71. */
+    --w-ok: #0c7753;
+    --w-v-none: #9096a8;
+    --w-v-info: #3563b8;
+    --w-v-low: #8b6004;
+    --w-v-med: #aa4c0c;
+    --w-v-high: #c53030;
+    --w-v-crit: #b02525;
+
+    --w-cat-search: #2d63ae;
+    --w-cat-ads: #96308f;
+    --w-cat-media: #6b46c1;
+    --w-cat-social: #b4266b;
+    --w-cat-work: #146b8a;
+    --w-cat-platform: #5b52c4;
+    --w-cat-cloud: #1a7ba6;
+    --w-cat-cdn: #35699f;
+    --w-cat-infrastructure: #8a6410;
+    --w-cat-unresolved: #6b7280;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -65,23 +148,29 @@ body {
   margin: 0;
   background: var(--w-bg);
   color: var(--w-text);
-  font: 13px/1.55 var(--w-font);
+  font: 12.5px/1.55 var(--w-font-sans);
 }
 
-/* ---------------------------------------------------------- primitives */
+/* ---------------------------------------------------------------- type
 
-.w-card {
-  background: var(--w-card);
-  border: 1px solid var(--w-line);
-  border-radius: 10px;
-  padding: 14px;
-}
+   The console's codified scale, and nothing between the steps:
+     9.5  eyebrow / tile label (uppercase, letterspaced)
+     10.5 metadata (mono)
+     11   caption
+     12   mono rows, addresses
+     12.5 body, card titles
+     13   emphasis, mono readouts
+     15   page title
+     26   the one hero number per surface (mono, light) */
+
+.w-h1 { font: 600 15px/1.35 var(--w-font-sans); letter-spacing: 0.01em; color: var(--w-text); }
+.w-h2 { font: 600 12.5px/1.4 var(--w-font-sans); color: var(--w-text); }
 
 .w-label {
-  font: 600 10px/1.4 var(--w-mono);
-  letter-spacing: 0.08em;
+  font: 600 9.5px/1.4 var(--w-font-sans);
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--w-faint);
+  color: var(--w-muted);
 }
 
 .w-mono, .w-num, .w-host, .w-ip {
@@ -89,109 +178,206 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* An address reads as a Whisper address: the /32 everyone shares recedes,
+   the part that is only this endpoint's stays in full ink. The console
+   draws every /128 this way. */
+.w-addr-prefix { color: var(--w-muted); }
+
 .w-stat {
-  font: 300 28px/1.1 var(--w-font);
+  font: 300 26px/1 var(--w-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+  color: var(--w-text);
+}
+
+.w-note { color: var(--w-muted); font-size: 11px; line-height: 1.5; }
+.w-privacy { color: var(--w-muted); font-size: 11px; line-height: 1.45; }
+
+/* -------------------------------------------------------- the lockup
+
+   The knot plus ink wordmark, which survives BOTH themes. The shipped
+   wordmark PNG is white-only and vanishes on a light ground, so the
+   product name is text here and only the mark is an image. */
+
+.w-lockup { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.w-knot { width: 20px; height: 20px; flex: none; display: block; user-select: none; }
+.w-wordmark { font: 600 13.5px/1 var(--w-font-sans); letter-spacing: -0.01em; color: var(--w-text); }
+.w-product {
+  font: 500 9px/1 var(--w-font-sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+/* ---------------------------------------------------------- primitives
+
+   Spacing rhythm, applied everywhere: card body 12px 14px, card header
+   10px 14px with a hairline under it, stacked cards 12px apart, chip
+   padding 1px 6px. Nothing between those steps. */
+
+.w-card {
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
+  border-radius: 6px;
+  padding: 12px 14px;
 }
 
 .w-tile {
   background: var(--w-card);
   border: 1px solid var(--w-line);
-  border-radius: 10px;
-  padding: 12px 14px;
+  border-radius: 6px;
+  padding: 10px 14px;
   min-width: 0;
 }
 .w-tile .w-label { margin-bottom: 6px; }
 .w-tile.flagged-hot { border-color: var(--w-v-high); }
 .w-tile.flagged-hot .w-stat { color: var(--w-v-high); }
 
+/* A chip is a small mono rectangle, never a pill: the console's grammar.
+   Every coloured chip also says a word, so colour is never the only
+   carrier of the state. */
 .w-chip {
   display: inline-block;
-  font: 700 10px/1.6 var(--w-mono);
+  font: 500 10px/1.6 var(--w-mono);
   letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: 1px 6px;
+  border-radius: 4px;
   border: 1px solid var(--w-line-strong);
-  background: var(--w-elev);
+  background: transparent;
   color: var(--w-muted);
   white-space: nowrap;
 }
-.w-chip.ok    { color: var(--w-ok); border-color: var(--w-ok); background: transparent; }
+.w-chip.ok    { color: var(--w-ok); border-color: var(--w-ok); }
 .w-chip.none  { color: var(--w-muted); }
-.w-chip.low   { color: var(--w-v-low); border-color: var(--w-v-low); background: transparent; }
-.w-chip.med   { color: var(--w-v-med); border-color: var(--w-v-med); background: transparent; }
-.w-chip.high  { color: var(--w-v-high); border-color: var(--w-v-high); background: transparent; }
+.w-chip.low   { color: var(--w-v-low); border-color: var(--w-v-low); }
+.w-chip.med   { color: var(--w-v-med); border-color: var(--w-v-med); }
+.w-chip.high  { color: var(--w-v-high); border-color: var(--w-v-high); }
 .w-chip.crit  { color: #fff; border-color: var(--w-v-crit); background: var(--w-v-crit); }
-.w-chip.unknown { border-style: dashed; color: var(--w-faint); background: transparent; }
+.w-chip.unknown { border-style: dashed; color: var(--w-muted); }
 .w-chip.accent { color: var(--w-accent); border-color: var(--w-accent-line); background: var(--w-accent-soft); }
 
+/* Button grammar, three tones, straight from the console: the
+   recommended action carries an accent border and an accent wash with
+   ink-strength text, never a filled slab. */
 .w-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--w-elev);
-  color: var(--w-text);
+  color: var(--w-muted);
   border: 1px solid var(--w-line-strong);
-  border-radius: 8px;
-  padding: 7px 12px;
-  font: inherit;
-  font-weight: 600;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: 500 12.5px/1.4 var(--w-font-sans);
   cursor: pointer;
   text-decoration: none;
   text-align: center;
+  transition: color 0.12s, border-color 0.12s, background-color 0.12s;
 }
-.w-btn:hover { border-color: var(--w-accent-line); }
+.w-btn:hover:not([disabled]) { background: var(--w-hover); color: var(--w-text); }
 .w-btn.primary {
-  background: var(--w-gradient);
-  border-color: transparent;
-  color: #fff;
+  border-color: var(--w-accent-line);
+  background: var(--w-accent-soft);
+  color: var(--w-text);
 }
-.w-btn.primary:hover { filter: brightness(1.08); }
-.w-btn.small { padding: 5px 10px; font-size: 12px; font-weight: 500; }
-.w-btn.danger { color: var(--w-v-high); border-color: rgba(239, 68, 68, 0.45); }
+.w-btn.primary:hover:not([disabled]) {
+  border-color: var(--w-accent);
+  background: color-mix(in srgb, var(--w-accent) 18%, transparent);
+}
+.w-btn.small { padding: 4px 10px; font-size: 11.5px; }
+.w-btn.large { padding: 8px 16px; font-size: 13px; }
+.w-btn.danger { color: var(--w-v-high); border-color: var(--w-v-high); }
 .w-btn.danger:hover:not([disabled]) { background: var(--w-v-crit); border-color: var(--w-v-crit); color: #fff; }
-.w-btn[disabled] { opacity: 0.5; cursor: default; }
+.w-btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* One designed focus ring, never the UA default, never omitted.
+   --w-accent-line clears 3:1 as a non-text indicator on every surface in
+   both themes. Text inputs restyle their own border instead. */
+:focus-visible:not(input):not(textarea):not(select) {
+  outline: 2px solid var(--w-accent-line);
+  outline-offset: 2px;
+}
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+  border-color: var(--w-accent-line);
+}
+
+/* A key/value fact row: label left in ink-dim, value right in mono.
+   The console draws every measured fact this way. */
+.w-kv { display: flex; gap: 10px; align-items: baseline; font-size: 12px; min-width: 0; }
+.w-kv .k { flex: 0 0 5.5em; color: var(--w-muted); }
+.w-kv .v { color: var(--w-text); min-width: 0; word-break: break-word; }
 
 /* Horizontal tally bar (by company / country / network). */
 .w-bar-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; min-width: 0; }
 .w-bar-name { flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.w-bar-track { flex: 1; height: 8px; border-radius: 4px; background: var(--w-elev); overflow: hidden; }
-.w-bar-fill { height: 100%; border-radius: 4px; background: var(--w-accent); transition: width 0.4s ease; }
-.w-bar-count { flex: 0 0 3.5em; text-align: right; color: var(--w-muted); font-family: var(--w-mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+.w-bar-track { flex: 1; height: 6px; border-radius: 3px; background: var(--w-elev); overflow: hidden; }
+.w-bar-fill { height: 100%; border-radius: 3px; background: var(--w-accent); transition: width 0.4s ease; }
+.w-bar-count { flex: 0 0 3.5em; text-align: right; color: var(--w-muted); font-family: var(--w-mono); font-variant-numeric: tabular-nums; font-size: 11px; }
 
 /* Ledger rows. */
 .w-ledger { display: flex; flex-direction: column; }
 .w-ledger-row {
   display: flex; gap: 10px; align-items: baseline;
-  padding: 5px 6px; border-radius: 6px; min-width: 0;
-  border-bottom: 1px solid var(--w-surface);
+  padding: 5px 6px; border-radius: 4px; min-width: 0;
+  border-bottom: 1px solid var(--w-line);
 }
-.w-ledger-row:hover { background: var(--w-elev); }
+.w-ledger-row:last-child { border-bottom: none; }
+.w-ledger-row:hover { background: var(--w-hover); }
 .w-ledger-row.fresh { animation: w-fresh 1.2s ease-out; }
 @keyframes w-fresh {
   from { background: var(--w-accent-soft); }
   to { background: transparent; }
 }
 
-.w-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+.w-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: none; align-self: center; }
 
 /* Live/polling/offline feed status. */
-.w-live { display: inline-flex; align-items: center; gap: 6px; font: 500 11px/1 var(--w-mono); color: var(--w-muted); }
-.w-live .w-dot { width: 7px; height: 7px; }
-.w-live.live .w-dot { background: var(--w-ok); animation: w-pulse 2s ease-in-out infinite; }
+.w-live { display: inline-flex; align-items: center; gap: 6px; font: 500 10.5px/1 var(--w-mono); color: var(--w-muted); }
+.w-live.live .w-dot { background: var(--w-ok); animation: w-pulse 3s ease-in-out infinite; }
 .w-live.polling .w-dot { background: var(--w-v-low); }
-.w-live.offline .w-dot { background: var(--w-faint); }
+.w-live.offline .w-dot { border: 1px solid var(--w-line-strong); }
 @keyframes w-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
 
-.w-note { color: var(--w-muted); font-size: 12px; }
-.w-privacy { color: var(--w-faint); font-size: 11px; }
+/* --------------------------------------------- the ONE protect control
 
-.w-logo { height: 22px; width: auto; display: block; }
+   The layout of shared/protect-control.ts, which the panel and the
+   dashboard both mount. It lives here, with the control, because the
+   whole point of the module is that there is one of it. */
+
+.pc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+
+/* One status line: the dot carries the routing state, the sentence says
+   what that means and what is in the way when it is off. Colour never
+   carries the state alone - the lead word always says it too. */
+.pc-route { display: flex; gap: 8px; margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
+.pc-route .w-dot { align-self: flex-start; margin-top: 5px; }
+.pc-route .w-dot.on { background: var(--w-ok); }
+.pc-route .w-dot.blocked { background: var(--w-v-low); }
+.pc-route .w-dot.off { border: 1px solid var(--w-line-strong); }
+.pc-route-text { min-width: 0; }
+.pc-route-lead { color: var(--w-text); font-weight: 600; }
+
+.pc-detail { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.pc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.pc-actions:empty { margin-top: 0; }
+.pc-note { margin-top: 8px; }
 
 a { color: var(--w-accent); }
+/* A link that inherits a quiet ink class still has to look like a link:
+   .w-note beats the bare `a` on specificity, which is how the endpoint
+   view's RDAP link ended up drawn as ordinary text. */
+a.w-note, .w-note a, .w-privacy a { color: var(--w-accent); }
+
+::selection { background: color-mix(in srgb, var(--w-accent) 30%, transparent); }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--w-line-strong) transparent;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

@@ -7,6 +7,7 @@
 // everything except on-page warnings keeps working.
 
 import { send } from "../shared/messages";
+import { CONSOLE_URL } from "../shared/config";
 import type { Settings } from "../shared/types";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -116,6 +117,9 @@ function wire(): void {
 
   $("btn-dashboard").addEventListener("click", () => {
     void send({ kind: "openDashboard" });
+  });
+  $("btn-console").addEventListener("click", () => {
+    void chrome.tabs.create({ url: CONSOLE_URL });
   });
   $("btn-egress-dash").addEventListener("click", () => {
     void send({ kind: "openDashboard", view: "browser" });

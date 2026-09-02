@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <title>Whisper Guard dashboard</title>
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
@@ -10,8 +10,11 @@
 </head>
 <body>
   <header class="topbar">
-    <img src="logo.png" alt="Whisper" class="w-logo">
-    <span class="product">Guard</span>
+    <div class="w-lockup">
+      <img src="knot.png" alt="Whisper" class="w-knot">
+      <span class="w-wordmark">Whisper</span>
+      <span class="w-product">Guard</span>
+    </div>
     <nav class="views" role="tablist" aria-label="Dashboard views">
       <button id="tab-browser" class="view-tab active" role="tab" aria-selected="true">This browser</button>
       <button id="tab-fleet" class="view-tab" role="tab" aria-selected="false">Fleet</button>
@@ -24,6 +27,17 @@
 
   <!-- ================================================== This browser -->
   <main id="view-browser" class="view">
+    <!-- ONE control, the same one the panel offers, from the same module.
+         It reserves this browser's routable Whisper identity AND routes
+         through it, asking for the permission routing needs at the moment
+         it is needed. There is no second step and no hand-off.
+
+         It leads the view because it is the only ACTION on it: everything
+         below is the record of where this browser has been. -->
+    <section class="w-card" id="egress-card">
+      <div id="identity-control"></div>
+    </section>
+
     <section class="tiles" id="b-tiles"></section>
 
     <section class="grid">
@@ -57,30 +71,6 @@
       <p id="b-empty" class="w-note" hidden>No destinations yet. Browse a little and watch this fill in live.</p>
     </section>
 
-    <section class="w-card" id="egress-card">
-      <div class="card-head">
-        <div>
-          <div class="w-label">This browser on the Whisper network</div>
-          <p class="w-note">Two independent steps. <strong>Enroll</strong> reserves this browser's own
-          routable Whisper identity: a real IPv6 address with reverse-DNS, verifiable by
-          anyone via RDAP. It needs no browser permission and works the moment you are
-          signed in. <strong>Route</strong> then sends this browser's traffic out through that
-          identity, so it joins your fleet like any other device; that step asks for the
-          browser's proxy permission when you turn it on.</p>
-        </div>
-        <button id="enroll-btn" class="w-btn primary">Enroll this browser</button>
-      </div>
-      <div id="identity-detail" class="egress-detail"></div>
-      <div class="card-head route-head">
-        <div>
-          <div class="w-label">Route traffic through Whisper</div>
-          <p class="w-note" id="route-note">Off by default. Profile-global while on; WebRTC is
-          hardened to proxied-only on Chromium so nothing leaks around the route.</p>
-        </div>
-        <button id="egress-toggle" class="w-btn primary">Turn on</button>
-      </div>
-      <div id="egress-detail" class="egress-detail"></div>
-    </section>
   </main>
 
   <!-- ======================================================== Fleet -->

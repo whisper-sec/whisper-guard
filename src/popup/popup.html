@@ -10,8 +10,14 @@
 </head>
 <body>
   <header>
-    <img src="logo.png" alt="Whisper" class="w-logo">
-    <span class="product">Guard</span>
+    <!-- The knot plus an ink wordmark: the shipped wordmark PNG is
+         white-only and vanishes on a light ground, so only the mark is an
+         image. Same lockup as the console's. -->
+    <div class="w-lockup">
+      <img src="knot.png" alt="Whisper" class="w-knot">
+      <span class="w-wordmark">Whisper</span>
+      <span class="w-product">Guard</span>
+    </div>
     <span class="spacer"></span>
     <button id="btn-refresh" class="icon-btn" title="Re-check this site" aria-label="Re-check this site">&#8635;</button>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
@@ -81,21 +87,13 @@
          identity AND route through it, asking for the permission it needs
          at the moment it needs it. No second step, no hand-off. -->
     <section id="identity-card" class="w-card" hidden>
-      <div class="mini-head">
-        <span class="w-label">This browser</span>
-        <span id="identity-state" class="w-chip unknown">NOT ENROLLED</span>
-      </div>
-      <div id="route-line" class="route-line"></div>
-      <div id="identity-detail" class="identity-detail" hidden></div>
-      <div class="row gap identity-actions">
-        <button id="btn-protect" class="w-btn primary">Protect this browser</button>
-        <button id="btn-route-fix" class="w-btn small" hidden></button>
-      </div>
-      <div id="identity-note" class="w-note" hidden></div>
+      <!-- Filled by shared/protect-control.ts, the one implementation of
+           this control; the dashboard mounts exactly the same thing. -->
+      <div id="identity-control"></div>
     </section>
 
     <section id="signin-pitch" class="w-card" hidden>
-      <div class="mini-head">
+      <div class="pc-head">
         <span class="w-label">This browser</span>
         <span class="w-chip unknown">NOT ON THE NETWORK</span>
       </div>

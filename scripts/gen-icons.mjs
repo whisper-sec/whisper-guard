@@ -67,7 +67,19 @@ const C = {
   markWhite: "#ffffff", // malicious: on the red plate
 };
 
-const convert = (args) => execFileSync("convert", args);
+/**
+ * Every convert in this file strips metadata, and it is done HERE rather
+ * than at the one call that happened to be the leak path.
+ *
+ * assets/logo.png carried Adobe XMP (CreatorTool, document GUIDs) and a
+ * "Adobe ImageReady" Software tag. Nothing in this pipeline removed them, so
+ * all eight generated SVGs froze a copy inside their embedded base64 PNG -
+ * where a sweep over *.png files cannot see them, because they are PNGs
+ * inside .svg files. Stripping the source alone would have left the
+ * regression armed for the next regeneration; stripping every step means a
+ * dirty input cannot become a dirty output.
+ */
+const convert = (args) => execFileSync("convert", [...args.slice(0, -1), "-strip", args[args.length - 1]]);
 const WORK = mkdtempSync(join(tmpdir(), "whisper-guard-icons-"));
 
 // 1) Extract the brand mark from the canonical logo, and prepare recoloured,

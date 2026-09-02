@@ -46,12 +46,12 @@ let ext: Extension;
 
 // Hostnames deliberately carry no consent-ish word, so a wire sweep can look
 // for banner vocabulary without tripping over the fixtures' own names.
-const TOP_X = "site-h-1022-guard-e2e.com"; // frames a wall on another origin
-const CMP_X = "vendor-1022-guard-e2e.com"; // the other origin
-const TOP_S = "site-i-1022-guard-e2e.com"; // frames a wall on its own origin
-const TOP_2 = "site-j-1022-guard-e2e.com"; // frames TWO walls
-const TOP_D = "site-k-1022-guard-e2e.com"; // frames a decoy that must be left alone
-const TOP_L = "site-l-1022-guard-e2e.com"; // injects its wall frame AFTER load
+const TOP_X = "site-h-frames-guard-e2e.com"; // frames a wall on another origin
+const CMP_X = "vendor-frames-guard-e2e.com"; // the other origin
+const TOP_S = "site-i-frames-guard-e2e.com"; // frames a wall on its own origin
+const TOP_2 = "site-j-frames-guard-e2e.com"; // frames TWO walls
+const TOP_D = "site-k-frames-guard-e2e.com"; // frames a decoy that must be left alone
+const TOP_L = "site-l-frames-guard-e2e.com"; // injects its wall frame AFTER load
 const FRAME_PATH = "/w-frame";
 /**
  * How long site l waits before injecting its wall frame.
@@ -350,12 +350,12 @@ test("the click guard is armed in the top frame and in NO other", async () => {
   // exactly as an unpinned caller would, and the sub-frames must still refuse:
   // a click guard must never acquire a new home as a side effect of a change
   // about cookie banners.
-  await ext.sw.evaluate(async (id: number) => {
-    await chrome.tabs.sendMessage(id, {
-      kind: "whisper-preempt-config",
-      host: "site-h-1022-guard-e2e.com",
-    });
-  }, tabId);
+  // The body runs in the SERVICE WORKER, so TOP_X is not in scope there; it
+  // is passed in rather than repeated as a literal, which is how the two
+  // drifted apart in the first place.
+  await ext.sw.evaluate(async ([id, host]: [number, string]) => {
+    await chrome.tabs.sendMessage(id, { kind: "whisper-preempt-config", host });
+  }, [tabId, TOP_X] as [number, string]);
   await page.waitForTimeout(800);
 
   const after = await frameArming(tabId);

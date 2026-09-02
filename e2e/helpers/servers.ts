@@ -129,6 +129,8 @@ export class E2ENetwork {
   private cohostRows = new Map<string, Record<string, unknown>>();
   private pages = new Map<string, string>();
   readonly endpoints: MockEndpoint[] = [];
+  /** Monotonic per-instance counter behind every minted identity. */
+  private registerSeq = 0;
   readonly submits: Record<string, unknown>[] = [];
   readonly device: DeviceFlowMockState = {
     pollsUntilApproved: 2,
@@ -296,7 +298,20 @@ export class E2ENetwork {
     this.egressPort = (this.egressProxy.address() as net.AddressInfo).port;
   }
 
+  /**
+   * http.Server.close() stops ACCEPTING and then waits for every live
+   * connection to end; it does not close them. The egress proxy hijacks its
+   * sockets on 'connect' and pipes them into the TLS server, so one
+   * half-open tunnel surviving the browser's teardown means the callback
+   * never fires and the caller's afterAll hook times out instead. That is
+   * load-dependent, so an idle box never sees it and a loaded one does -
+   * which is exactly how it got mistaken for an environmental flake.
+   * closeAllConnections() first makes the shutdown bounded.
+   */
   async stop(): Promise<void> {
+    for (const srv of [this.proxy, this.tlsServer, this.egressProxy]) {
+      srv.closeAllConnections?.();
+    }
     await new Promise((r) => this.proxy.close(r));
     await new Promise((r) => this.tlsServer.close(r));
     await new Promise((r) => this.egressProxy.close(r));
@@ -497,8 +512,16 @@ export class E2ENetwork {
       };
     } else if (op === "register") {
       const labelMatch = /label:'([^']*)'/.exec(query);
-      const agent = `agent-e2e${Math.random().toString(16).slice(2, 12)}`;
-      const address = `2a04:2a01:e2e:${Math.random().toString(16).slice(2, 6)}::1`;
+      // Minted from a per-instance COUNTER, not Math.random(). Both are
+      // unique within a run, which is all the mock needs; only the counter is
+      // reproducible ACROSS runs, and that matters because these two strings
+      // are rendered into four committed screenshots. With random ones, every
+      // `npm run e2e` left four PNGs modified for no reason anyone could see,
+      // so the repo could never be clean after its own test suite and real
+      // capture churn was indistinguishable from noise.
+      const n = ++this.registerSeq;
+      const agent = `agent-e2e${n.toString(16).padStart(10, "0")}`;
+      const address = `2a04:2a01:e2e:${n.toString(16).padStart(4, "0")}::1`;
       const e: MockEndpoint = { agent, address, label: labelMatch?.[1] ?? "device", device: true, state: "active", logs: [] };
       this.endpoints.push(e);
       result = { columns: ["agent", "address", "label"], rows: [[agent, address, e.label]] };

@@ -13,3 +13,4 @@ web-ext-artifacts/
 amo-metadata.json
 *.pem
 *.key
+shots-review/
