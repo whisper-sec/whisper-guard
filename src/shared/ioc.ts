@@ -23,7 +23,14 @@ export interface Ioc {
   kind: "ipv4" | "ipv6" | "domain" | "url" | "md5" | "sha1" | "sha256" | "cve";
   /** The canonical, refanged value: lowercase, no defang markers. */
   value: string;
-  /** The host to assess for a url/domain/ip, else null (hashes and CVEs have none). */
+  /**
+   * What to ask the graph about. For a url/domain/ip it is the hostname; for a
+   * FILE HASH it is the hash itself, because whisper.assess verdicts hashes as
+   * well as names - it is the same join the sensor's exec-hash bridge uses
+   * (known-bad from the graph, known-good from NSRL) and it answers with
+   * coverage "known-hash" rather than "known-clean". Null only for a CVE id,
+   * which has no assessable subject.
+   */
   host: string | null;
 }
 
@@ -142,7 +149,9 @@ export function extractIocs(text: string, cap = 500): Ioc[] {
   for (const m of rest.matchAll(RE_CVE)) push("cve", m[0].toUpperCase(), null);
   for (const m of rest.matchAll(RE_HASH)) {
     const k = hashKind(m[0]);
-    if (k) push(k, m[0], null);
+    // The hash IS the subject: whisper.assess joins it against the known-bad
+    // hash corpus and the NSRL known-good set, exactly as the sensor does.
+    if (k) push(k, m[0], m[0]);
   }
   for (const m of rest.matchAll(RE_IPV4)) {
     if (!urlHosts.has(m[0])) push("ipv4", m[0], m[0]);
