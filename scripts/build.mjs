@@ -138,4 +138,17 @@ if (missing > 0) {
 }
 
 const files = readdirSync(OUT).length;
+// The Chrome Web Store REJECTS an upload whose manifest description exceeds 132
+// characters (PKG_MANIFEST_SUMMARY_TOO_LONG), and it rejects it at UPLOAD time - so a
+// build that passes every local check can still be unpublishable. The description had
+// grown to 153 and nothing here measured it. Fail the BUILD instead, so the limit is
+// caught by whoever widened the string rather than by an upload much later.
+const CWS_DESCRIPTION_MAX = 132;
+if ((manifest.description ?? '').length > CWS_DESCRIPTION_MAX) {
+  throw new Error(
+    `manifest description is ${manifest.description.length} characters; the Chrome Web Store ` +
+    `rejects anything over ${CWS_DESCRIPTION_MAX}. Shorten it in manifests/manifest.${target}.json.`
+  );
+}
+
 console.log(`build: dist/${target} complete (${files} top-level entries, manifest v${manifest.version}, all references verified)`);

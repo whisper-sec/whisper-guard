@@ -45,7 +45,7 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   no body, no cookie, so nothing about the user can ride on it; it is how the
   live size of the graph and the resolvers' latency reach the UI instead of
   being written into the build as a constant that would be stale on release
-  day. `e2e/consent.spec.ts` asserts that shape from the outside). The add-on also OPENS `console.whisper.online` in a tab
+  day. `e2e/graph-endpoints.spec.ts` asserts that shape from the outside). The add-on also OPENS `console.whisper.online` in a tab
   when the user asks for the console; it is never fetched from, which is why
   it is not in the host permissions. The e2e suite (`e2e/mocked.spec.ts`)
   proves the hostname-only invariant with a full network capture, and
