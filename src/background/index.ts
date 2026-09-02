@@ -644,7 +644,7 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
         return { ok: false, error: String(e instanceof Error ? e.message : e) };
       }
     case "scanIocs":
-      // #1205. Same shape as scanLinks deliberately, including the host-access
+      // Same shape as scanLinks deliberately, including the host-access
       // recovery: both inject on the reader's gesture, and both dead-end the
       // same way without access to this tab, so they must fail the same way too.
       try {

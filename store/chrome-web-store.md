@@ -21,9 +21,9 @@ exchanges that operator is physically present in. Seven rungs, seven joins, no
 account needed.
 
 That walk answers what a verdict cannot. A name can be clean while the block it
-sits in is not - 10,872 addresses inside one /12 listed across 17 threat feeds,
-an operator present in over a thousand facilities, a domain observed for ten
-years. Guard shows which of those it found and what it concludes from them.
+sits in is not: neighbouring addresses in the same prefix listed as threats, an
+operator present in over a thousand facilities, a domain observed for years.
+Guard shows which of those it found and what it concludes from them.
 Expand any rung for what is behind it: how much of that network's announced space
 is actually listed, how many other names answer on that address, every facility
 by name.

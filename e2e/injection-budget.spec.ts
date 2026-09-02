@@ -4,11 +4,10 @@
 // THE CLAIM THIS PROTECTS: we do what the competing threat-intelligence
 // extension does, and we cost nothing on a page the reader never scans.
 //
-// Measured from the published CRX of CrowdStrike Threat Intelligence Browser
-// Extension 1.8.1 on 2026-09-02: a static `content_scripts` entry matching
-// <all_urls>, carrying a 12,059,990-byte bundle, parsed on every page load,
-// behind a REQUIRED <all_urls> host grant. Our entire shipped extension was
-// 552,592 bytes - their per-page injection is 21.8x our whole product.
+// The posture this pins: no static `content_scripts` entry, <all_urls> optional
+// rather than required, and nothing injected until the reader asks for it. An
+// ordinary page load must cost zero. The budget below is ours and is checked
+// against our own build, not against anybody else's.
 //
 // That is a real advantage and it is one careless commit from gone. Adding a
 // `content_scripts` entry is the obvious way to build a page scanner, and the

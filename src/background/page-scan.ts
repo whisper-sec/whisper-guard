@@ -6,10 +6,9 @@
 //
 // WHY THIS EXISTS. An analyst reading an advisory, a ticket or a mail wants the
 // indicators on that page enriched, without copying them somewhere. The
-// competing extension in this category does exactly that, and does it with a
-// STATIC content script matching <all_urls> carrying a 12,059,990-byte bundle
-// that is parsed on every page the user ever opens, whether or not they ever
-// scan anything, behind a REQUIRED <all_urls> grant and a paid API credential.
+// usual shape in this category is a STATIC content script matching <all_urls>,
+// parsed on every page the user ever opens whether or not they scan anything,
+// behind a required host grant.
 //
 // We do the same job the other way round, and the difference is the product:
 //   - nothing is injected until the reader asks. There is no content_scripts
@@ -24,7 +23,7 @@
 
 import { HISTORY_QUERY_ONE, LINK_SCAN_BATCH, LINK_SCAN_HOST_CAP, TOR_RELAY_QUERY } from "../shared/config";
 import { isPrivateHost } from "../shared/hostname";
-import { applyIgnoreList, extractIocs, type Ioc } from "../shared/ioc";
+import {applyIgnoreList, type Ioc} from "../shared/ioc";
 import type { GraphBand } from "../shared/types";
 import { assessHosts } from "./assess";
 import { explainHost } from "./cognition";
@@ -33,8 +32,8 @@ import { cacheGet, cachePut } from "./cache";
 
 /**
  * The graph's own account of ONE indicator, from whisper.explain. This is the
- * answer the competing tool cannot give: not a score, a sentence plus the named
- * factors and the named feeds behind it.
+ * answer a bare score cannot give: a sentence plus the named factors and the
+ * named feeds behind it.
  *
  * explain auto-detects the indicator TYPE, so a hash, a CVE, an ip and a domain
  * all go through one call and come back labelled. That single fact is why this
@@ -71,7 +70,7 @@ export interface IocRow {
   kind: Ioc["kind"];
   value: string;
   host: string | null;
-  /** UNKNOWN when the graph holds nothing; null when we did not ask (hash/CVE). */
+  /** UNKNOWN when the graph holds nothing; null only for a CVE id, which we never ask about. */
   band: GraphBand | null;
   label: string | null;
   /** Present when the graph had an account of this indicator to give. */
@@ -98,40 +97,41 @@ export interface PageScanResult {
  * markup carries urls the reader cannot see, and reporting an indicator nobody
  * can point at on screen is how a scanner loses trust.
  */
-function collectPageText(): string {
-  const MAX = 400_000;
-  const body = document.body;
-  if (!body) return "";
-  const text = body.innerText || body.textContent || "";
-  return text.length > MAX ? text.slice(0, MAX) : text;
+function readStashedIocs(): unknown {
+  const w = window as unknown as { __whisperIocs?: unknown };
+  const out = w.__whisperIocs;
+  // Do not leave the page's indicators sitting on the window for other scripts.
+  try { delete w.__whisperIocs; } catch { /* non-configurable: ignore */ }
+  return out ?? [];
 }
 
 /**
  * Scan the tab and verdict every indicator the graph can speak to.
  *
- * Hashes and CVEs come back with `band: null` rather than UNKNOWN: we did not
- * ask, and "we asked and found nothing" is a different statement from "we never
- * asked". Conflating them is the failure this codebase keeps writing tests
- * against.
+ * A CVE id comes back with `band: null` rather than UNKNOWN: we never asked, and
+ * UNKNOWN would claim we did. A file HASH is asked about like any other subject -
+ * whisper.assess verdicts hashes directly - so it comes back with a real band.
  */
 export async function scanTabIocs(
   tabId: number,
   ignore: readonly string[] = [],
 ): Promise<PageScanResult> {
-  let text: string;
+  let all: Ioc[];
   try {
+    // The document is read and reduced to indicators INSIDE the page, by the bundled
+    // ioc-collect.js. Only the Ioc[] crosses back. The page's text never does.
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["ioc-collect.js"] });
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: collectPageText,
+      func: readStashedIocs,
     });
-    text = typeof results[0]?.result === "string" ? results[0].result : "";
+    all = Array.isArray(results[0]?.result) ? (results[0].result as Ioc[]) : [];
   } catch (e) {
     throw new Error(
-      `could not read the page's text: ${String(e instanceof Error ? e.message : e)}`,
+      `could not scan the page: ${String(e instanceof Error ? e.message : e)}`,
     );
   }
 
-  const all = extractIocs(text, LINK_SCAN_HOST_CAP * 4);
   const kept = applyIgnoreList(all, ignore);
   const truncated = kept.length > LINK_SCAN_HOST_CAP;
   const rows0 = kept.slice(0, LINK_SCAN_HOST_CAP);
@@ -166,7 +166,7 @@ export async function scanTabIocs(
     }
   }
 
-  // #1205 items 2 and 5, and the reason this is one block rather than two.
+  // Why this is one block rather than two.
   //
   // whisper.explain takes ANY indicator and tells you what it decided the thing
   // IS, plus a human sentence, the named factors and the named feeds. A hash

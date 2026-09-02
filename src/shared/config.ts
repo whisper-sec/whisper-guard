@@ -271,7 +271,7 @@ export const FEED_RING_MAX = 500;
 export const CHAIN_TTL_MS = 10 * 60_000;
 
 
-// #1205: the two facts only a graph holds, both keyless.
+// The two facts only a graph holds, both keyless.
 //
 // A Tor exit relay is a different thing from an address with no listings, and
 // nothing else in a browser says which one you are looking at.

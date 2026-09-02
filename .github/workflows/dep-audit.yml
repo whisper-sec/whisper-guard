@@ -11,6 +11,11 @@ name: dep-audit
 # THE ACCEPTED EXCEPTION, named exactly, because an exception record that names
 # the wrong packages is a stale record rather than an accepted one.
 #
+# Resolved 2026-09-02: the ajv -> fast-uri chain under web-ext carried four HIGH
+# advisories (GHSA-5jgf-p345-68v8, -f65p-4m7j-42xc, -fph4-wmhf-6fwf,
+# -jqff-g426-hqxp) and unlike image-size it HAD a non-major fix. `npm audit fix`
+# took it. Only the chain below is left.
+#
 # Open advisories, all HIGH, all one chain, all dev-only:
 #
 #   web-ext 10.6.0  ->  addons-linter 10.10.0  ->  image-size 2.0.2
@@ -28,7 +33,7 @@ name: dep-audit
 # HIGH/CRITICAL. A second, non-blocking step still surfaces the full tree
 # (incl. dev tooling) for visibility - nothing is hidden, but dev-only tooling
 # advisories do not block a release of an artifact that provably contains none
-# of them. Reviewed 2026-09-01; supersedes the 2026-07-26 record, which named a
+# of them. Reviewed 2026-09-02; supersedes the 2026-07-26 record, which named a
 # different chain (shell-quote, brace-expansion, fx-runner) that has since been
 # cleared. Revisit when image-size publishes a fix or addons-linter moves off it.
 on:
