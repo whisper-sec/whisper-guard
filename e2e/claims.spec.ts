@@ -115,6 +115,48 @@ test("the graph's size is never quoted from a constant on a shipped surface", ()
 
 const PRESENCE_RE = /(facilities|exchanges|facilitySample|ixSample)\s*:\s*\[([^\]]*)\]/g;
 
+/**
+ * The OPERATOR rung, one rung above the one that caused this.
+ *
+ * A facility name is checkable by prefix; a company name is not, because
+ * "MediaCo plc" has to look like a company for the figure to read as a
+ * product. So this is an explicit roster of the invented parties these
+ * fixtures are allowed to name, and anything else is a finding. The list is
+ * short and changes about once a year; the set of real companies is not and
+ * does not.
+ */
+const INVENTED_PARTIES = new Set([
+  "Bad Hosting LLC",
+  "E2E Clean Site, Inc.",
+  "Intranet Tools B.V.",
+  "MediaCo plc",
+  "Searchy Ltd.",
+  "Swiftpipe Edge B.V.",
+  "Tracky Ads Inc.",
+  "WorkMail Cloud GmbH",
+  "Sketchy Co",
+  // The short VENDOR forms of the same invented parties, which the atlas
+  // returns as canonical_name and the RUNS ON rung draws.
+  "Bad Hosting",
+  "E2E Clean Site",
+  "Intranet Tools",
+  "MediaCo",
+]);
+
+const PARTY_RE = /\b(owner|asnName|org|canonical_name)\s*:\s*"([^"]+)"/g;
+
+/** Party names a fixture asserts. An ASN name carries its handle before a
+ *  dash ("MEDIACO - MediaCo plc"); the party is the half after it. */
+function fixturePartyNames(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(PARTY_RE)) {
+    const raw = (m[2] ?? "").trim();
+    const party = raw.includes(" - ") ? raw.slice(raw.indexOf(" - ") + 3).trim() : raw;
+    if (party !== "") out.push(party);
+  }
+  return out;
+}
+
 function fixtureFacilityNames(text: string): string[] {
   const out: string[] = [];
   for (const m of text.matchAll(PRESENCE_RE)) {
@@ -166,5 +208,37 @@ test("no fixture names a real facility or exchange: published pixels stay fictio
     `these fixtures name something that may be a real business, and they render into published screenshots:\n${offenders.join(
       "\n",
     )}\nName them "Example ..." instead.`,
+  ).toEqual([]);
+});
+
+test("no fixture names a real company on the operator rung either", () => {
+  // CONTROL: the extractor finds a party, unwraps an ASN handle, and does
+  // not invent matches.
+  expect(fixturePartyNames('owner: "Acme Networks Ltd",')).toEqual(["Acme Networks Ltd"]);
+  expect(fixturePartyNames('asnName: "ACME - Acme Networks Ltd",')).toEqual(["Acme Networks Ltd"]);
+  expect(fixturePartyNames("nothing here"), "the sweep invents matches").toEqual([]);
+  expect(INVENTED_PARTIES.has("Acme Networks Ltd"), "the roster already allows the control").toBe(false);
+
+  const offenders: string[] = [];
+  const walk = (dir: string, rel: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full, `${rel}${entry}/`);
+        continue;
+      }
+      if (!entry.endsWith(".ts") || entry === "claims.spec.ts") continue;
+      for (const party of fixturePartyNames(readFileSync(full, "utf8"))) {
+        if (!INVENTED_PARTIES.has(party)) offenders.push(`${rel}${entry}: "${party}"`);
+      }
+    }
+  };
+  walk(join(ROOT, "e2e"), "e2e/");
+
+  expect(
+    offenders,
+    `these fixtures name a party that is not on the invented roster, and the OPERATOR rung renders into published screenshots beside a verdict:\n${offenders.join(
+      "\n",
+    )}\nAdd it to INVENTED_PARTIES only if you invented it.`,
   ).toEqual([]);
 });
