@@ -36,6 +36,7 @@ import {
   type WinCategory,
   type WinsToday,
 } from "../shared/types";
+import type { PageScanResult } from "../background/page-scan";
 import { CONSOLE_URL, GRAPH_HOST } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { compact, countUp, sparkline } from "../shared/spark";
@@ -514,6 +515,99 @@ async function runLinkScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Pr
   summary.textContent = res.error;
 }
 
+/* ------------------------------------------------------- indicators
+ *
+ * The IOC scanner has existed and been unreachable: `scanIocs` was handled in
+ * the background and sent by nothing the reader could click. That is the state
+ * this wiring ends, and it is why the disclosure changes ship in the SAME
+ * version rather than after it. An extension that carries a page-text scanner
+ * it cannot run has a listing that is true only by accident.
+ *
+ * Its note is deliberately NOT the link scan's note. The link scan reads href
+ * hostnames and promises the page text is never read; this reads the visible
+ * text. Sharing a sentence between them would make one of the two false.
+ */
+function renderIocScan(scan: PageScanResult): void {
+  const summary = $("iocscan-summary");
+  summary.hidden = false;
+  const risky = scan.rows.filter((r: PageScanResult["rows"][number]) => r.band !== null && r.band !== "NONE" && r.band !== "LOW" && r.band !== "INFO");
+  const bits: string[] = [];
+  if (risky.length > 0) bits.push(`${risky.length} flagged`);
+  bits.push(`${scan.found} found`);
+  if (scan.ignored > 0) bits.push(`${scan.ignored} ignored`);
+  summary.textContent =
+    `${bits.join(", ")}; ${scan.assessed} checked against the graph.` +
+    (scan.truncated ? " Showing the first; the page had more." : "");
+  summary.className = `linkscan-summary${risky.length > 0 ? " hot" : ""}`;
+
+  const list = $("iocscan-list");
+  list.hidden = scan.rows.length === 0;
+  const rows = risky.length > 0 && scan.rows.length > 24 ? risky : scan.rows;
+  list.replaceChildren(
+    ...rows.slice(0, 80).map((r: PageScanResult["rows"][number]) => linkRow(r.value, r.band ?? "NONE", 1)),
+  );
+
+  const note = $("iocscan-note");
+  note.hidden = false;
+  // Says what actually leaves the browser. A CVE id has no assessable subject
+  // and is never sent anywhere; hashes and hostnames are what the graph is asked
+  // about. Stating it here is the same claim the store listing makes.
+  note.textContent =
+    "This reads the page's visible text. Only the indicators found (hostnames and file hashes) are checked against Whisper; the page text itself never leaves your browser, and CVE ids are never sent anywhere.";
+}
+
+let iocScanNeedsGrant = false;
+
+async function runIocScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Promise<void> {
+  if (tabId < 0) return;
+  btn.disabled = true;
+  btn.textContent = "Scanning…";
+  if (grant) {
+    await grant;
+    iocScanNeedsGrant = false;
+  }
+  const res = await send<{ ok: true; scan: PageScanResult } | { ok: false; error: string; nohost?: boolean }>({
+    kind: "scanIocs",
+    tabId,
+  });
+  btn.disabled = false;
+  if (res.ok) {
+    btn.textContent = "Re-scan";
+    renderIocScan(res.scan);
+    return;
+  }
+  if (res.nohost) {
+    // Same recovery as the link scan: the permission needs a fresh gesture, so
+    // arm the next click rather than prompting from this consumed one.
+    iocScanNeedsGrant = true;
+    btn.textContent = "Allow & scan";
+    const note = $("iocscan-note");
+    note.hidden = false;
+    note.textContent = "Guard needs access to this site to read its text. Click again to allow it for this site only.";
+    return;
+  }
+  btn.textContent = "Scan";
+  const note = $("iocscan-note");
+  note.hidden = false;
+  note.textContent = `Could not scan this page: ${res.error}`;
+}
+
+function wireIocScan(): void {
+  $("iocscan-card").hidden = false;
+  const btn = $<HTMLButtonElement>("btn-iocscan");
+  btn.addEventListener("click", () => {
+    let grant: Promise<boolean> | undefined;
+    if (iocScanNeedsGrant) {
+      try {
+        grant = Promise.resolve(chrome.permissions.request({ origins: linkScanOrigins() }));
+      } catch {
+        grant = Promise.resolve(false);
+      }
+    }
+    void runIocScan(btn, grant);
+  });
+}
+
 function wireLinkScan(): void {
   $("linkscan-card").hidden = false;
   const btn = $<HTMLButtonElement>("btn-linkscan");
@@ -762,6 +856,7 @@ function render(): void {
   $("hostname").textContent = host;
   if (cloudCheck) {
     wireLinkScan();
+    wireIocScan();
     // The chain is the keyless payload and does not wait on a verdict:
     // whether the name is flagged or unremarkable, the path behind it is
     // the thing the panel was opened to see.

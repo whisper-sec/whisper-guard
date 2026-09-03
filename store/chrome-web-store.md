@@ -159,7 +159,9 @@ pre-emptive story on the docs page instead.
     banner and a framed consent wall may see one click in each); and, after
     the Shield opt-in, the amber banner and password-field caution on flagged
     sites. It also reads, on the user's click, only the `<a href>` HOSTNAMES
-    of the current page for the pre-click link sweep. Page text, paths,
+    of the current page for the pre-click link sweep, which reads no page text.
+    The separate on-demand page scan (2.6.0) does read visible text on click.
+    For the link sweep: page text, paths,
     queries and form values are never read and never transmitted; every panel
     renders in a closed shadow root.
   - `declarativeNetRequest`: to block navigation to evidenced-malicious sites
@@ -200,7 +202,9 @@ pre-emptive story on the docs page instead.
   honest answer is yes. Nothing else is collected: not website content, not
   personally identifiable information, financial, health, authentication,
   communications, location, or user activity. The on-device destination log
-  never leaves the device and page content is never read. The exact wording
+  never leaves the device. Page content IS read by one feature, the on-demand page
+scan added in 2.6.0, and only when the reader clicks Scan; what leaves is the
+indicators found, never the text. The exact wording
   for the form is in `cws-submission-fields.md`, which is the source of
   truth for the answers typed into the console.
 - **Remote code:** none (MV3, all code in the package).

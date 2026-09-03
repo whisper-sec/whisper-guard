@@ -99,12 +99,23 @@ No, I am not using Remote code.
 Tick ONLY: Web history
 (Leave everything else unchecked: no PII, health, financial, authentication,
 personal communications, location, user activity, or website content. The
-on-device destination log never leaves the device; page content is never read.
+on-device destination log never leaves the device. Website content IS collected,
+and only in one place: the on-demand page scan reads the current page's
+visible text WHEN THE READER CLICKS SCAN, extracts indicators from it, and sends
+only those indicators (hostnames and file hashes). The page text itself never
+leaves the browser, and CVE ids are never sent anywhere.
 Web history is ticked because the current site's hostname is transmitted to the
 server for the live safety verdict, and Google counts any off-device
 transmission as "collection".
 
-"Website content" stays unticked even though the scripting justification above
+"Website content" IS TICKED as of 2.6.0, because the page scan reads page text.
+Before 2.6.0 it was unticked and that was true of what shipped: the scanner was
+merged but unreachable, so no build could run it. Making it reachable and leaving
+the answer unticked is what would have been dishonest, so the two ship together.
+
+The rest of this note remains accurate for the LINK sweep, which is a separate
+feature and still sends no page content:
+The old note said Website content stayed unticked even though the justification above
 says Guard reads the <a href> hostnames of the page. A reviewer diffing this
 listing against itself lands exactly there, so to pre-empt it: Google's
 "Website content" category enumerates hyperlinks, and what LEAVES the device is

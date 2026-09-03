@@ -106,6 +106,23 @@
       <div id="linkscan-note" class="w-note" hidden></div>
     </section>
 
+    <!-- 3b. INDICATORS ON THIS PAGE. Deliberately a SEPARATE card from
+         the link scan above, and deliberately worded differently: the link scan
+         reads only href hostnames, this one reads the page's visible TEXT. They
+         make different promises, so they must not share a note. Shipping this
+         unreachable is what made the earlier privacy claim ambiguous; it is
+         reachable here, and the listing declares Website content to match. -->
+    <section id="iocscan-card" class="panel" hidden>
+      <div class="mini-head">
+        <span class="w-label">Indicators on this page</span>
+        <button id="btn-iocscan" class="w-btn small"
+                title="Read this page's visible text for indicators - addresses, domains, file hashes and CVE ids - and verdict each one against the Whisper graph.">Scan</button>
+      </div>
+      <div id="iocscan-summary" class="linkscan-summary" hidden></div>
+      <div id="iocscan-list" class="linkscan-list" hidden></div>
+      <div id="iocscan-note" class="w-note" hidden></div>
+    </section>
+
     <!-- 4. THIS BROWSER. One control does the whole thing: reserve the
          identity AND route through it, asking for the permission it needs
          at the moment it needs it. No second step, no hand-off. -->

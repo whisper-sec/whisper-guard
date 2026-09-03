@@ -22,7 +22,8 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 - `data_collection_permissions.required = ["websiteActivity"]`: the live safety
   check sends the hostname of the site you visit to `graph.whisper.online`,
   on by default, to answer "is this site safe?". Only the bare hostname leaves,
-  never the page, path, or your history, and hostnames are not retained to build
+  never the page, path, or your history (the on-demand page scan is the one
+  exception, and only on an explicit click), and hostnames are not retained to build
   a browsing profile. One switch in settings turns the live check off, after
   which only the on-device look-alike detector runs and nothing leaves at all.
 
@@ -65,7 +66,9 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   wall may see one click in each), and, under Active Shield, the amber banner
   and the password-field caution. Everything it draws lives in a closed
   shadow root. The only things it ever hands the background are a bare
-  hostname and a win category; it never reads or transmits page text, paths,
+  hostname and a win category. The on-demand page scan (2.6.0) reads the visible
+  text of the current page when the reader clicks Scan, and transmits only the
+  indicators it finds. Nothing else reads or transmits page text, paths,
   queries, or form values.
 - `proxy` is an OPTIONAL permission, requested only on a user click when the
   user turns on "Protect this browser" (routes this browser through Whisper

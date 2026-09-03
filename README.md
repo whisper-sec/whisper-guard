@@ -196,11 +196,17 @@ public identity verification all work with no key.
 
 ## Privacy model
 
-- The only browsing datum that can ever leave the browser is a **hostname**,
+- The only browsing datum that leaves the browser on its own is a **hostname**,
   sent to exactly one endpoint, `graph.whisper.online`, whether or not you are
   signed in. Extraction happens at parse time; path, query, fragment, page
   content, and form data are discarded before any network code runs. Your
   on-device navigation list and session allow-list never leave the device.
+- **One exception, on an explicit click (2.6.0):** the on-demand page scan reads
+  the current page's visible text and sends only the indicators it finds there,
+  which are hostnames and file hashes. The text itself never leaves the browser
+  and CVE ids are never sent anywhere. It runs only when the reader presses Scan;
+  nothing scans a page in the background. This is why the store listings tick
+  Website content from 2.6.0 onward.
 - The same host also carries the keyed control plane: your fleet roster,
   enrollment and egress, always with your key and never with a browsing
   hostname. Signed out, that half is never called at all. The two are separate
@@ -309,9 +315,16 @@ dashboard cannot drift into two vocabularies for one thing.
 against the real ground behind it, in both colour schemes, against the WCAG AA
 floor. `e2e/console-links.spec.ts` clicks the console links and reads the tab
 that opens, because a link is only correct if it arrives somewhere.
-`e2e/links.spec.ts` proves the page-link sweep against the full capture: only
+`e2e/links.spec.ts` proves the page-link SWEEP against the full capture: only
 registrable hostnames reach the graph; the links' paths, queries and the
 page's text never leave the browser.
+
+`e2e/page-scan.spec.ts` does the same for the on-demand page SCAN, which is the
+one feature that reads page text: it asserts, against the full capture, exactly
+what leaves on a page carrying a file hash, a CVE id and a secret-bearing path.
+The hash goes, the CVE id does not, and the secret-bearing path never appears in
+any request. A privacy claim about a text-reading feature is worth only as much
+as the capture that proves it.
 
 The live suite picks a currently-listed malicious hostname, pins its DNS to
 a local harmless page, and verifies the real verdict end to end; the key is
