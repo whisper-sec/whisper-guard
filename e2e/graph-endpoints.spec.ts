@@ -171,7 +171,7 @@ test("a shed keyless read degrades to unknown, never to a false clean", async ()
   await waitForIcon(ext, healthy.tabId, ["benign"]);
   const ok = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
   expect(ok.length).toBeGreaterThan(0);
-  expect(JSON.parse(ok[0].body).parameters).toEqual({ hs: [CTRL] });
+  expect(JSON.parse(ok[0]!.body).parameters).toEqual({ hs: [CTRL] });
   await healthy.page.close();
 
   // Now the fixture sheds every KEYLESS read while still answering keyed
@@ -185,7 +185,7 @@ test("a shed keyless read degrades to unknown, never to a false clean", async ()
   await waitForIcon(ext, tabId, ["unknown"]);
   const shed = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
   expect(shed.length).toBeGreaterThan(0); // it was asked, not skipped
-  expect(shed[0].key).toBeNull();
+  expect(shed[0]!.key).toBeNull();
   await page.close();
 });
 
@@ -211,8 +211,8 @@ test("the pre-emptive interstitial fires on the keyless read path", async () => 
 
   const reads = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
   expect(reads).toHaveLength(1);
-  expect(JSON.parse(reads[0].body).parameters).toEqual({ hs: [EVIL] });
-  expect(reads[0].key).toBeNull();
+  expect(JSON.parse(reads[0]!.body).parameters).toEqual({ hs: [EVIL] });
+  expect(reads[0]!.key).toBeNull();
   await page.close();
 });
 

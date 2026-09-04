@@ -1,0 +1,17 @@
+{
+  // The e2e tree, typechecked.
+  //
+  // It was not, and that is how e2e/page-scan.spec.ts reached main calling
+  // `net.start({...})` on a method that takes no arguments and
+  // `launchExtension(dist, net)` on a function that takes one options
+  // object. Both compile to nothing and fail at runtime, so the one suite
+  // that proves what the page scan sends had never executed a single
+  // assertion while two store listings cited it. A test that cannot run is
+  // worse than a missing one: it is counted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "chrome"],
+    "noEmit": true
+  },
+  "include": ["e2e/**/*.ts"]
+}

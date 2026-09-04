@@ -31,7 +31,7 @@ body {
   --w-muted: color-mix(in srgb, var(--w-text) 80%, transparent);
 }
 
-main { max-width: 560px; padding: 40px 24px; text-align: center; }
+main { max-width: 760px; padding: 36px 24px 28px; text-align: center; }
 
 .w-lockup { justify-content: center; margin-bottom: 22px; }
 
@@ -96,3 +96,102 @@ p { color: var(--w-text); }
 .linkish:hover { color: var(--w-text); }
 
 .privacy { font-size: 11px; color: var(--w-muted); margin-top: 26px; }
+
+
+/* ---------------------------------------------------------- the evidence
+
+   The case, drawn. This page's argument used to be four rows of text; it
+   is now the join path plus the two quantities that decide most of these
+   moments, and the layout exists to keep all of it above the actions so a
+   reader meets the evidence before the way out.
+
+   Nothing in here softens the red room: the panel is mixed from the same
+   crit hue as the ground, one step lighter, so it reads as part of the
+   alarm rather than as a normal card that wandered onto the page. */
+
+.evidence {
+  margin: 24px auto 4px;
+  text-align: left;
+  background: color-mix(in srgb, var(--w-v-high) 7%, var(--w-card));
+  border: 1px solid color-mix(in srgb, var(--w-v-high) 42%, var(--w-line));
+  border-radius: 8px;
+  padding: 14px 18px 16px;
+}
+
+.ev-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.ev-title {
+  font-family: var(--w-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--w-muted);
+}
+.ev-completeness {
+  font-family: var(--w-mono);
+  font-size: 10.5px;
+  color: var(--w-muted);
+}
+/* An unreadable join is amber, never silent, and never the same ink as a
+   read one. An outage that renders as an ordinary result is the defect
+   this whole page is a witness against. */
+.ev-completeness.lost { color: var(--w-v-low); }
+
+.ev-spine { margin: 0 0 12px; }
+.ev-spine svg { display: block; width: 100%; height: auto; }
+
+.ev-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(190px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+/* One column when the tab is narrow. The chain keeps its full width there,
+   because a rung that wraps its value is worse than a metric that waits. */
+@media (max-width: 660px) {
+  .ev-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ev-chain { min-width: 0; }
+/* The rungs sit on the alarm ground, so their rail and hover need the
+   page's own surfaces rather than the panel defaults. */
+.ev-chain .ch-rung { padding: 4px 0; }
+.ev-chain .ch-value { color: var(--w-text); }
+
+.ev-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.ev-metric { min-width: 0; }
+.ev-metric-label {
+  font-family: var(--w-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--w-muted);
+  margin-bottom: 6px;
+}
+.ev-metric-mark { line-height: 0; margin-bottom: 6px; }
+.ev-metric-mark svg { display: block; max-width: 100%; height: auto; }
+.ev-metric-cap { font-size: 11.5px; color: var(--w-text); line-height: 1.45; }
+.ev-metric-cap.hot { color: var(--w-v-high); font-weight: 600; }
+
+.ev-feedlist {
+  margin: 6px 0 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+  font-family: var(--w-mono);
+  font-size: 10.5px;
+  color: var(--w-muted);
+}
+.ev-feedlist li { margin: 2px 0; }
+
+.ev-lost, .ev-note {
+  font-size: 11.5px;
+  color: var(--w-v-low);
+  line-height: 1.5;
+}
+.ev-note { margin-top: 12px; }

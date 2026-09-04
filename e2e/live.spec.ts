@@ -18,7 +18,7 @@ import { test, expect } from "@playwright/test";
 import * as http from "node:http";
 import * as net from "node:net";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   launchExtension,

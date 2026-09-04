@@ -40,6 +40,7 @@ import type { PageScanResult } from "../background/page-scan";
 import { CONSOLE_URL, GRAPH_HOST } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { compact, countUp, sparkline } from "../shared/spark";
+import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
 import { CANVAS_MONO, onThemeChange, themeColor } from "../shared/theme";
@@ -549,11 +550,20 @@ function renderIocScan(scan: PageScanResult): void {
 
   const note = $("iocscan-note");
   note.hidden = false;
-  // Says what actually leaves the browser. A CVE id has no assessable subject
-  // and is never sent anywhere; hashes and hostnames are what the graph is asked
-  // about. Stating it here is the same claim the store listing makes.
+  // Says what actually leaves the browser, MEASURED rather than intended.
+  //
+  // This note used to end "and CVE ids are never sent anywhere", and so did
+  // the README and the Chrome Web Store submission. It was not true: a CVE
+  // id has no host, so scanTabIocs falls back to its value as the explain
+  // subject and the id goes to the graph like any other indicator. It is
+  // sent deliberately and it is worth sending - whisper.explain answers a
+  // CVE with its KEV status, its ransomware-campaign use and its named
+  // sources, which is the most useful line on the whole scan - but a
+  // privacy note that describes a request the product then makes is the
+  // one kind of wrong this surface must never be. The claim now matches
+  // the wire, and e2e/page-scan.spec.ts asserts the wire.
   note.textContent =
-    "This reads the page's visible text. Only the indicators found (hostnames and file hashes) are checked against Whisper; the page text itself never leaves your browser, and CVE ids are never sent anywhere.";
+    "This reads the page's visible text. Only the indicators found (hostnames, file hashes and CVE ids) are checked against Whisper; the page text itself never leaves your browser.";
 }
 
 let iocScanNeedsGrant = false;
@@ -655,16 +665,33 @@ async function loadToday(): Promise<void> {
   for (const c of WIN_CATEGORIES) {
     const n = w.counts[c];
     if (n <= 0) continue;
-    const line = document.createElement("div");
-    line.className = "today-line";
-    line.textContent = `${n} ${n === 1 ? WIN_LABEL[c].one : WIN_LABEL[c].many}`;
-    rows.push(line);
+    rows.push(winLine(n, n === 1 ? WIN_LABEL[c].one : WIN_LABEL[c].many));
   }
   $("today-breakdown").replaceChildren(...rows);
   $("today-note").textContent =
     w.total === 0
       ? "Nothing needed your attention today; checks ran on every site."
       : "Counted by category only, never which sites.";
+}
+
+/** One category of today's work: the count drawn as that many marks, then
+ *  the words. Three interruptions is a quantity a reader sees; the number
+ *  three in a sentence is one they skim. */
+function winLine(n: number, words: string): HTMLElement {
+  const line = document.createElement("div");
+  line.className = "today-line";
+  // Decorative: the words for this count are the next node along.
+  const marks = countMarks(n, { perRow: 20, size: 4, gap: 2, tone: "accent" });
+  if (marks) {
+    const wrap = document.createElement("span");
+    wrap.className = "today-marks";
+    wrap.appendChild(marks);
+    line.appendChild(wrap);
+  }
+  const text = document.createElement("span");
+  text.textContent = `${n} ${words}`;
+  line.appendChild(text);
+  return line;
 }
 
 /** The last 24h in one line. The only number worth a reader's attention is
@@ -679,6 +706,33 @@ async function loadBrowser24h(): Promise<void> {
     el.textContent = "No destinations recorded in this browser yet.";
     return;
   }
+
+  // The same report, drawn. Nothing extra is fetched and nothing extra is
+  // sent: these timestamps are already on this device, which is why the
+  // strip can exist on a surface that promises never to build a history
+  // anywhere else.
+  const events: TimeEvent[] = res.report.hosts
+    .filter((h) => h.lastAt > 0)
+    .map((h) => ({
+      at: h.lastAt,
+      tone:
+        h.verdict === "CRITICAL" || h.verdict === "HIGH"
+          ? ("hot" as const)
+          : h.verdict === "MEDIUM" || h.verdict === "LOW"
+            ? ("warn" as const)
+            : ("accent" as const),
+      label: h.host,
+    }));
+  const strip = timeStrip(events, {
+    width: 368,
+    height: 40,
+    hours: 24,
+    title: `${events.length} sightings in the last 24 hours`,
+  });
+  // No strip when there is nothing timed to put on it. An axis with no
+  // marks says "we watched and saw nothing", which is not what an empty
+  // timestamp list means.
+  $("browser-strip").replaceChildren(...(strip ? [strip] : []));
   const d = `${t.destinations} destination${t.destinations === 1 ? "" : "s"}`;
   el.className = t.flagged > 0 ? "w-note hot" : "w-note";
   el.textContent =

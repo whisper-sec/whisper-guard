@@ -87,5 +87,4 @@ export function chartInk(): ChartInk {
 }
 
 /** The document's font stacks, for canvas `ctx.font`. */
-export const CANVAS_SANS = "ui-sans-serif, system-ui, sans-serif";
 export const CANVAS_MONO = "ui-monospace, monospace";

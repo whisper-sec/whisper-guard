@@ -15,10 +15,37 @@
       <span class="w-wordmark">Whisper</span>
       <span class="w-product">Guard</span>
     </div>
+
+    <!-- The interruption. Unchanged in force: this is the one moment the
+         product exists for, and nothing below it may soften the stop. -->
     <div class="stop">&#11042;</div>
     <h1>Whisper stopped a dangerous page<br>before you could enter your password.</h1>
     <p id="detail"></p>
-    <div id="receipts" class="receipts" hidden></div>
+
+    <!-- THE EVIDENCE. This page used to make its whole case in a four-row
+         label-and-value table, at the exact moment a reader is deciding
+         whether to believe it and click through anyway. A blocklist entry
+         is one hop and reads as an opinion; the join is seven, and the
+         reader can see it. Everything in here is drawn from the same walk
+         the panel does, and every part of it says plainly when it could
+         not be read. -->
+    <section id="evidence" class="evidence" hidden>
+      <div class="ev-head">
+        <span class="ev-title">The evidence</span>
+        <span id="ev-completeness" class="ev-completeness"></span>
+      </div>
+      <div id="ev-spine" class="ev-spine"></div>
+      <div class="ev-grid">
+        <div id="ev-chain" class="ev-chain"></div>
+        <div class="ev-side">
+          <div id="ev-age" class="ev-metric" hidden></div>
+          <div id="ev-neighbours" class="ev-metric" hidden></div>
+          <div id="ev-feeds" class="ev-metric" hidden></div>
+        </div>
+      </div>
+      <div id="ev-note" class="ev-note" hidden></div>
+    </section>
+
     <div class="actions">
       <button id="btn-back" class="btn primary">&larr; Back to safety</button>
       <a id="btn-real" class="btn" href="#" hidden></a>

@@ -281,7 +281,7 @@ test("privacy invariant: ONLY the hostname leaves, only to the graph, with the f
   // is the bare hostname.
   const graphReqs = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
   expect(graphReqs).toHaveLength(1);
-  const body = JSON.parse(graphReqs[0].body);
+  const body = JSON.parse(graphReqs[0]!.body);
   expect(body.parameters).toEqual({ hs: ["privacy-probe-guard-e2e.com"] });
   expect(body.query).toContain("whisper.assess");
 

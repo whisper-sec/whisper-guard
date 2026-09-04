@@ -523,10 +523,33 @@ a.w-note, .w-note a, .w-privacy a { color: var(--w-accent); }
   font-size: 10.5px;
   line-height: 1.5;
   color: var(--w-muted);
-  word-break: break-all;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
 }
-.ch-ev-lead { text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px; }
-.ch-ev-path { font-family: var(--w-mono); color: var(--w-muted); }
+.ch-ev-lead {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 9px;
+  color: var(--w-faint);
+  flex: none;
+}
+/* The hops wrap as WHOLE hops. `word-break: break-all` used to split an
+   edge name across two lines mid-token, which turned the graph's own
+   vocabulary into gibberish at exactly the width the popup always is. */
+.ch-ev-path { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.ch-ev-hop {
+  font-family: var(--w-mono);
+  font-size: 9.5px;
+  color: var(--w-muted);
+  background: var(--w-elev);
+  border: 1px solid var(--w-line);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.ch-ev-arrow { color: var(--w-faint); font-size: 10px; flex: none; }
 
 /* The waiting spine: same geometry, so nothing jumps when the walk lands. */
 .ch-wait .ch-skel {
@@ -679,3 +702,30 @@ a.w-note, .w-note a, .w-privacy a { color: var(--w-accent); }
   text-transform: uppercase;
   color: var(--w-muted);
 }
+
+
+/* --------------------------------------------------------- the live mark
+
+   The one self-animating element in the product, shared by every surface
+   that has real arrivals to report. It carries a rule as much as a shape:
+   a mark appears when an event actually arrived, and the whole track dims
+   when none has for a while. Nothing here loops on a timer, so a still
+   track means a quiet product rather than a stalled one. */
+
+.live-pulse { display: inline-flex; align-items: center; line-height: 0; }
+.live-pulse svg { display: block; }
+
+.w-pulse { transition: opacity 300ms ease; }
+.w-pulse-idle { opacity: 0.32; }
+
+@media (prefers-reduced-motion: reduce) {
+  .w-pulse { transition: none; }
+}
+
+
+/* The popup's own drawn marks. */
+.browser-strip { margin: 8px 0 6px; line-height: 0; }
+.browser-strip svg { display: block; width: 100%; height: auto; }
+.today-line { display: flex; align-items: center; gap: 8px; }
+.today-marks { line-height: 0; flex: none; }
+.today-marks svg { display: block; }

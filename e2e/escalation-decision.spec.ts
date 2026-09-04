@@ -30,7 +30,7 @@ test("the spectrum reads silent -> ambient -> pre-emptive -> conversational -> b
   expect(RUNGS).toEqual(["silent", "ambient", "preemptive", "conversational", "blocking"]);
   for (let i = 0; i < RUNGS.length; i++) {
     for (let j = 0; j < RUNGS.length; j++) {
-      expect(atLeast(RUNGS[i], RUNGS[j])).toBe(i >= j);
+      expect(atLeast(RUNGS[i]!, RUNGS[j]!)).toBe(i >= j);
     }
   }
 });

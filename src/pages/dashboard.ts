@@ -17,10 +17,11 @@
 
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
 import { addressNode, mountProtectControl, type ProtectControl } from "../shared/protect-control";
-import { CANVAS_MONO, CANVAS_SANS, categoryColor, chartInk, onThemeChange } from "../shared/theme";
+import { CANVAS_MONO, categoryColor, chartInk, onThemeChange } from "../shared/theme";
 import type { EgressStatus, FleetEndpoint, GraphScale, SiteChain } from "../shared/types";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { compact, countUp, sparkline } from "../shared/spark";
+import { arcGauge, donut as donutSvg, flowJoin, pulseTrack, ratioBar, stackShare, timeStrip, type FlowColumn, type FlowLink, type FlowNode, type PulseHandle, type Slice, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
 import {
   CATEGORY_HEX,
@@ -96,6 +97,16 @@ interface TileSpec {
   label: string;
   value: string;
   hot?: boolean;
+  /**
+   * The count placed against the whole it came out of, so the tile carries
+   * a proportion and not only an integer.
+   *
+   * Six bare integers in a row is the densest narration on the dashboard:
+   * "3 companies" and "2 networks" mean nothing until a reader knows they
+   * came from three destinations, and once they do, the pair IS the
+   * finding. The mark says how far the traffic narrows at that step.
+   */
+  of?: { part: number; whole: number; caption: string };
 }
 
 function renderTiles(container: HTMLElement, tiles: TileSpec[]): void {
@@ -103,55 +114,76 @@ function renderTiles(container: HTMLElement, tiles: TileSpec[]): void {
     ...tiles.map((t) => {
       const tile = el("div", `w-tile${t.hot ? " flagged-hot" : ""}`);
       tile.append(el("div", "w-label", t.label), el("div", "w-stat", t.value));
+      if (t.of && t.of.whole > 0) {
+        // No accessible name: the caption underneath IS the name, and
+        // giving the mark the same string made every tile announce and
+        // read back its own proportion twice.
+        const bar = ratioBar(t.of.part, t.of.whole, {
+          width: 110,
+          height: 4,
+          tone: t.hot ? "hot" : "accent",
+        });
+        if (bar) {
+          const mark = el("div", "tile-mark");
+          mark.appendChild(bar);
+          tile.appendChild(mark);
+          tile.append(el("div", "tile-cap", t.of.caption));
+        }
+      }
       return tile;
     }),
   );
 }
 
 function totalsTiles(totals: ReportTotals): TileSpec[] {
+  const d = totals.destinations;
+  // Every count except the destination count and the raw lookup count is a
+  // NARROWING of the destination count, so each is drawn against it. The
+  // destination tile has nothing to be a fraction of, and lookups are a
+  // different unit entirely (sightings, not places), so neither gets a
+  // mark rather than getting a meaningless one.
+  const per = (n: number, noun: string): TileSpec["of"] =>
+    d > 0 ? { part: n, whole: d, caption: `${n} of ${d} ${noun}` } : undefined;
   return [
-    { label: "Destinations", value: String(totals.destinations) },
-    { label: "Companies", value: String(totals.companies) },
-    { label: "Countries", value: String(totals.countries) },
-    { label: "Networks", value: String(totals.networks) },
+    { label: "Destinations", value: String(d) },
+    { label: "Companies", value: String(totals.companies), of: per(totals.companies, "destinations") },
+    { label: "Countries", value: String(totals.countries), of: per(totals.countries, "destinations") },
+    { label: "Networks", value: String(totals.networks), of: per(totals.networks, "destinations") },
     { label: "Lookups", value: String(totals.lookups) },
-    { label: "Flagged", value: String(totals.flagged), hot: totals.flagged > 0 },
+    {
+      label: "Flagged",
+      value: String(totals.flagged),
+      hot: totals.flagged > 0,
+      of: per(totals.flagged, "destinations"),
+    },
   ];
 }
 
 // ------------------------------------------------------------ donut
 
-function renderDonut(canvas: HTMLCanvasElement, legendEl: HTMLElement, hosts: ReportHost[]): void {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+/**
+ * Where it goes, by kind. Moved off canvas onto the shared SVG primitive:
+ * canvas is a bitmap, so it was the one mark on the dashboard that went
+ * soft on a HiDPI screen and had to be redrawn by hand on every theme
+ * change. The SVG donut inherits the theme like the rest of the page and
+ * carries a per-slice title, so a hover says which kind and how many.
+ */
+function renderDonut(mount: HTMLElement, legendEl: HTMLElement, hosts: ReportHost[]): void {
   const cats = tallyCategory(hosts);
   const total = cats.reduce((s, [, n]) => s + n, 0);
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  const cx = W / 2;
-  const cy = H / 2;
-  const r = Math.min(W, H) / 2 - 6;
-  let a = -Math.PI / 2;
-  for (const [cat, n] of cats) {
-    const sweep = total > 0 ? (n / total) * 2 * Math.PI : 0;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, a, a + sweep);
-    ctx.arc(cx, cy, r * 0.62, a + sweep, a, true);
-    ctx.closePath();
-    ctx.fillStyle = categoryColor(cat);
-    ctx.fill();
-    a += sweep;
-  }
-  const ink = chartInk();
-  ctx.fillStyle = ink.text;
-  ctx.font = `300 26px ${CANVAS_MONO}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(total), cx, cy - 6);
-  ctx.font = `9px ${CANVAS_SANS}`;
-  ctx.fillStyle = ink.muted;
-  ctx.fillText("DESTINATIONS", cx, cy + 14);
+  const slices: Slice[] = cats.map(([cat, n]) => ({
+    label: CATEGORY_LABEL[cat],
+    value: n,
+    color: categoryColor(cat),
+  }));
+  const svg = donutSvg(slices, {
+    size: 168,
+    center: String(total),
+    caption: "DESTINATIONS",
+  });
+  // No destinations is not a donut of zero: the primitive refuses, and the
+  // card says the true thing instead of drawing an empty ring.
+  mount.replaceChildren(svg ?? el("div", "w-note", "No destinations in the window yet."));
 
   legendEl.replaceChildren(
     ...cats.slice(0, 8).map(([cat, n]) => {
@@ -164,84 +196,254 @@ function renderDonut(canvas: HTMLCanvasElement, legendEl: HTMLElement, hosts: Re
   );
 }
 
-// ------------------------------------------------------------- bars
-
-function renderBars(
-  container: HTMLElement,
-  rows: { name: string; count: number; color?: string; flag?: string }[],
-  max: number,
-): void {
-  container.replaceChildren(
-    ...rows.map((r) => {
-      const row = el("div", "w-bar-row");
-      const name = el("span", "w-bar-name", r.flag ? `${r.flag} ${r.name}` : r.name);
-      name.title = r.name;
-      const track = el("div", "w-bar-track");
-      const fill = el("div", "w-bar-fill");
-      fill.style.width = `${max > 0 ? Math.max(3, Math.round((r.count / max) * 100)) : 0}%`;
-      if (r.color) fill.style.background = r.color;
-      track.appendChild(fill);
-      row.append(name, track, el("span", "w-bar-count", String(r.count)));
-      return row;
-    }),
-  );
+/**
+ * Draw the analytic furniture only when there is something to put in it.
+ *
+ * An empty page that still draws six stat tiles, a join card, a donut card
+ * and a time-strip card is a page asserting it measured a fleet and found
+ * nothing. What actually happened is that nothing has been seen yet. The
+ * cheapest way to stop making that claim is to not draw the frames, and to
+ * say in one sentence what will fill them.
+ */
+function setAnalyticsShown(prefix: "b" | "f", shown: boolean, emptyReason: string): void {
+  for (const id of [`${prefix}-tiles`, `${prefix}-join-card`, `${prefix}-breakdowns`]) {
+    const node = document.getElementById(id);
+    if (node) (node as HTMLElement).hidden = !shown;
+  }
+  const nodata = $(`${prefix}-nodata`);
+  nodata.hidden = shown;
+  if (!shown) $(`${prefix}-nodata-body`).textContent = emptyReason;
 }
 
-function renderOwnerBars(container: HTMLElement, hosts: ReportHost[]): void {
-  const owners = tallyOwners(hosts).slice(0, 10);
-  const max = owners[0]?.count ?? 0;
-  renderBars(
-    container,
-    owners.map((o) => ({ name: o.owner, count: o.count, color: CATEGORY_HEX[o.category] })),
-    max,
-  );
+// ============================================================ the join flow
+
+/** How many destinations the flow draws before it stops being readable.
+ *  Past a dozen rungs the labels collide and the ribbons stop being
+ *  followable, and a picture nobody can trace is worse than a list. */
+const JOIN_MAX_DESTINATIONS = 10;
+
+/** Rows whose band means the graph is warning about them. */
+function hostTone(h: ReportHost): "hot" | "warn" | "neutral" {
+  if (h.verdict === "CRITICAL" || h.verdict === "HIGH") return "hot";
+  if (h.verdict === "MEDIUM" || h.verdict === "LOW") return "warn";
+  return "neutral";
 }
 
 /**
- * By network: which autonomous systems actually answer for the places this
- * browser goes. It is a new axis rather than a restatement of "by company":
- * one operator can announce several networks, and several operators can sit
- * behind one, which is precisely the kind of thing only a join can say.
+ * THE JOIN, drawn.
  *
- * It became drawable for a signed-out reader when the keyless enrichment
- * moved to the server-side walk (background/enrich.ts); before that the ASN
- * was three joins past the public tier's ceiling and this card would have
- * been empty for everyone without an account.
+ * Four columns: the destinations this browser reached, the networks that
+ * announce them, the operators holding those networks, and the
+ * jurisdictions those operators sit in. Ribbons carry the traffic.
+ *
+ * This replaces three cards that were the same bar-list over the same rows
+ * grouped three different ways. Those cards could tell a reader that they
+ * visited six companies and four networks. They could not tell them that
+ * four of the six resolve into one network, which is the observation that
+ * needs a graph and the only one here a competitor cannot buy from a feed.
+ *
+ * The narrowing left to right IS the finding, so the columns are ordered by
+ * how much they narrow and every count on a node is real.
  */
-function renderNetworkBars(container: HTMLElement, hosts: ReportHost[]): void {
-  const tally = new Map<string, { count: number; label: string }>();
-  for (const h of hosts) {
-    if (!h.asn) continue;
-    const cur = tally.get(h.asn) ?? { count: 0, label: h.asnName ? `${h.asn} ${shortOwner(h.asnName)}` : h.asn };
-    cur.count += 1;
-    tally.set(h.asn, cur);
+function renderJoinFlow(
+  mount: HTMLElement,
+  noteEl: HTMLElement,
+  emptyEl: HTMLElement,
+  hosts: ReportHost[],
+  subject: string,
+): void {
+  // Visibility is NOT this function's business: setAnalyticsShown owns it.
+  // Un-hiding the card here as well meant the empty state hid the card and
+  // this reopened it a line later, so a browser that had seen nothing still
+  // drew a join card containing one sentence about having nothing to draw.
+  const enriched = hosts.filter((h) => h.asn || h.owner);
+  if (enriched.length === 0) {
+    mount.replaceChildren();
+    noteEl.textContent = "";
+    emptyEl.hidden = false;
+    // Two different facts, and they must not share a sentence: no traffic
+    // at all, versus traffic the graph has not been able to place yet.
+    emptyEl.textContent =
+      hosts.length === 0
+        ? `No destinations yet. Browse a little and the join builds itself.`
+        : `${hosts.length} destination${hosts.length === 1 ? "" : "s"} so far, none of them placed on a network yet. The join appears once the graph resolves one.`;
+    return;
   }
-  const rows = [...tally.values()].sort((a, b) => b.count - a.count).slice(0, 10);
-  const max = rows[0]?.count ?? 0;
-  renderBars(container, rows.map((r) => ({ name: r.label, count: r.count })), max);
-  if (rows.length === 0) {
-    // An empty card and an unenriched card look the same, and only one of
-    // them is a fact about this browser.
-    container.replaceChildren(
-      el("div", "w-note", "No announcing network resolved for these destinations yet."),
-    );
+  emptyEl.hidden = true;
+
+  const top = [...enriched].sort((a, b) => b.q - a.q).slice(0, JOIN_MAX_DESTINATIONS);
+
+  const dest: FlowNode[] = top.map((h) => ({
+    id: `d:${h.host}`,
+    label: h.host,
+    weight: Math.max(1, h.q),
+    tone: hostTone(h),
+  }));
+
+  const agg = (
+    key: (h: ReportHost) => string | null,
+    label: (h: ReportHost) => string,
+    prefix: string,
+  ): { nodes: FlowNode[]; idOf: Map<string, string> } => {
+    const tally = new Map<string, { weight: number; label: string; hot: boolean }>();
+    const idOf = new Map<string, string>();
+    for (const h of top) {
+      const k = key(h);
+      if (!k) continue;
+      const id = `${prefix}:${k}`;
+      idOf.set(h.host, id);
+      const cur = tally.get(id) ?? { weight: 0, label: label(h), hot: false };
+      cur.weight += Math.max(1, h.q);
+      if (hostTone(h) === "hot") cur.hot = true;
+      tally.set(id, cur);
+    }
+    return {
+      nodes: [...tally.entries()]
+        .sort((a, b) => b[1].weight - a[1].weight)
+        .map(([id, v]) => ({ id, label: v.label, weight: v.weight, tone: v.hot ? ("hot" as const) : ("neutral" as const) })),
+      idOf,
+    };
+  };
+
+  const nets = agg((h) => h.asn ?? null, (h) => h.asn ?? "", "n");
+  const owners = agg((h) => h.owner || null, (h) => shortOwner(h.owner), "o");
+  const countries = agg(
+    (h) => h.country ?? null,
+    (h) => `${flagEmoji(h.country ?? "") } ${h.country ?? ""}`.trim(),
+    "c",
+  );
+
+  const columns: FlowColumn[] = [
+    { label: "destinations", nodes: dest },
+    { label: "networks", nodes: nets.nodes },
+    { label: "operators", nodes: owners.nodes },
+    { label: "countries", nodes: countries.nodes },
+  ];
+
+  const links: FlowLink[] = [];
+  for (const h of top) {
+    const w = Math.max(1, h.q);
+    const tone = hostTone(h) === "hot" ? ("hot" as const) : ("accent" as const);
+    const d = `d:${h.host}`;
+    const n = nets.idOf.get(h.host);
+    const o = owners.idOf.get(h.host);
+    const c = countries.idOf.get(h.host);
+    // Each hop is drawn only when BOTH of its ends were resolved, so a
+    // destination the graph could place on a network but not on an operator
+    // shows a ribbon that stops there rather than one invented to continue.
+    if (n) links.push({ from: d, to: n, weight: w, tone });
+    if (n && o) links.push({ from: n, to: o, weight: w, tone });
+    if (o && c) links.push({ from: o, to: c, weight: w, tone });
   }
+
+  // The readout beside the card heading counts the same columns in words,
+  // and each node carries its own hover title, so the figure itself needs
+  // no name repeating what is already written next to it.
+  const svg = flowJoin(columns, links, { width: 1100, rowHeight: 24 });
+  if (svg) {
+    mount.replaceChildren(svg);
+  } else {
+    mount.replaceChildren();
+    emptyEl.hidden = false;
+    emptyEl.textContent = "Not enough resolved hops yet to draw the join.";
+  }
+
+  // The readout says plainly that the picture is a TOP-N, and carries the
+  // full jurisdiction tally beside the drawn one. Dropping the by-country
+  // card removed a fact about every destination, and replacing it with a
+  // column that only covers the ten busiest would have quietly shrunk it.
+  const allCountries = tallyCountry(hosts).length;
+  const drawnCountries = countries.nodes.length;
+  const shown = top.length < enriched.length ? `top ${top.length} of ${enriched.length}` : `${top.length}`;
+  noteEl.textContent =
+    `${shown} destination${top.length === 1 ? "" : "s"} · ` +
+    `${nets.nodes.length} network${nets.nodes.length === 1 ? "" : "s"} · ` +
+    `${owners.nodes.length} operator${owners.nodes.length === 1 ? "" : "s"} · ` +
+    (allCountries > drawnCountries
+      ? `${drawnCountries} of ${allCountries} jurisdictions`
+      : `${drawnCountries} ${drawnCountries === 1 ? "jurisdiction" : "jurisdictions"}`) +
+    `, ${subject}`;
 }
 
-// TODO(fleet-map): a small geo dot-map of where this browser / the fleet
-// actually goes. The data already exists (ReportHost.country + .asn from the
-// graph enrichment feeding tallyCountry below); the render would be one
-// equirectangular canvas next to the country bars, no new permissions and no
-// new network. Deferred rather than half-built: a map that renders badly is
-// worse than bars that render well.
-function renderCountryBars(container: HTMLElement, hosts: ReportHost[]): void {
-  const countries = tallyCountry(hosts).slice(0, 10);
-  const max = countries[0]?.[1] ?? 0;
-  renderBars(
-    container,
-    countries.map(([cc, n]) => ({ name: cc, count: n, flag: flagEmoji(cc) })),
-    max,
-  );
+/**
+ * Concentration as a bar rather than a sentence.
+ *
+ * "62% of where this browser goes is A, B, C" is a true sentence a reader
+ * has to assemble in their head. The same fact as one full-width stacked
+ * bar is a shape: how much of the width three names take is the whole
+ * point, and the tail being visible as a tail is half of it.
+ */
+function renderConcentration(
+  wrap: HTMLElement,
+  barMount: HTMLElement,
+  capEl: HTMLElement,
+  hosts: ReportHost[],
+): void {
+  const owners = tallyOwners(hosts);
+  // Concentration is a claim about how FEW hands hold the traffic, so it
+  // needs a meaningful number of hands to be a claim at all. With three
+  // destinations under three operators the honest reading is "100% of these
+  // three are held by three operators", which is arithmetic wearing the
+  // clothes of a finding. Below five holders the card stays shut.
+  const MIN_HOLDERS = 5;
+  if (owners.length < MIN_HOLDERS) {
+    wrap.hidden = true;
+    return;
+  }
+  const slices: Slice[] = owners.slice(0, 8).map((o) => ({
+    label: o.owner,
+    value: o.count,
+    color: CATEGORY_HEX[o.category] ?? categoryColor(o.category),
+  }));
+  const restCount = owners.slice(8).reduce((a, o) => a + o.count, 0);
+  if (restCount > 0) {
+    slices.push({ label: `${owners.length - 8} others`, value: restCount, color: "var(--w-line-strong)" });
+  }
+  const bar = stackShare(slices, { width: 1100, height: 14, title: "share of destinations by operator" });
+  if (!bar) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  barMount.replaceChildren(bar);
+  const conc = concentration(hosts);
+  capEl.textContent =
+    `${conc.pct}% of these destinations sit with just ${conc.top.length} of ${owners.length} operators: ` +
+    `${conc.top.join(", ")}.`;
+}
+
+/**
+ * When it went there: a real time axis over the trailing day.
+ *
+ * The ledger below is sorted busiest-first and the fleet feed newest-first,
+ * and neither can show that eleven of twelve sightings happened inside four
+ * minutes. That clustering is often the only visible difference between a
+ * person browsing and something running on its own, so it gets an axis.
+ */
+function renderWhenStrip(
+  mount: HTMLElement,
+  noteEl: HTMLElement,
+  emptyEl: HTMLElement,
+  hosts: ReportHost[],
+): void {
+  const events: TimeEvent[] = hosts
+    .filter((h) => h.lastAt > 0)
+    .map((h) => ({
+      at: h.lastAt,
+      tone: hostTone(h) === "hot" ? ("hot" as const) : hostTone(h) === "warn" ? ("warn" as const) : ("accent" as const),
+      label: h.host,
+    }));
+  const svg = timeStrip(events, { width: 520, height: 64, hours: 24 });
+  if (!svg) {
+    mount.replaceChildren();
+    emptyEl.hidden = false;
+    noteEl.textContent = "";
+    return;
+  }
+  emptyEl.hidden = true;
+  mount.replaceChildren(svg);
+  const flagged = events.filter((e) => e.tone === "hot").length;
+  noteEl.textContent = flagged > 0 ? `${events.length} sightings, ${flagged} flagged` : `${events.length} sightings`;
 }
 
 // ------------------------------------------------------------ ledger
@@ -386,24 +588,17 @@ async function refreshBrowser(): Promise<void> {
     const res = await send<{ ok: true; report: BrowserReport }>({ kind: "getBrowserReport" });
     if (!res.ok) return;
     const { hosts, totals } = res.report;
+    const anyBrowser = hosts.length > 0;
+    setAnalyticsShown(
+      "b",
+      anyBrowser,
+      "This browser has not been seen visiting anywhere yet. Browse a little: every destination arrives here with the join path behind it, and none of it leaves this device.",
+    );
     renderTiles($("b-tiles"), totalsTiles(totals));
-    renderDonut($<HTMLCanvasElement>("b-donut"), $("b-donut-legend"), hosts);
-    renderOwnerBars($("b-owners"), hosts);
-    renderNetworkBars($("b-networks"), hosts);
-    renderCountryBars($("b-countries"), hosts);
-
-    const conc = concentration(hosts);
-    const concCard = $("b-conc-card");
-    if (conc.top.length >= 2 && totals.destinations >= 5) {
-      concCard.hidden = false;
-      const line = $("b-concentration");
-      line.replaceChildren();
-      line.append(document.createTextNode(""));
-      const strong = el("strong", undefined, `${conc.pct}%`);
-      line.append(strong, document.createTextNode(` of where this browser goes is ${conc.top.join(", ")}.`));
-    } else {
-      concCard.hidden = true;
-    }
+    renderDonut($("b-donut"), $("b-donut-legend"), hosts);
+    renderJoinFlow($("b-join"), $("b-join-note"), $("b-join-empty"), hosts, "this browser");
+    renderConcentration($("b-conc"), $("b-conc-bar"), $("b-conc-cap"), hosts);
+    renderWhenStrip($("b-when"), $("b-when-note"), $("b-when-empty"), hosts);
 
     // Rows whose lookup count grew since the last paint flash once.
     const fresh = new Set<string>();
@@ -474,10 +669,17 @@ async function refreshFleet(): Promise<void> {
     ...totalsTiles(f.totals).slice(0, 4),
     { label: "Flagged", value: String(f.totals.flagged), hot: f.totals.flagged > 0 },
   ]);
-  renderDonut($<HTMLCanvasElement>("f-donut"), $("f-donut-legend"), f.hosts);
-  renderOwnerBars($("f-owners"), f.hosts);
-  renderNetworkBars($("f-networks"), f.hosts);
-  renderCountryBars($("f-countries"), f.hosts);
+  setAnalyticsShown(
+    "f",
+    f.hosts.length > 0,
+    f.endpoints.length === 0
+      ? "No endpoints on this account yet. Give a device or an agent a Whisper address and its traffic appears here."
+      : `${f.endpoints.length} endpoint${f.endpoints.length === 1 ? "" : "s"} on this account, none of them seen going anywhere in the last 24 hours.`,
+  );
+  renderDonut($("f-donut"), $("f-donut-legend"), f.hosts);
+  renderJoinFlow($("f-join"), $("f-join-note"), $("f-join-empty"), f.hosts, "the fleet");
+  renderConcentration($("f-conc"), $("f-conc-bar"), $("f-conc-cap"), f.hosts);
+  renderWhenStrip($("f-when"), $("f-when-note"), $("f-when-empty"), f.hosts);
 
   const feed = $("f-feed");
   feed.replaceChildren(
@@ -497,6 +699,19 @@ async function refreshFleet(): Promise<void> {
   $("f-feed-note").textContent = f.feedStatus.updatedAt
     ? `polling, updated ${agoLabel(f.feedStatus.updatedAt)}`
     : "polling";
+  // A poll only moves the mark when the poll brought something NEW.
+  //
+  // Pushing on every completed poll was a heartbeat wearing an event's
+  // clothes: the fleet is polled every fifteen seconds whether or not
+  // anything happened, so the track would have ticked forever beside a
+  // fleet doing nothing, which is precisely what this mark promises never
+  // to do. That the control plane answered is already stated, in words,
+  // by the "polling, updated Ns ago" line beside it.
+  const newest = f.feed.reduce((a, r) => Math.max(a, r.ts), 0);
+  if (newest > lastFleetEvent) {
+    lastFleetEvent = newest;
+    arrived(f.totals.flagged > 0 ? "hot" : "accent");
+  }
   setFeedBadge(f.feedStatus.mode, f.feedStatus.updatedAt);
 }
 
@@ -513,34 +728,28 @@ function factorRow(f: { label: string; state: string; weight: number; detail: st
   return row;
 }
 
-function drawGauge(canvas: HTMLCanvasElement, score: number, level: string): void {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  const cx = W / 2;
-  const cy = H / 2;
-  const r = Math.min(W, H) / 2 - 8;
-  ctx.lineWidth = 10;
-  ctx.lineCap = "round";
-  const ink = chartInk();
-  ctx.strokeStyle = ink.track;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, -Math.PI / 2, 1.5 * Math.PI);
-  ctx.stroke();
-  ctx.strokeStyle = level === "strong" ? ink.ok : level === "partial" ? ink.warn : ink.crit;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (score / 100) * 2 * Math.PI);
-  ctx.stroke();
-  ctx.fillStyle = ink.text;
-  ctx.font = `300 30px ${CANVAS_MONO}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(score), cx, cy - 4);
-  ctx.font = `9px ${CANVAS_SANS}`;
-  ctx.fillStyle = ink.muted;
-  ctx.fillText("OF 100", cx, cy + 16);
+/**
+ * Identity health, on the shared arc.
+ *
+ * This was a hand-rolled canvas ring that had to be redrawn from scratch on
+ * every colour-scheme change and went soft on a HiDPI screen. The arc
+ * primitive is the same measurement in SVG: it inherits the theme, stays
+ * crisp, and opens at the bottom so the ring reads as a scale with two ends
+ * rather than as a pie missing a slice.
+ */
+function drawGauge(mount: HTMLElement, score: number, level: string): void {
+  const svg = arcGauge({
+    size: 140,
+    value: Math.max(0, Math.min(1, score / 100)),
+    center: String(score),
+    caption: "OF 100",
+    tone: level === "strong" ? "ok" : level === "partial" ? "warn" : "hot",
+    title: `identity health ${score} of 100 (${level})`,
+  });
+  // A score outside 0..100 is a bug upstream, and the primitive refuses it
+  // rather than drawing a full ring over the top of it. Say so instead of
+  // leaving a hole where a measurement should be.
+  mount.replaceChildren(svg ?? el("div", "w-note", `identity health: ${score} (out of range)`));
 }
 
 /** Trim `text` to the widest ellipsised form that fits `maxWidth` px. */
@@ -715,7 +924,7 @@ async function refreshEndpoint(agent: string): Promise<void> {
     { label: "Last seen", value: c?.lastSeen ? agoLabel(c.lastSeen) : "-" },
   ]);
 
-  drawGauge($<HTMLCanvasElement>("e-gauge"), d.health.score, d.health.level);
+  drawGauge($("e-gauge"), d.health.score, d.health.level);
   $("e-health-headline").textContent =
     d.health.revoked ? "Revoked" : d.health.level === "strong" ? "Strongly trusted" : d.health.level === "partial" ? "Partially verified" : "Unverified";
   $("e-factors").replaceChildren(...d.health.factors.map(factorRow));
@@ -1110,6 +1319,45 @@ function setFeedBadge(mode: "live" | "polling" | "offline", updatedAt: number | 
     mode === "live" ? "updating live" : mode === "polling" ? `polling${updatedAt ? `, updated ${agoLabel(updatedAt)}` : ""}` : "offline";
 }
 
+// ------------------------------------------------------------- the pulse
+
+/**
+ * The live mark, and the rule it carries.
+ *
+ * A surface that animates while nothing is happening teaches a reader that
+ * motion here is decoration, and once they have learned that, no motion on
+ * the surface can ever mean anything again. So this track is driven ONLY
+ * from real arrivals: one mark per committed navigation, one per completed
+ * fleet poll. When arrivals stop it goes quiet and SAYS it has gone quiet,
+ * rather than idling in a way that looks like work.
+ */
+let pulse: PulseHandle | null = null;
+let lastArrival = 0;
+/** Newest fleet activity timestamp already accounted for, so a poll that
+ *  re-reads the same rows is not counted a second time. */
+let lastFleetEvent = 0;
+let quietTimer: ReturnType<typeof setInterval> | null = null;
+
+/** How long without an arrival before the track admits it is quiet. */
+const QUIET_AFTER_MS = 75_000;
+
+function mountPulse(): void {
+  pulse = pulseTrack({ width: 64, height: 14, title: "one mark per arriving event" });
+  $("live-pulse").replaceChildren(pulse.el);
+  pulse.idle();
+  quietTimer = setInterval(() => {
+    if (!pulse) return;
+    if (lastArrival === 0 || Date.now() - lastArrival > QUIET_AFTER_MS) pulse.idle();
+  }, 10_000);
+  void quietTimer;
+}
+
+/** Record that something really arrived. Never called on a timer alone. */
+function arrived(tone: "accent" | "hot" = "accent"): void {
+  lastArrival = Date.now();
+  pulse?.push(tone);
+}
+
 let view: ViewName = "browser";
 
 function switchView(next: ViewName): void {
@@ -1201,7 +1449,12 @@ function init(): void {
   const port = chrome.runtime.connect({ name: "dashboard" });
   let navTimer: ReturnType<typeof setTimeout> | null = null;
   port.onMessage.addListener((msg: { kind?: string }) => {
-    if (msg.kind !== "nav" || view !== "browser") return;
+    if (msg.kind !== "nav") return;
+    // The mark goes up for every committed navigation, whichever view is
+    // open: the event happened, and a reader on the fleet tab watching the
+    // track go still would otherwise conclude the browser had stopped.
+    arrived();
+    if (view !== "browser") return;
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       void refreshBrowser();
@@ -1227,6 +1480,7 @@ function init(): void {
   // it is loaded once and does not repaint on every navigation nudge. Its
   // own memo (background/scale.ts) matches the endpoint's 30s cache, so a
   // periodic refresh costs at most one request every half minute.
+  mountPulse();
   void loadScaleBand();
   // The tier meter only earns its place while the reader has no account:
   // with one, the identity control above it is the whole story.

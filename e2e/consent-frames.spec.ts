@@ -262,7 +262,9 @@ test("a CROSS-ORIGIN CMP wall in an iframe is declined, and counts one win", asy
   await expect.poll(() => frameClicks(page, 1), { timeout: 15_000 }).toEqual([
     "onetrust-reject-all-handler",
   ]);
-  await expect(page.frames()[1].locator("#onetrust-banner-sdk")).toBeHidden();
+  const cmpFrame = page.frames()[1];
+  expect(cmpFrame, "the consent iframe must still be attached").toBeDefined();
+  await expect(cmpFrame!.locator("#onetrust-banner-sdk")).toBeHidden();
   await expect.poll(winCount, { timeout: 5000 }).toBe(1);
 
   // The top document has no banner and must have been left entirely alone.
@@ -279,7 +281,9 @@ test("a SAME-ORIGIN framed wall is declined too", async () => {
   await expect.poll(() => frameClicks(page, 1), { timeout: 15_000 }).toEqual([
     "onetrust-reject-all-handler",
   ]);
-  await expect(page.frames()[1].locator("#onetrust-banner-sdk")).toBeHidden();
+  const cmpFrame = page.frames()[1];
+  expect(cmpFrame, "the consent iframe must still be attached").toBeDefined();
+  await expect(cmpFrame!.locator("#onetrust-banner-sdk")).toBeHidden();
   await expect.poll(winCount, { timeout: 5000 }).toBe(1);
   await page.close();
 });

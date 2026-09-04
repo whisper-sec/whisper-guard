@@ -203,8 +203,8 @@ public identity verification all work with no key.
   on-device navigation list and session allow-list never leave the device.
 - **One exception, on an explicit click (2.6.0):** the on-demand page scan reads
   the current page's visible text and sends only the indicators it finds there,
-  which are hostnames and file hashes. The text itself never leaves the browser
-  and CVE ids are never sent anywhere. It runs only when the reader presses Scan;
+  which are hostnames, file hashes and CVE ids. The text itself never leaves the
+  browser. It runs only when the reader presses Scan;
   nothing scans a page in the background. This is why the store listings tick
   Website content from 2.6.0 onward.
 - The same host also carries the keyed control plane: your fleet roster,

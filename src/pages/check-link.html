@@ -10,23 +10,44 @@
 </head>
 <body>
   <main>
-    <h1>Check this link with Whisper</h1>
-    <div id="host" class="host"></div>
+    <header class="cl-head">
+      <div class="w-lockup">
+        <img src="knot.png" alt="Whisper" class="w-knot">
+        <span class="w-wordmark">Whisper</span>
+        <span class="w-product">Guard</span>
+      </div>
+      <span class="cl-kicker">Before you open it</span>
+    </header>
 
-    <section id="result" class="card" hidden>
-      <div id="detector-row" class="row" hidden>
-        <span class="tag warn">on-device</span>
-        <span id="detector-text"></span>
+    <!-- The verdict, on a coloured rail, exactly as the panel draws it, so
+         the two surfaces cannot disagree about what a band looks like. -->
+    <section id="verdict" class="cl-verdict" hidden>
+      <span id="cl-rail" class="cl-rail"></span>
+      <div class="cl-verdict-body">
+        <div id="host" class="host"></div>
+        <div class="cl-chips">
+          <span id="band-tag" class="tag" hidden></span>
+          <span id="detector-tag" class="tag warn" hidden>on-device look-alike</span>
+        </div>
+        <div id="band-text" class="cl-line"></div>
+        <div id="detector-text" class="cl-line warn" hidden></div>
       </div>
-      <div id="band-row" class="row" hidden>
-        <span id="band-tag" class="tag"></span>
-        <span id="band-text"></span>
-      </div>
-      <div id="keyless-note" class="note" hidden>
-        The live graph check is switched off, so this ran on-device only.
-        Turn it back on in the extension's settings for the live verdict.
-      </div>
-      <div id="error-note" class="note" hidden></div>
+    </section>
+
+    <div id="keyless-note" class="note" hidden>
+      The live graph check is switched off, so this ran on-device only.
+      Turn it back on in the extension's settings for the live verdict.
+    </div>
+    <div id="error-note" class="note lost" hidden></div>
+
+    <!-- THE CHAIN. The whole reason this window is worth opening rather
+         than hovering the status bar: the destination's join path, read
+         before a single byte of it has loaded. Nothing on the page has
+         run, no password manager has fired, and the reader can already see
+         which network it lives on and who holds it. -->
+    <section id="chain-card" class="cl-chain" hidden>
+      <div id="chain-mount"></div>
+      <div id="cl-metrics" class="cl-metrics"></div>
     </section>
 
     <div class="actions">

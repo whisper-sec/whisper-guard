@@ -102,8 +102,8 @@ personal communications, location, user activity, or website content. The
 on-device destination log never leaves the device. Website content IS collected,
 and only in one place: the on-demand page scan reads the current page's
 visible text WHEN THE READER CLICKS SCAN, extracts indicators from it, and sends
-only those indicators (hostnames and file hashes). The page text itself never
-leaves the browser, and CVE ids are never sent anywhere.
+only those indicators (hostnames, file hashes and CVE ids). The page text
+itself never leaves the browser.
 Web history is ticked because the current site's hostname is transmitted to the
 server for the live safety verdict, and Google counts any off-device
 transmission as "collection".

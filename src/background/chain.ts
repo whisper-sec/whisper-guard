@@ -345,14 +345,29 @@ export async function buildChain(host: string): Promise<SiteChain> {
   // Round 2 needs round 1's outputs. The ASN can come from enrich (which
   // walks it server-side) and is confirmed by the route read; either alone
   // is enough to draw the network rung.
-  const noRoute: RouteRow = { prefix: null, threatNeighbors: null, asn: null, ok: true };
-  const noPresence: PresenceRow = { facilities: 0, ixps: 0, facilitySample: [], ixSample: [], ok: true };
-  const noPlace = { city: null, country: null, ok: true };
+  // A read we SKIP because an upstream read FAILED is not a read that came
+  // back empty, and these fallbacks used to say it was.
+  //
+  // `ok: true` here meant that with the graph unreachable the panel drew
+  // "not in a routed prefix", "no announcing network" and "no recorded
+  // presence": three positive claims about the world, made without anyone
+  // having been asked. That is an error rendering as an empty state, in the
+  // one module written specifically to refuse it, and on the surface where
+  // it reads as reassurance. The skip now inherits the reason it happened,
+  // so a rung skipped after a failure is unavailable and a rung skipped
+  // after a genuine "nothing here" stays empty.
   const routable = primaryIp !== null && resolved.a.length > 0;
+  const skippedRoute: RouteRow = {
+    prefix: null, threatNeighbors: null, asn: null, ok: resolved.ok,
+  };
+  const skippedPlace = { city: null, country: null, ok: resolved.ok };
+  const skippedPresence: PresenceRow = {
+    facilities: 0, ixps: 0, facilitySample: [], ixSample: [], ok: enrich.ok,
+  };
   const [route, place, presence] = await Promise.all([
-    routable ? fetchRoute(primaryIp) : Promise.resolve(noRoute),
-    routable ? fetchPlace(primaryIp) : Promise.resolve(noPlace),
-    enrich.asn ? fetchPresence(enrich.asn) : Promise.resolve(noPresence),
+    routable ? fetchRoute(primaryIp) : Promise.resolve(skippedRoute),
+    routable ? fetchPlace(primaryIp) : Promise.resolve(skippedPlace),
+    enrich.asn ? fetchPresence(enrich.asn) : Promise.resolve(skippedPresence),
   ]);
 
   const rungs: ChainRung[] = [];

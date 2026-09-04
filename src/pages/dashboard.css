@@ -85,10 +85,48 @@ body {
 .legend-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend-row .n { margin-left: auto; font-family: var(--w-mono); font-variant-numeric: tabular-nums; color: var(--w-text); }
 
-.bars { margin-top: 10px; }
+/* ------------------------------------------------------------- the join
 
-.concentration { font-size: 14px; color: var(--w-muted); }
-.concentration strong { color: var(--w-text); font-weight: 600; }
+   One wide card, because the finding is the NARROWING from left to right
+   and a narrowing needs room to narrow in. The three cards this replaced
+   were 260px each and drew the same list three times. */
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+  /* Cards size to their content rather than stretching to the tallest.
+     Stretched, the short card grew a card-height of empty ground under a
+     34px strip, which is the dead space this pass exists to remove. */
+  align-items: start;
+}
+
+/* The proportion under each stat. Small, quiet, and directly under the
+   number it places. */
+.tile-mark { line-height: 0; margin-top: 8px; }
+.tile-mark svg { display: block; width: 100%; height: 4px; }
+.tile-cap {
+  font-family: var(--w-mono);
+  font-size: 10px;
+  /* --w-muted, not --w-faint: this is a sentence a reader reads, and
+     --w-faint measured 2.95:1 against the card. */
+  color: var(--w-muted);
+  margin-top: 5px;
+}
+
+.joinflow { margin-top: 12px; overflow-x: auto; }
+.joinflow svg { display: block; width: 100%; min-width: 520px; height: auto; }
+
+.conc { margin-top: 10px; }
+.conc-bar { line-height: 0; }
+.conc-bar svg { display: block; width: 100%; height: 14px; border-radius: 3px; }
+.conc-cap { font-size: 12px; color: var(--w-muted); margin-top: 7px; line-height: 1.5; }
+
+.whenstrip { margin-top: 12px; }
+.whenstrip svg { display: block; width: 100%; height: auto; }
+
+.donut-mount { line-height: 0; flex: none; }
+.donut-mount svg { display: block; }
 
 /* Ledger cells */
 .w-ledger { max-height: 420px; overflow-y: auto; }
@@ -301,3 +339,8 @@ footer { padding: 12px 20px 18px; width: min(1200px, 100%); margin: 0 auto; }
 .ledger-chain .ch-head { margin-bottom: 8px; }
 .w-ledger-row.open { background: var(--w-hover); }
 .w-ledger-row.expandable { cursor: pointer; }
+
+.nodata-body { font-size: 13px; color: var(--w-muted); line-height: 1.6; margin: 8px 0 0; max-width: 68ch; }
+
+.gauge-mount { line-height: 0; flex: none; }
+.gauge-mount svg { display: block; }

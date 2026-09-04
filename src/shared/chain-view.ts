@@ -246,11 +246,34 @@ export function renderChain(
     ev.className = "ch-evidence";
     const lead = document.createElement("span");
     lead.className = "ch-ev-lead";
-    lead.textContent = "joined by ";
+    lead.textContent = "joined by";
+    ev.appendChild(lead);
+
+    // The graph's own edge names, drawn as the path they describe rather
+    // than printed as one run-on token. The CONTENT is unchanged and still
+    // verbatim, because "we joined RESOLVES_TO then DELEGATED_TO" is a
+    // stronger claim than any sentence we could write about it. What
+    // changes is that a reader can now see it is a path: it was a 60
+    // character monospace string breaking mid-word across three lines,
+    // which is the most product-specific fact on the panel rendered as
+    // debug output.
     const path = document.createElement("span");
     path.className = "ch-ev-path";
-    path.textContent = evidence[0] ?? "";
-    ev.append(lead, path);
+    const hops = (evidence[0] ?? "").split("->").map((h) => h.trim()).filter((h) => h.length > 0);
+    hops.forEach((hop, i) => {
+      if (i > 0) {
+        const arrow = document.createElement("span");
+        arrow.className = "ch-ev-arrow";
+        arrow.textContent = "\u203a";
+        arrow.setAttribute("aria-hidden", "true");
+        path.appendChild(arrow);
+      }
+      const chip = document.createElement("span");
+      chip.className = "ch-ev-hop";
+      chip.textContent = hop;
+      path.appendChild(chip);
+    });
+    ev.appendChild(path);
     frag.appendChild(ev);
   }
 

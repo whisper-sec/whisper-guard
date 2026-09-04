@@ -162,7 +162,7 @@ test("pre-click protection on the invoked tab: held link, inline interstitial, Z
     .requestsTo(GRAPH_READ_HOST)
     .filter((r) => r.scheme === "https" && r.body.includes("whisper.assess") && r.body.includes(EVIL));
   expect(assess).toHaveLength(1);
-  expect(JSON.parse(assess[0].body).parameters).toEqual({ hs: [EVIL] });
+  expect(JSON.parse(assess[0]!.body).parameters).toEqual({ hs: [EVIL] });
   for (const r of net.log) {
     expect(`${r.path} ${r.body}`).not.toContain("hunter2");
   }

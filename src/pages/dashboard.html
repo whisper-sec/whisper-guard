@@ -22,6 +22,13 @@
     </nav>
     <span class="spacer"></span>
     <span id="identity-chip" class="w-chip unknown" title="">NOT ON THE WHISPER NETWORK</span>
+    <!-- The one thing on this product that moves on its own, and it moves
+         ONLY when something actually arrived: one mark per committed
+         navigation on this browser, one per completed poll on the fleet.
+         The rule it establishes is that motion here means an event, so
+         when the surface is still, the reader can trust that nothing is
+         happening rather than wondering whether we stopped looking. -->
+    <span id="live-pulse" class="live-pulse" aria-hidden="true"></span>
     <span id="feed-status" class="w-live live"><span class="w-dot"></span><span id="feed-label">updating live</span></span>
   </header>
 
@@ -81,30 +88,53 @@
 
     <section class="tiles" id="b-tiles"></section>
 
-    <section class="grid">
+    <!-- THE JOIN.
+         This card replaces three that were the same bar-list primitive over
+         the same rows, grouped three ways: by company, by network, by
+         country. Three flat groupings of one list say nothing about how the
+         rows RELATE, and how they relate is the only thing here that needs
+         a graph. Drawn as a flow, the narrowing is the finding: many
+         destinations, fewer networks, fewer operators still, a handful of
+         jurisdictions. -->
+    <section class="w-card" id="b-join-card" hidden>
+      <div class="card-head">
+        <div class="w-label">The join behind where this browser goes</div>
+        <span class="w-note" id="b-join-note"></span>
+      </div>
+      <div id="b-conc" class="conc" hidden>
+        <div id="b-conc-bar" class="conc-bar"></div>
+        <div id="b-conc-cap" class="conc-cap"></div>
+      </div>
+      <div id="b-join" class="joinflow"></div>
+      <p id="b-join-empty" class="w-note" hidden></p>
+    </section>
+
+    <!-- The honest empty state. When there is nothing to draw, the tiles,
+         the join and the breakdowns are HIDDEN rather than drawn as frames
+         around zeros. Six cards reading 0 look like a fleet that has been
+         measured and found empty; they are actually a page that has not
+         been given anything yet, and those are different facts. -->
+    <section class="w-card" id="b-nodata" hidden>
+      <div class="w-label">Nothing to show yet</div>
+      <p class="nodata-body" id="b-nodata-body"></p>
+    </section>
+
+    <section class="grid-2" id="b-breakdowns">
       <div class="w-card">
         <div class="w-label">Where it goes, by kind</div>
         <div class="donut-wrap">
-          <canvas id="b-donut" width="180" height="180"></canvas>
+          <div id="b-donut" class="donut-mount"></div>
           <div id="b-donut-legend" class="legend"></div>
         </div>
       </div>
       <div class="w-card">
-        <div class="w-label">By company</div>
-        <div id="b-owners" class="bars"></div>
+        <div class="card-head">
+          <div class="w-label">When it went there</div>
+          <span class="w-note" id="b-when-note"></span>
+        </div>
+        <div id="b-when" class="whenstrip"></div>
+        <p id="b-when-empty" class="w-note" hidden>No timed sightings in the window yet.</p>
       </div>
-      <div class="w-card">
-        <div class="w-label">By network</div>
-        <div id="b-networks" class="bars"></div>
-      </div>
-      <div class="w-card">
-        <div class="w-label">By country <span class="hint">(network jurisdiction; anycast-fuzzy)</span></div>
-        <div id="b-countries" class="bars"></div>
-      </div>
-    </section>
-
-    <section class="w-card" id="b-conc-card" hidden>
-      <div id="b-concentration" class="concentration"></div>
     </section>
 
     <section class="w-card">
@@ -139,25 +169,43 @@
 
       <section class="tiles" id="f-tiles"></section>
 
-      <section class="grid">
+      <!-- Same treatment as "this browser", and for the same reason: three
+           groupings of one list showed no relationship between the rows,
+           and on an empty fleet they drew four card frames around four
+           blanks. -->
+      <section class="w-card" id="f-join-card" hidden>
+        <div class="card-head">
+          <div class="w-label">The join behind where the fleet goes</div>
+          <span class="w-note" id="f-join-note"></span>
+        </div>
+        <div id="f-conc" class="conc" hidden>
+          <div id="f-conc-bar" class="conc-bar"></div>
+          <div id="f-conc-cap" class="conc-cap"></div>
+        </div>
+        <div id="f-join" class="joinflow"></div>
+        <p id="f-join-empty" class="w-note" hidden></p>
+      </section>
+
+      <section class="w-card" id="f-nodata" hidden>
+        <div class="w-label">Nothing to show yet</div>
+        <p class="nodata-body" id="f-nodata-body"></p>
+      </section>
+
+      <section class="grid-2" id="f-breakdowns">
         <div class="w-card">
           <div class="w-label">Where the fleet goes, by kind</div>
           <div class="donut-wrap">
-            <canvas id="f-donut" width="180" height="180"></canvas>
+            <div id="f-donut" class="donut-mount"></div>
             <div id="f-donut-legend" class="legend"></div>
           </div>
         </div>
         <div class="w-card">
-          <div class="w-label">By company</div>
-          <div id="f-owners" class="bars"></div>
-        </div>
-        <div class="w-card">
-          <div class="w-label">By network</div>
-          <div id="f-networks" class="bars"></div>
-        </div>
-        <div class="w-card">
-          <div class="w-label">By country <span class="hint">(network jurisdiction; anycast-fuzzy)</span></div>
-          <div id="f-countries" class="bars"></div>
+          <div class="card-head">
+            <div class="w-label">When it went there</div>
+            <span class="w-note" id="f-when-note"></span>
+          </div>
+          <div id="f-when" class="whenstrip"></div>
+          <p id="f-when-empty" class="w-note" hidden>No timed sightings in the window yet.</p>
         </div>
       </section>
 
@@ -199,7 +247,7 @@
         <div class="w-card">
           <div class="w-label">Identity health</div>
           <div class="health-wrap">
-            <canvas id="e-gauge" width="140" height="140"></canvas>
+            <div id="e-gauge" class="gauge-mount"></div>
             <div>
               <div id="e-health-headline" class="health-headline"></div>
               <div id="e-factors" class="factors"></div>

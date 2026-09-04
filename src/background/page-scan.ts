@@ -70,7 +70,9 @@ export interface IocRow {
   kind: Ioc["kind"];
   value: string;
   host: string | null;
-  /** UNKNOWN when the graph holds nothing; null only for a CVE id, which we never ask about. */
+  /** UNKNOWN when the graph holds nothing; null only for a CVE id, which is
+   *  never put to whisper.assess (it has no host to assess) though it IS put
+   *  to whisper.explain, which answers it properly. */
   band: GraphBand | null;
   label: string | null;
   /** Present when the graph had an account of this indicator to give. */
@@ -108,9 +110,12 @@ function readStashedIocs(): unknown {
 /**
  * Scan the tab and verdict every indicator the graph can speak to.
  *
- * A CVE id comes back with `band: null` rather than UNKNOWN: we never asked, and
- * UNKNOWN would claim we did. A file HASH is asked about like any other subject -
- * whisper.assess verdicts hashes directly - so it comes back with a real band.
+ * A CVE id comes back with `band: null` rather than UNKNOWN: it has no host, so
+ * it is never put to whisper.assess, and UNKNOWN would claim a verdict we did
+ * not seek. It IS put to whisper.explain below, which answers a CVE with its
+ * KEV status and named sources. A file HASH is asked about like any other
+ * subject - whisper.assess verdicts hashes directly - so it comes back with a
+ * real band.
  */
 export async function scanTabIocs(
   tabId: number,

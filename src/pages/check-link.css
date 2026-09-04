@@ -11,14 +11,47 @@ body {
   font: 13px/1.6 var(--w-font-sans);
 }
 
-main { padding: 22px 20px; }
+main { padding: 16px 16px 20px; }
 
-h1 { font-size: 15px; margin: 0 0 10px; font-weight: 600; letter-spacing: 0.01em; }
+.cl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cl-kicker {
+  font-family: var(--w-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+/* The verdict, on the same coloured rail the panel uses. The rail is the
+   one mark on this window a reader can read before any words: it carries
+   the band, and the chip beside it carries the WORD for the band, so the
+   colour is never the only channel. */
+.cl-verdict { display: flex; gap: 10px; margin-bottom: 12px; }
+.cl-rail {
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--w-line-strong);
+  align-self: stretch;
+}
+.cl-rail.benign { background: var(--w-ok); }
+.cl-rail.suspicious { background: var(--w-v-low); }
+.cl-rail.malicious { background: var(--w-v-crit); }
+.cl-rail.unknown { background: var(--w-line-strong); }
+.cl-verdict-body { min-width: 0; flex: 1; }
+.cl-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 5px 0 6px; }
+.cl-line { font-size: 12px; color: var(--w-text); line-height: 1.5; }
+.cl-line.warn { color: var(--w-v-low); margin-top: 4px; }
 
 .host {
   font: 600 14px/1.4 var(--w-mono);
   word-break: break-all;
-  margin-bottom: 14px;
   color: var(--w-text);
 }
 
@@ -76,3 +109,40 @@ h1 { font-size: 15px; margin: 0 0 10px; font-weight: 600; letter-spacing: 0.01em
 .btn.primary:hover { border-color: var(--w-accent); background: color-mix(in srgb, var(--w-accent) 18%, transparent); }
 
 .privacy { font-size: 11px; color: var(--w-muted); margin-top: 20px; }
+
+
+/* ------------------------------------------------------------- the join
+
+   The reason this window exists rather than a tooltip. The spine renders
+   from the shared chain view, so it is the same seven rungs the panel
+   draws and the two can never drift apart. */
+
+.cl-chain {
+  border-top: 1px solid var(--w-line);
+  margin: 14px 0 16px;
+  padding-top: 12px;
+}
+
+.cl-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.cl-metric { min-width: 0; }
+.cl-metric-label {
+  font-family: var(--w-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--w-muted);
+  margin-bottom: 5px;
+}
+.cl-metric-mark { line-height: 0; margin-bottom: 5px; }
+.cl-metric-mark svg { display: block; max-width: 100%; height: auto; }
+.cl-metric-cap { font-size: 11px; color: var(--w-muted); line-height: 1.4; }
+.cl-metric-cap.hot { color: var(--w-v-high); font-weight: 600; }
+
+/* An unreadable answer is amber and worded, never a blank space that
+   reads as a clean result. */
+.note.lost { color: var(--w-v-low); }

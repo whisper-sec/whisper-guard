@@ -161,7 +161,7 @@ test("held link to an evidenced-CRITICAL target: inline interstitial, zero bytes
   // Exactly one graph round-trip, carrying the BARE hostname and nothing else.
   const graphReqs = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
   expect(graphReqs).toHaveLength(1);
-  expect(JSON.parse(graphReqs[0].body).parameters).toEqual({ hs: [EVIL.link] });
+  expect(JSON.parse(graphReqs[0]!.body).parameters).toEqual({ hs: [EVIL.link] });
 
   // Escape = Go back: overlay gone, page untouched, still not navigated.
   await page.keyboard.press("Escape");
@@ -307,7 +307,7 @@ test("off-origin form submit is held; nothing typed ever leaves; Proceed resumes
   }
   const graphReqs = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.scheme === "https");
   expect(graphReqs).toHaveLength(1);
-  expect(JSON.parse(graphReqs[0].body).parameters).toEqual({ hs: [EVIL.form] });
+  expect(JSON.parse(graphReqs[0]!.body).parameters).toEqual({ hs: [EVIL.form] });
 
   // Proceed: the ORIGINAL submission resumes, payload intact, only to the
   // intended host (that POST is the submission itself, nothing else).
@@ -316,7 +316,7 @@ test("off-origin form submit is held; nothing typed ever leaves; Proceed resumes
   await page.waitForURL(`https://${EVIL.form}/collect`, { timeout: 15_000 });
   const posts = net.requestsTo(EVIL.form).filter((r) => r.method === "POST");
   expect(posts.length).toBeGreaterThan(0);
-  expect(posts[0].body).toContain("supersecret-4111111111111111");
+  expect(posts[0]!.body).toContain("supersecret-4111111111111111");
   for (const r of net.log) {
     if (r.host === EVIL.form) continue;
     expect(r.body).not.toContain("supersecret");

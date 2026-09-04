@@ -381,7 +381,7 @@ export async function visit(ext: Extension, url: string): Promise<{ page: Page; 
     throw new Error(`expected exactly one new tab, saw ${created.length}`);
   }
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  return { page, tabId: created[0] };
+  return { page, tabId: created[0]! };
 }
 
 /**

@@ -217,6 +217,144 @@ test("the light theme flips in Gecko too, and does not just inherit dark", async
   }
 });
 
+// ------------------------------------------- the drawn evidence, in Gecko
+
+/**
+ * The interstitial's shim. Its own fixtures, deliberately not shared with
+ * the panel's: this page needs a flagged name with a fresh registration, a
+ * populated neighbourhood and cited reasons, and bending the panel's
+ * fixtures to carry all that would change what the panel test measures.
+ */
+const WARNING_SHIM = `
+const WHOST = "warn-render-guard-e2e.com";
+const CHAIN = {
+  host: WHOST, live: 7, unavailable: 0,
+  evidence: ["RESOLVES_TO->IPV4->DELEGATED_TO->VENDOR:badhosting"],
+  facilities: ["Example Colo MTL1"], exchanges: [],
+  owner: "Bad Hosting LLC", country: "CA", city: "Example City", asn: "AS64550", asnOk: true,
+  ip: "192.0.2.66", vendor: null, vendorCategory: null, identifyCategory: null,
+  roles: [], ageDays: 16, prefix: "192.0.2.0/24", threatNeighbors: 9, at: Date.now(),
+  rungs: [
+    { kind: "name", label: "NAME", value: WHOST, fact: "registered 16 days ago", state: "live", tone: "warn", detail: [], drillable: false },
+    { kind: "vendor", label: "RUNS ON", value: null, fact: null, state: "empty", tone: "neutral", detail: [], drillable: false },
+    { kind: "address", label: "ADDRESS", value: "192.0.2.66", fact: "Example City", state: "live", tone: "neutral", detail: [], drillable: true },
+    { kind: "prefix", label: "PREFIX", value: "192.0.2.0/24", fact: "9 flagged neighbours", state: "live", tone: "hot", detail: [], drillable: true },
+    { kind: "network", label: "NETWORK", value: "AS64550", fact: null, state: "live", tone: "neutral", detail: [], drillable: true },
+    { kind: "operator", label: "OPERATOR", value: "Bad Hosting LLC", fact: "CA", state: "live", tone: "neutral", detail: [], drillable: false },
+    { kind: "presence", label: "PRESENT AT", value: "Example Colo MTL1", fact: "1 facility", state: "live", tone: "neutral", detail: [], drillable: false },
+  ],
+};
+const REPLIES = {
+  getChain: { ok: true, chain: CHAIN },
+  getProtection: { ok: true, protection: {
+    host: WHOST, band: "CRITICAL", blocking: true, label: "credential-phishing suspect",
+    coverage: "malicious-evidenced", who: "Bad Hosting LLC", category: null,
+    where: { city: "Example City", country: "CA", ip: "192.0.2.66" },
+    ageDays: 16, why: ["Listed in 1 threat feed: openphish", "listed in 2 threat feed(s)"],
+    score: 17.2, whyFactors: [], variants: [], partial: false } },
+};
+window.chrome = {
+  runtime: {
+    id: "shim",
+    sendMessage: (msg) => Promise.resolve(REPLIES[msg.kind] ?? { ok: true }),
+    getURL: (p) => p,
+  },
+  tabs: { query: () => Promise.resolve([{ id: 1 }]), update: () => Promise.resolve() },
+  storage: { local: { get: () => Promise.resolve({}), set: () => Promise.resolve() } },
+};
+`;
+
+interface EvidenceGeometry {
+  spineNodes: number;
+  spineLabels: string[];
+  rungs: number;
+  agePct: number;
+  neighbourMarks: number;
+  reasonMarks: number;
+  bodyScrollWidth: number;
+  bodyClientWidth: number;
+}
+
+async function measureWarning(browser: Browser, scheme: "dark" | "light"): Promise<EvidenceGeometry> {
+  const page: Page = await browser.newPage({
+    viewport: { width: 1000, height: 900 },
+    colorScheme: scheme,
+    reducedMotion: "reduce",
+  });
+  await page.addInitScript(WARNING_SHIM);
+  await page.goto(`file://${join(DIST, "warning.html")}?host=warn-render-guard-e2e.com`);
+  await page.locator("#ev-chain .ch-rung").first().waitFor({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+
+  const g = await page.evaluate((): EvidenceGeometry => {
+    const pct = document.querySelector("#ev-age svg")?.getAttribute("data-pct");
+    return {
+      // Circles are read or empty rungs; a cross is an unreadable one, and
+      // it is drawn as two lines rather than a circle on purpose.
+      spineNodes:
+        document.querySelectorAll("#ev-spine svg circle").length +
+        document.querySelectorAll("#ev-spine svg g").length,
+      spineLabels: [...document.querySelectorAll("#ev-spine svg text")].map((t) => t.textContent ?? ""),
+      rungs: document.querySelectorAll("#ev-chain .ch-rung").length,
+      agePct: pct === null || pct === undefined ? -1 : Number(pct),
+      neighbourMarks: document.querySelectorAll("#ev-neighbours svg rect").length,
+      reasonMarks: document.querySelectorAll("#ev-feeds svg rect").length,
+      bodyScrollWidth: document.body.scrollWidth,
+      bodyClientWidth: document.body.clientWidth,
+    };
+  });
+  await page.close();
+  return g;
+}
+
+test("the interstitial's drawn evidence renders the same in Gecko and Blink", async () => {
+  // The most consequential surface in the product went from zero marks to
+  // eleven in this pass, and every one of them is inline SVG whose colours
+  // come from CSS custom properties in presentation attributes. That is
+  // exactly the kind of thing that works in one engine and silently paints
+  // black in the other, and no other gate looks at this page in Gecko.
+  test.setTimeout(120_000);
+  const ff = await firefox.launch();
+  const cr = await chromium.launch();
+  try {
+    const gecko = await measureWarning(ff, "dark");
+    const blink = await measureWarning(cr, "dark");
+
+    // CONTROL: the Blink render really produced the marks. Without this,
+    // two engines drawing nothing would agree perfectly.
+    expect(blink.rungs, "Blink drew no chain on the interstitial").toBe(7);
+    expect(blink.neighbourMarks, "Blink drew no neighbourhood marks").toBe(9);
+    expect(blink.reasonMarks, "Blink drew no reason marks").toBe(2);
+    expect(blink.agePct, "Blink drew no age bar").toBeGreaterThan(0);
+
+    // And Gecko agrees, mark for mark.
+    expect(gecko.rungs).toBe(blink.rungs);
+    expect(gecko.spineNodes).toBe(blink.spineNodes);
+    expect(gecko.spineLabels).toEqual(blink.spineLabels);
+    expect(gecko.spineLabels).toEqual([
+      "NAME", "RUNS ON", "ADDRESS", "PREFIX", "NETWORK", "OPERATOR", "PRESENT AT",
+    ]);
+    expect(gecko.neighbourMarks, "Gecko drew a different number of neighbour marks").toBe(9);
+    expect(gecko.reasonMarks).toBe(2);
+
+    // The age bar is geometry, not text: 16 days against 365 is under 5% of
+    // the width, and both engines must place it there.
+    expect(gecko.agePct).toBeCloseTo(blink.agePct, 2);
+    expect(gecko.agePct, "16 of 365 days").toBeLessThan(5);
+    expect(gecko.agePct).toBeGreaterThan(4);
+
+    for (const [engine, g] of [["Gecko", gecko], ["Blink", blink]] as const) {
+      expect(
+        g.bodyScrollWidth,
+        `${engine} overflows the interstitial horizontally`,
+      ).toBeLessThanOrEqual(g.bodyClientWidth + 1);
+    }
+  } finally {
+    await ff.close();
+    await cr.close();
+  }
+});
+
 test("the built Firefox manifest is the one under test", () => {
   // The shim renders dist/firefox, so this pins that the tree it renders is
   // the Firefox build and not a stale copy of the Chromium one.

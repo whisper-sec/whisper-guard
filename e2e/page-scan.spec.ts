@@ -46,10 +46,27 @@ const FIXTURE_HTML = `<!doctype html>
   <!-- a comment carrying ${SECRET_PATH} too, which textContent never sees -->
 </body></html>`;
 
+/** The control page: no hash, no domain, no CVE, nothing assessable. */
+const PLAIN_HTML = `<!doctype html>
+<html><head><title>release notes</title></head>
+<body><h1>Release notes</h1><p>Tidied the changelog and bumped the year.</p></body></html>`;
+
 test.beforeAll(async () => {
   net = new E2ENetwork();
-  await net.start({ "fixture-scan.com": FIXTURE_HTML });
-  ext = await launchExtension(await makeShieldDist(), net);
+  await net.start();
+  // THE FIXTURE HAS TO BE REGISTERED. `start()` takes no arguments, so the
+  // page map passed to it here was silently discarded and every navigation
+  // in this file died on ERR_NAME_NOT_RESOLVED. The suite has therefore
+  // never once proven the claim it exists to prove, while the store
+  // listings tick "Website content" on the strength of it. It is now
+  // registered through the API that exists, and the whole e2e tree is
+  // typechecked (npm run typecheck) so a call to a signature that does not
+  // exist cannot reach main again.
+  net.setPage("fixture-scan.com", FIXTURE_HTML);
+  net.setPagePath("fixture-scan.com", "/plain", PLAIN_HTML);
+  net.setVerdict("fixture-scan.com", { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.setVerdict("evil-scan.com", { band: "CRITICAL", coverage: "malicious-evidenced", label: "malicious" });
+  ext = await launchExtension({ proxyPort: net.proxyPort, dist: makeShieldDist() });
 });
 
 test.afterAll(async () => {
@@ -79,17 +96,31 @@ test("the scan sends the indicators and nothing else of the page", async () => {
   expect(bodies).toContain(HASH);
   expect(bodies).toContain("evil-scan.com");
 
+  // The CVE id leaves too, deliberately: it has no host, so it goes to
+  // whisper.explain as its own subject and comes back with its KEV status
+  // and named sources. This file used to assert the opposite, and so did
+  // the popup note, the README and the store submission - none of which had
+  // ever been run against the wire, because the fixture below was
+  // registered through a signature that does not exist and every
+  // navigation in this file died on ERR_NAME_NOT_RESOLVED.
+  expect(bodies).toContain(CVE);
+
   // WHAT MUST NOT. Each of these is a different way to leak.
-  expect(bodies).not.toContain(CVE);                       // no assessable subject
   expect(bodies).not.toContain("sk_live_do_not_exfiltrate_me"); // the secret itself
   expect(bodies).not.toContain("token=");                  // the query that carried it
   expect(bodies).not.toContain("Dropper observed");        // the page's prose
   expect(bodies).not.toContain("Incident notes");          // its title and heading
 
   // The note the reader is shown must match what the capture proves, or the UI
-  // is making a promise the wire does not keep.
+  // is making a promise the wire does not keep. Both halves are asserted: what
+  // it promises never leaves, and the full list of what does. Naming the list
+  // is what stops the note drifting back to a shorter, friendlier, false one.
   await expect(popup.locator("#iocscan-note")).toContainText("never leaves your browser");
-  await expect(popup.locator("#iocscan-note")).toContainText("CVE ids are never sent");
+  await expect(popup.locator("#iocscan-note")).toContainText("hostnames, file hashes and CVE ids");
+  await expect(
+    popup.locator("#iocscan-note"),
+    "the note must not claim CVE ids stay in the browser while the wire shows them leaving",
+  ).not.toContainText("CVE ids are never sent");
 
   await popup.close();
   await page.close();

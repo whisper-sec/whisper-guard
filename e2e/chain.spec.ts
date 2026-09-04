@@ -309,3 +309,55 @@ test("an unreadable graph scale shows NO figure at all", async () => {
   await popup.close();
   await page.close();
 });
+
+test("a read SKIPPED because an earlier one failed is unreadable, not empty", async () => {
+  // The subtlest form of the defect this module exists to refuse, and it was
+  // live: three rungs are only fetched when an earlier read produced the
+  // value they need, and their skip-fallbacks declared the read a SUCCESS
+  // that found nothing.
+  //
+  // So a resolve that failed left "not in a routed prefix" on the PREFIX
+  // rung, and an enrich that failed left "no announcing network" and "no
+  // recorded presence" on two more: three statements about the world, on a
+  // panel that had asked nobody. Each of the three is individually plausible
+  // and reads as reassurance, which is why none of them was noticed.
+  //
+  // CONTROL FIRST. With the graph answering, those rungs are live. Without
+  // this the assertions below would pass against a build where the rungs
+  // never render at all.
+  {
+    const { popup, page } = await openChain(HOST);
+    await expect(rung(popup, "PREFIX")).not.toHaveClass(/ch-empty/);
+    await expect(rung(popup, "NETWORK")).toContainText("AS64540");
+    await popup.close();
+    await page.close();
+  }
+
+  // Now nothing answers, which is what takes the SKIP path rather than the
+  // one-failed-query path the partial-outage test above exercises.
+  net.graphMode = "down";
+  const DARK = "chain-skipped-guard-e2e.com";
+  seed(DARK);
+  try {
+    const { page, tabId } = await visit(ext, `https://${DARK}/`);
+    await waitForIcon(ext, tabId, ["benign", "unknown", "signedout"]);
+    const popup = await openPopup(ext, tabId);
+    await popup.locator("#chain-mount .ch-rung").first().waitFor({ timeout: 20_000 });
+    await popup.waitForTimeout(1200);
+
+    for (const label of ["PREFIX", "NETWORK", "PRESENT AT"]) {
+      await expect(rung(popup, label), `${label} was skipped, not answered`).toHaveClass(/ch-lost/);
+      await expect(rung(popup, label)).toContainText("could not be read");
+    }
+    // The exact sentences that were being printed. Named, so a future
+    // refactor that reintroduces any one of them fails by name.
+    const spine = (await popup.locator("#chain-mount").textContent()) ?? "";
+    for (const claim of ["not in a routed prefix", "no announcing network", "no recorded presence"]) {
+      expect(spine, `"${claim}" was stated without anything being read`).not.toContain(claim);
+    }
+    await popup.close();
+    await page.close();
+  } finally {
+    net.graphMode = "mock";
+  }
+});

@@ -1,0 +1,122 @@
+[
+  {
+    "surface": "popup / signed out / flagged site",
+    "file": "popup-signedout-flagged.png",
+    "contentHeight": 1336,
+    "viewportHeight": 600,
+    "deadFractionFirstViewport": 0,
+    "drawnMarks": 12,
+    "narratedFacts": 3,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "popup / signed out / ordinary site",
+    "file": "popup-signedout-ordinary.png",
+    "contentHeight": 1187,
+    "viewportHeight": 600,
+    "deadFractionFirstViewport": 0,
+    "drawnMarks": 12,
+    "narratedFacts": 1,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "popup / signed out / ordinary site / light",
+    "file": "popup-signedout-ordinary-light.png",
+    "contentHeight": 1187,
+    "viewportHeight": 600,
+    "deadFractionFirstViewport": 0,
+    "drawnMarks": 12,
+    "narratedFacts": 1,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "popup / signed out / unknown name",
+    "file": "popup-signedout-unknown.png",
+    "contentHeight": 1201,
+    "viewportHeight": 600,
+    "deadFractionFirstViewport": 0,
+    "drawnMarks": 12,
+    "narratedFacts": 1,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "popup / signed in / not enrolled",
+    "file": "popup-signedin.png",
+    "contentHeight": 1168,
+    "viewportHeight": 600,
+    "deadFractionFirstViewport": 0,
+    "drawnMarks": 11,
+    "narratedFacts": 1,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "dashboard / this browser",
+    "file": "dashboard-this-browser.png",
+    "contentHeight": 1081,
+    "viewportHeight": 900,
+    "deadFractionFirstViewport": 0.021,
+    "drawnMarks": 9,
+    "narratedFacts": 4,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "dashboard / fleet",
+    "file": "dashboard-fleet.png",
+    "contentHeight": 900,
+    "viewportHeight": 900,
+    "deadFractionFirstViewport": 0,
+    "drawnMarks": 1,
+    "narratedFacts": 5,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "dashboard / endpoint",
+    "file": "dashboard-endpoint.png",
+    "contentHeight": 1622,
+    "viewportHeight": 900,
+    "deadFractionFirstViewport": 0.005,
+    "drawnMarks": 3,
+    "narratedFacts": 11,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "options",
+    "file": "options.png",
+    "contentHeight": 1545,
+    "viewportHeight": 900,
+    "deadFractionFirstViewport": 0.5,
+    "drawnMarks": 0,
+    "narratedFacts": 0,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "first run",
+    "file": "firstrun.png",
+    "contentHeight": 973,
+    "viewportHeight": 900,
+    "deadFractionFirstViewport": 0.5,
+    "drawnMarks": 0,
+    "narratedFacts": 1,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "warning interstitial",
+    "file": "warning.png",
+    "contentHeight": 900,
+    "viewportHeight": 900,
+    "deadFractionFirstViewport": 0.5,
+    "drawnMarks": 11,
+    "narratedFacts": 2,
+    "selfAnimating": 0
+  },
+  {
+    "surface": "check a link",
+    "file": "check-link.png",
+    "contentHeight": 618,
+    "viewportHeight": 560,
+    "deadFractionFirstViewport": 0.099,
+    "drawnMarks": 9,
+    "narratedFacts": 0,
+    "selfAnimating": 0
+  }
+]

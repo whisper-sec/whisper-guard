@@ -18,7 +18,6 @@ import { test, expect } from "@playwright/test";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
-  makeEgressDist,
   openDashboard,
   openPopup,
   setKey,
@@ -168,8 +167,16 @@ test("this-browser dashboard renders enriched destinations from on-device naviga
   await expect(dash.locator("#b-tiles")).toContainText("Destinations", { timeout: 15_000 });
   await expect(dash.locator("#b-ledger")).toContainText("clean-site-guard-e2e.com", { timeout: 15_000 });
   await expect(dash.locator("#b-ledger")).toContainText("E2E Clean Site", { timeout: 15_000 });
-  // Country flag/company columns came from the graph enrichment.
-  await expect(dash.locator("#b-owners")).toContainText("E2E Clean Site");
+  // The graph enrichment reaches the JOIN, which is where the by-company,
+  // by-network and by-country cards went: the operator appears as a node,
+  // and it appears CONNECTED, which is the thing those three flat lists
+  // could never show. Asserting the ribbon count as well as the label
+  // matters, because a flow that drew every node and no ribbon would still
+  // contain this string.
+  const join = dash.locator("#b-join");
+  await expect(join).toContainText("E2E Clean Site", { timeout: 15_000 });
+  await expect(join.locator("svg text").filter({ hasText: "OPERATORS" })).toHaveCount(1);
+  expect(await join.locator("svg path").count()).toBeGreaterThan(0);
   await dash.close();
 });
 
@@ -220,8 +227,10 @@ test("fleet view renders the roster and merged, enriched destinations", async ()
   await expect(dash.locator("#f-roster")).toContainText("My iPhone", { timeout: 15_000 });
   await expect(dash.locator("#f-roster")).toContainText("Work laptop");
   await expect(dash.locator("#f-tiles")).toContainText("Endpoints");
-  // The merged, enriched destinations from every device's op:logs.
-  await expect(dash.locator("#f-owners")).toContainText("E2E Clean Site", { timeout: 15_000 });
+  // The merged, enriched destinations from every device's op:logs, on the
+  // join rather than the three flat lists it replaced.
+  await expect(dash.locator("#f-join")).toContainText("E2E Clean Site", { timeout: 15_000 });
+  expect(await dash.locator("#f-join svg path").count()).toBeGreaterThan(0);
   await expect(dash.locator("#f-feed")).toContainText("clean-site-guard-e2e.com");
   await expect(dash.locator("#f-feed-note")).toContainText("polling");
   await dash.close();

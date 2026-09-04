@@ -327,7 +327,7 @@ export class E2ENetwork {
       void this.handle("http", req, res, m[1], m[2] ?? "/");
     });
     this.proxy.on("connect", (req, clientSocket, head) => {
-      const host = (req.url ?? "").split(":")[0].toLowerCase();
+      const host = (req.url ?? "").split(":")[0]!.toLowerCase();
       this.log.push({ scheme: "connect", method: "CONNECT", host, path: "", body: "", key: null, at: Date.now() });
       if (this.graphMode === "down" && (host === GRAPH_READ_HOST || host === GRAPH_CONTROL_HOST)) {
         clientSocket.destroy();
@@ -350,7 +350,7 @@ export class E2ENetwork {
       res.writeHead(405).end("egress endpoint speaks CONNECT only");
     });
     this.egressProxy.on("connect", (req, clientSocket, head) => {
-      const host = (req.url ?? "").split(":")[0].toLowerCase();
+      const host = (req.url ?? "").split(":")[0]!.toLowerCase();
       const auth = req.headers["proxy-authorization"];
       const expected = "Basic " + Buffer.from(`w:${this.egressToken}`).toString("base64");
       this.egressAttempts.push({ host, authed: auth === expected });
@@ -404,7 +404,7 @@ export class E2ENetwork {
     pathOverride?: string,
   ): Promise<void> {
     const rawHost = hostOverride ?? req.headers.host ?? "";
-    const host = rawHost.split(":")[0].toLowerCase();
+    const host = rawHost.split(":")[0]!.toLowerCase();
     const path = pathOverride ?? req.url ?? "/";
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
