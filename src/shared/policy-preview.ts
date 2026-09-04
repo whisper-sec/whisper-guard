@@ -30,24 +30,35 @@
 // reporting a zero it never measured. A fourth state is the honest answer
 // when the first three would all be lies.
 
-/** The facts one destination carries, as the graph answered them. */
+/**
+ * The facts one destination carries, as the graph answered them.
+ *
+ * Every field here is the input to the SAME predicate the resolver uses, and
+ * the comments in shared/config.ts say which trap each one avoids.
+ */
 export interface HostPolicyFacts {
   host: string;
-  /** The reconciled band on the NAME (never a raw feed hit on a shared IP). */
+  /** The reconciled band on the NAME. */
   band: string | null;
-  /** The graph's own reconciled "this should be blocked" boolean. */
-  blocking: boolean;
-  /** The name, or an address it resolves to, is OFAC-sanctioned. */
+  /** The reconciled OFAC flag on the NAME. */
   sanctioned: boolean;
-  /** The name resolves to a listed Tor exit relay. */
+  /** The name, or an address it resolves to, is a listed Tor exit relay. */
   tor: boolean;
-  /** Why the announcing prefix is RPKI-invalid, when it is. */
+  /** Why the announcing prefix is RPKI-invalid, when its status says so. */
   rpkiReason: string | null;
-  /** Announcing networks the graph classes as suspicious hosting. */
-  suspectAsns: string[];
-  /** The reputation class that put them there (the graph's own word). */
-  suspectClass: string | null;
-  asn: string | null;
+  /**
+   * The assess marker that names a bulletproof-hosting posture, verbatim,
+   * or null. The resolver looks for that word in the verdict's band, label
+   * and sub_labels, so this preview asks the same procedure the same way.
+   */
+  bulletproofMarker: string | null;
+  /**
+   * EVERY country this name resolves into, not one. A host lands in several
+   * at once (google.com is US, DE and NL live), so a single-country answer
+   * is an evasion: a deny on DE would pass whenever the arbitrary pick was
+   * US. Enforcement fires when ANY of these is denied.
+   */
+  countries: string[];
 }
 
 /**
@@ -95,7 +106,9 @@ export interface BundlePreview {
 export const NEWLY_REGISTERED_UNAVAILABLE =
   "Registration age is a per-name WHOIS read (whisper.history answers for one name per call), " +
   "so previewing it here would cost one graph call per destination. Everything else on this " +
-  "list is read in a single call.";
+  "list is read in a single call. The network's own check is best-effort for the same reason: " +
+  "a name carries no creation date of its own, so where the age is not known this protection " +
+  "lets the name through rather than blocking it.";
 
 /** The bundle ids this module can evaluate from one batch read. */
 const PREVIEWABLE = new Set([
@@ -129,7 +142,6 @@ export function previewBundles(
   hosts: string[],
   facts: PolicyFactSet,
   geoDeny: string[],
-  countryOf: (host: string) => string | undefined,
 ): Record<string, BundlePreview> {
   const considered = hosts.length;
   const unknownSet = new Set(facts.unread.map((h) => h.toLowerCase()));
@@ -146,42 +158,44 @@ export function previewBundles(
     NEWLY_REGISTERED_UNAVAILABLE,
     null,
   );
-  // The country blocker reads its evidence off the destination list itself,
-  // so it is previewable even when the graph read failed entirely - and its
-  // error stays null for the same reason.
-  const geo = blank(GEO_PREVIEW_ID, considered, 0, null, null);
+  // The country blocker reads the SAME country set the resolver geolocates
+  // against, so it shares the graph read and its error rather than answering
+  // from a single enrichment column that disagrees with enforcement.
+  const geo = blank(GEO_PREVIEW_ID, considered, unknown, null, facts.error);
   out[GEO_PREVIEW_ID] = geo;
 
   const denied = new Set(geoDeny.map((c) => c.trim().toUpperCase()).filter(Boolean));
-  let geoUnknown = 0;
 
   for (const raw of hosts) {
     const host = raw.toLowerCase();
-
-    const cc = countryOf(raw)?.trim().toUpperCase();
-    if (!cc) geoUnknown++;
-    else if (denied.has(cc)) {
-      geo.matched.push(raw);
-      geo.reasons[raw] = `resolves in ${cc}`;
-    }
-
     if (readFailed) continue;
     const f = facts.byHost[host];
     if (!f) continue;
 
-    if (f.blocking || f.sanctioned) {
-      out["block:sanctions"]?.matched.push(raw);
-      const reason = f.sanctioned
-        ? "on a sanctions list"
-        : `the graph's verdict is blocking${f.band ? ` (${f.band})` : ""}`;
-      const p = out["block:sanctions"];
-      if (p) p.reasons[raw] = reason;
+    // ANY denied country fires, exactly as enforcement does. Naming every
+    // match matters here: "blocked because it also lands in DE" is the whole
+    // explanation for a destination a reader thinks of as American.
+    const hit = f.countries.filter((cc) => denied.has(cc.trim().toUpperCase()));
+    if (hit.length > 0) {
+      geo.matched.push(raw);
+      geo.reasons[raw] =
+        f.countries.length > hit.length
+          ? `resolves in ${hit.join(", ")} (also ${f.countries.filter((c) => !hit.includes(c)).join(", ")})`
+          : `resolves in ${hit.join(", ")}`;
     }
-    if (f.suspectAsns.length > 0) {
+
+    if (f.sanctioned) {
+      const p = out["block:sanctions"];
+      if (p) {
+        p.matched.push(raw);
+        p.reasons[raw] = "the name carries the reconciled OFAC sanctions flag";
+      }
+    }
+    if (f.bulletproofMarker) {
       const p = out["block:bulletproof"];
       if (p) {
         p.matched.push(raw);
-        p.reasons[raw] = `${f.suspectAsns[0]} is classed ${(f.suspectClass ?? "suspicious").toLowerCase().replace(/_/g, " ")}`;
+        p.reasons[raw] = `the graph's verdict names it: ${f.bulletproofMarker}`;
       }
     }
     if (f.tor) {
@@ -199,7 +213,6 @@ export function previewBundles(
       }
     }
   }
-  geo.unknown = geoUnknown;
   return out;
 }
 
@@ -237,7 +250,7 @@ export function previewPreset(
   let unknown = 0;
   let error: string | null = null;
   for (const p of Object.values(previews)) {
-    if (p.unavailable || p.id === GEO_PREVIEW_ID) continue;
+    if (p.unavailable) continue;
     unknown = Math.max(unknown, p.unknown);
     if (p.error) error = p.error;
   }

@@ -216,7 +216,12 @@ test.beforeAll(async () => {
   net = new E2ENetwork();
   await net.start();
 
-  net.setVerdict(EVIL, { band: "CRITICAL", coverage: "partial", label: "credential-phishing suspect" });
+  // The bulletproof marker rides the ASSESS verdict, because that is where
+  // the resolver looks for it.
+  net.setVerdict(EVIL, {
+    band: "CRITICAL", coverage: "partial", label: "credential-phishing suspect",
+    subLabels: ["bulletproof-hosting"],
+  });
   net.setEnrich(EVIL, {
     ip: "192.0.2.66", city: "Montreal, CA", country: "CA", asn: "AS64550",
     owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC",
@@ -255,11 +260,8 @@ test.beforeAll(async () => {
   // answered for and matches nothing; NEW is deliberately absent, so the
   // governor has a real "not in the graph" count to draw rather than a
   // capture in which every destination happens to be known.
-  net.setPolicyFacts(EVIL, {
-    band: "CRITICAL", blocking: true, suspectAsns: ["AS64550"],
-    suspectClass: "HIGHLY_SUSPICIOUS", asn: "AS64550",
-  });
-  net.setPolicyFacts(GOOD, { band: "NONE", asn: "AS64540" });
+  net.setPolicyFacts(EVIL, { band: "CRITICAL", sanctioned: true, countries: ["CA"] });
+  net.setPolicyFacts(GOOD, { band: "NONE", countries: ["GB"] });
 
   ext = await launchExtension({ proxyPort: net.proxyPort, dist: makeShieldDist() });
 });

@@ -57,8 +57,14 @@ export interface BundleInfo {
 export const BUNDLE_INFO: BundleInfo[] = [
   {
     id: "block:sanctions",
-    label: "Threat & sanctions lists",
-    description: "Blocks destinations on live threat-intel and sanctions feeds.",
+    // "Threat & sanctions lists" and "live threat-intel feeds" were both
+    // wider than the switch. The resolver tests one reconciled flag, the
+    // OFAC sanctions flag on the name; it does not block a destination for
+    // being on a threat feed. A label that promises threat-intel blocking
+    // and delivers sanctions blocking is a reader trusting a control to do
+    // something it was never going to do.
+    label: "Sanctioned destinations",
+    description: "Blocks destinations carrying the reconciled OFAC sanctions flag.",
   },
   {
     id: "block:bulletproof",
@@ -107,12 +113,12 @@ export const PRESETS: PresetInfo[] = [
   {
     id: "standard",
     label: "Standard",
-    promise: "Blocks known-bad: threat-listed and bulletproof-hosted destinations.",
+    promise: "Blocks the known-bad: OFAC-sanctioned and bulletproof-hosted destinations.",
   },
   {
     id: "strict",
     label: "Strict",
-    promise: "Blocks threat lists, bulletproof hosts, brand-new domains, Tor exits and invalid routes.",
+    promise: "Blocks sanctioned destinations, bulletproof hosts, brand-new domains, Tor exits and invalid routes.",
   },
   {
     id: "open",

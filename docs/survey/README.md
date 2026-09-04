@@ -263,11 +263,39 @@ they are counts over a page that finally has something on it.
 **A preset now carries its own consequence.** Every preset card and every
 protection checkbox draws a bar of matched-against-checked over the
 destinations that endpoint actually reached, with the matched hostnames and
-the fact that fired behind a disclosure. It costs ONE graph call for the
-whole page: a three-hop walk (name to address to announcing prefix to
-network) that returns, per destination, the fact each protection keys on.
-Measured against the live graph on 2026-09-04: fifty destinations, one
-request, 120ms.
+the fact that fired behind a disclosure. It costs two parallel graph calls
+for the whole page, whatever the page holds: one anchored property read for
+sanctions, Tor, RPKI and geography, and one batched `whisper.assess` for
+bulletproof hosting. Measured against the live graph on 2026-09-04: fifty
+destinations, 126ms.
+
+**Every predicate is the resolver's own predicate.** A preview that
+evaluates a protection differently from the network that enforces it is
+worse than no preview: it is a second opinion presented as the first. Each
+one had a trap in it, and all four were found by checking rather than by
+reading:
+
+- **Sanctions** is the reconciled OFAC flag on the NAME. Not the blocking
+  verdict, which fires on any threat listing and is a far broader claim, and
+  not the flag on a resolved address, which is shared with every other name
+  on it. The control's own label was corrected to match: it said "Threat &
+  sanctions lists" and blocks neither threat feeds nor lists.
+- **RPKI** is the announcing prefix's `rpkiStatus`, not `rpkiInvalidReason`.
+  Live, 87 prefixes are invalid with a null reason and 6 carry a reason while
+  the status says valid, so the reason field both misses and over-reports.
+- **Bulletproof** is the word "bulletproof" in the assess verdict's band,
+  label or sub_labels, because that is the question the resolver asks. An
+  earlier version keyed on the announcing ASN's reputation class, which is a
+  defensible signal and is not the one being enforced.
+- **Geography** collects `:COUNTRY` nodes and matches ANY of them. Three
+  traps: the ISO2 is in `c.name` (`c.code` is null everywhere); the
+  traversal also reaches CITY, so unconstrained it can return "Frankfurt am
+  Main, DE" as a country code; and **a host lands in several countries at
+  once**, so a single-country answer is an evasion. google.com is US, DE and
+  NL live, and a deny on DE passed whenever the arbitrary pick was US.
+  Constraining the address hop to IPV4 is the same evasion one layer down:
+  google.com reads US alone across its v4 addresses and US, DE, NL across all
+  89 of them.
 
 **Three outcomes per destination, never two.** Matched; checked and clear;
 or not in the graph at all. The third is counted and shown separately every
@@ -293,9 +321,11 @@ about the world made out of a network error.
 
 **The country blocker became a decision over real traffic.** It lists the
 countries this endpoint's destinations actually land in, busiest first, each
-with the number it would cost and each one click from being blocked. That
-row costs no request at all: the ISO2 of every destination is a column the
-page had already drawn.
+with the number it would cost and each one click from being blocked. Because
+a destination can land in several countries at once, it appears under each of
+them, and the counts sum to more than the destination total: blocking any one
+of a destination's countries stops it. A destination a reader thinks of as
+American is told exactly why it is on the German list.
 
 **The endpoint gained the axis it was missing.** The browser and fleet views
 both had a 24-hour time strip; the one view that drills into a single

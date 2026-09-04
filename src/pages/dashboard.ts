@@ -1144,13 +1144,7 @@ async function refreshPolicyFacts(agent: string, hosts: ReportHost[]): Promise<v
 /** The preview, recomputed from the facts and the policy on screen now. */
 function currentPreview(p: DevicePolicy): Record<string, BundlePreview> | null {
   if (!governFacts) return null;
-  const country = new Map(governFactHosts.map((h) => [h.host, h.country]));
-  return previewBundles(
-    governFactHosts.map((h) => h.host),
-    governFacts,
-    p.geoDeny,
-    (host) => country.get(host) ?? undefined,
-  );
+  return previewBundles(governFactHosts.map((h) => h.host), governFacts, p.geoDeny);
 }
 
 /**
@@ -1439,10 +1433,16 @@ function renderGovern(): void {
 function renderGeoSuggestions(p: DevicePolicy, busy: boolean): void {
   const box = $("g-geo-suggest");
   const tally = new Map<string, number>();
+  let placed = 0;
   for (const h of governFactHosts) {
-    const cc = h.country?.trim().toUpperCase();
-    if (!cc) continue;
-    tally.set(cc, (tally.get(cc) ?? 0) + 1);
+    // EVERY country the name resolves into, from the same read enforcement
+    // geolocates against. The enrichment column beside it holds one country
+    // (the ASN's registration country), and a pill built from that would
+    // quote a different number from the one the block would actually cost.
+    const ccs = governFacts?.byHost[h.host.toLowerCase()]?.countries ?? [];
+    if (ccs.length === 0) continue;
+    placed++;
+    for (const cc of ccs) tally.set(cc, (tally.get(cc) ?? 0) + 1);
   }
   const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
   if (ranked.length === 0) {
@@ -1451,12 +1451,12 @@ function renderGeoSuggestions(p: DevicePolicy, busy: boolean): void {
     return;
   }
   box.hidden = false;
-  const placed = [...tally.values()].reduce((a, b) => a + b, 0);
   box.replaceChildren(
     el(
       "div",
       "w-note",
-      `Where this endpoint's traffic lands, ${placed} of ${governFactHosts.length} destinations placed:`,
+      `Where this endpoint's traffic lands, ${placed} of ${governFactHosts.length} destinations placed. ` +
+        "A destination can land in several countries at once, and blocking any one of them stops it:",
     ),
     ...ranked.map(([cc, n]) => {
       const on = p.geoDeny.includes(cc);
@@ -1464,8 +1464,8 @@ function renderGeoSuggestions(p: DevicePolicy, busy: boolean): void {
       btn.type = "button";
       btn.disabled = busy || on;
       btn.title = on
-        ? `${countryName(cc)} is blocked: ${n} of these destinations do not resolve`
-        : `Block ${countryName(cc)}: ${n} of these ${governFactHosts.length} destinations would stop resolving`;
+        ? `${countryName(cc)} is blocked: ${n} of these destinations land there and do not resolve`
+        : `Block ${countryName(cc)}: ${n} of these ${governFactHosts.length} destinations land there and would stop resolving`;
       btn.append(
         el("span", "gp-flag", flagEmoji(cc)),
         el("span", "gp-name", countryName(cc)),

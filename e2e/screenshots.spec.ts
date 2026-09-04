@@ -44,7 +44,12 @@ test.beforeAll(async () => {
   mkdirSync(SHOTS, { recursive: true });
   net = new E2ENetwork();
   await net.start();
-  net.setVerdict(LOOKALIKE, { band: "CRITICAL", coverage: "partial", label: "credential-phishing suspect" });
+  // The bulletproof marker rides the ASSESS verdict, because that is where
+  // the resolver looks for it: band, label, then sub_labels.
+  net.setVerdict(LOOKALIKE, {
+    band: "CRITICAL", coverage: "partial", label: "credential-phishing suspect",
+    subLabels: ["bulletproof-hosting"],
+  });
   net.setVerdict("news-blog-example.com", { band: "UNKNOWN", coverage: "no-data", label: null });
   // The first-run page fetches one real verdict for github.com to show the
   // check working. Unseeded, the hermetic mock answers UNKNOWN/no-data and the
@@ -126,15 +131,17 @@ test.beforeAll(async () => {
   // figure carries no "not in the graph" clause: that third state is
   // exercised, with its own controls, in e2e/policy-preview.spec.ts rather
   // than asserted from a picture.
-  net.setPolicyFacts(LOOKALIKE, {
-    band: "CRITICAL", blocking: true, suspectAsns: ["AS64550"],
-    suspectClass: "HIGHLY_SUSPICIOUS", asn: "AS64550",
-  });
+  net.setPolicyFacts(LOOKALIKE, { band: "CRITICAL", sanctioned: true, countries: ["CA"] });
   net.setPolicyFacts("ads.tracker-vendor.com", {
-    band: "NONE", rpkiReason: "no covering ROA", asn: "AS64520",
+    band: "NONE", rpkiReason: "no covering ROA", countries: ["US"],
   });
-  for (const h of ["mail.workmail-vendor.com", "cdn.mediastream-vendor.com", "searchy-vendor.com", "news.mediaco-vendor.com"]) {
-    net.setPolicyFacts(h, { band: "NONE" });
+  for (const [h, ccs] of [
+    ["mail.workmail-vendor.com", ["DE"]],
+    ["cdn.mediastream-vendor.com", ["NL", "DE"]],
+    ["searchy-vendor.com", ["IE"]],
+    ["news.mediaco-vendor.com", ["GB"]],
+  ] as const) {
+    net.setPolicyFacts(h, { band: "NONE", countries: [...ccs] });
   }
   // The chain's own inputs for the gallery. Without these the published
   // figure shows a walk that stops three rungs early, which is a picture of

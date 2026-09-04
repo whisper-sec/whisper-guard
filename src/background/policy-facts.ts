@@ -13,7 +13,12 @@
 // unknown. Nothing in this module can turn "we did not find out" into "there
 // is nothing there".
 
-import { POLICY_FACTS_BATCH, POLICY_FACTS_QUERY, POLICY_FACTS_TTL_MS } from "../shared/config";
+import {
+  POLICY_BULLETPROOF_QUERY,
+  POLICY_FACTS_BATCH,
+  POLICY_FACTS_QUERY,
+  POLICY_FACTS_TTL_MS,
+} from "../shared/config";
 import type { HostPolicyFacts, PolicyFactSet } from "../shared/policy-preview";
 import { graphQuery, hasKey } from "./graph-client";
 
@@ -41,14 +46,26 @@ function shape(host: string, row: Record<string, unknown>): HostPolicyFacts {
   return {
     host,
     band: str(row["band"]),
-    blocking: bool(row["blocking"]),
     sanctioned: bool(row["sanctioned"]),
     tor: bool(row["tor"]),
     rpkiReason: str(row["rpkiReason"]),
-    suspectAsns: strList(row["suspectAsns"]),
-    suspectClass: str(row["suspectClass"]),
-    asn: str(row["asn"]),
+    bulletproofMarker: null, // filled from the assess leg below
+    countries: strList(row["countries"]).map((c) => c.trim().toUpperCase()).filter(Boolean),
   };
+}
+
+/**
+ * The bulletproof marker, decided exactly as the resolver decides it: the
+ * word "bulletproof", case-insensitively, in the assess verdict's band,
+ * label or sub_labels. Returns the matching string so the surface can quote
+ * the graph's own word rather than paraphrasing it.
+ */
+function bulletproofMarker(row: Record<string, unknown>): string | null {
+  const candidates = [str(row["band"]), str(row["label"]), ...strList(row["sub_labels"])];
+  for (const c of candidates) {
+    if (c && c.toLowerCase().includes("bulletproof")) return c;
+  }
+  return null;
 }
 
 /**
@@ -89,17 +106,32 @@ export async function policyFacts(hosts: string[]): Promise<PolicyFactSet> {
   for (let i = 0; i < misses.length; i += POLICY_FACTS_BATCH) {
     const batch = misses.slice(i, i + POLICY_FACTS_BATCH);
     let rows: Record<string, unknown>[];
+    let assessRows: Record<string, unknown>[];
     try {
-      rows = await graphQuery(POLICY_FACTS_QUERY, { hosts: batch });
+      // Two legs, one round trip's worth of latency. The property read
+      // answers four protections; the assess call answers bulletproof,
+      // because that is the procedure the resolver itself asks and a
+      // different signal here would be a second opinion wearing the
+      // clothes of the first.
+      [rows, assessRows] = await Promise.all([
+        graphQuery(POLICY_FACTS_QUERY, { hosts: batch }),
+        graphQuery(POLICY_BULLETPROOF_QUERY, { hs: batch }),
+      ]);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       continue;
+    }
+    const markers = new Map<string, string>();
+    for (const row of assessRows) {
+      const host = str(row["host"])?.toLowerCase();
+      const marker = bulletproofMarker(row);
+      if (host && marker) markers.set(host, marker);
     }
     const seen = new Set<string>();
     for (const row of rows) {
       const host = str(row["host"])?.toLowerCase();
       if (!host) continue;
-      const facts = shape(host, row);
+      const facts = { ...shape(host, row), bulletproofMarker: markers.get(host) ?? null };
       cache.set(host, { facts, at: now });
       byHost[host] = facts;
       seen.add(host);

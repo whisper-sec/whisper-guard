@@ -35,6 +35,10 @@ export interface Verdict {
   band: string;
   coverage: string | null;
   label: string | null;
+  /** The assess sub-labels. The resolver decides "bulletproof" by looking
+   *  for that word in band / label / sub_labels, so the fixture has to be
+   *  able to put it in any of the three. */
+  subLabels?: string[];
 }
 
 export type GraphMode = "mock" | "down" | "http500" | "slow" | "keylessShed";
@@ -104,13 +108,14 @@ function makeSelfSignedCert(): { key: string; cert: string } {
  */
 export interface PolicyFactRow {
   band?: string;
-  blocking?: boolean;
+  /** The reconciled OFAC flag on the NAME. */
   sanctioned?: boolean;
   tor?: boolean;
+  /** Set when the announcing prefix's rpkiStatus is invalid. */
   rpkiReason?: string;
-  suspectAsns?: string[];
-  suspectClass?: string;
-  asn?: string;
+  /** EVERY country the name resolves into. A destination in more than one
+   *  is the case a single-country fixture can never exercise. */
+  countries?: string[];
 }
 
 export interface EnrichRow {
@@ -515,8 +520,11 @@ export class E2ENetwork {
         const v = this.verdicts.get(h.toLowerCase());
         rows.push(
           v
-            ? { host: h.toLowerCase(), band: v.band, coverage: v.coverage, label: v.label }
-            : { host: h.toLowerCase(), band: "UNKNOWN", coverage: "no-data", label: "unknown" },
+            ? {
+                host: h.toLowerCase(), band: v.band, coverage: v.coverage,
+                label: v.label, sub_labels: v.subLabels ?? [],
+              }
+            : { host: h.toLowerCase(), band: "UNKNOWN", coverage: "no-data", label: "unknown", sub_labels: [] },
         );
       }
     } else if (q.includes("whisper.explain")) {
@@ -581,7 +589,7 @@ export class E2ENetwork {
             : { name: h, owner: null, country: null, asn: null, band: "UNKNOWN", prevalence: null, coverage: "no-data" },
         );
       }
-    } else if (q.includes("rpkiInvalidReason") && q.includes("suspectAsns")) {
+    } else if (q.includes("rpkiStatus") && q.includes("countries")) {
       // The policy-consequence read: one row per destination the graph knows,
       // and NO row for one it does not.
       const hs = Array.isArray(params["hosts"]) ? (params["hosts"] as string[]) : [];
@@ -592,13 +600,10 @@ export class E2ENetwork {
         rows.push({
           host: h,
           band: f.band ?? null,
-          blocking: f.blocking ?? false,
           sanctioned: f.sanctioned ?? false,
           tor: f.tor ?? false,
           rpkiReason: f.rpkiReason ?? null,
-          suspectAsns: f.suspectAsns ?? [],
-          suspectClass: f.suspectClass ?? null,
-          asn: f.asn ?? null,
+          countries: f.countries ?? [],
         });
       }
     } else if (q.includes("whisper.resolve")) {

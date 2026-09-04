@@ -249,36 +249,69 @@ export const ENRICH_BATCH = 60;
 export const ENRICH_TTL_MS = 3600_000;
 
 // The policy-consequence read: for a page of destinations, the ONE fact each
-// named protection keys on. Keyed only, because it is a three-hop walk (name
-// -> address -> announcing prefix -> network) and the public tier caps a raw
-// query at two; the surface that shows it is behind sign-in anyway.
+// named protection keys on.
 //
-// Measured against the live graph on 2026-09-04: ten hosts, one request,
-// 11ms; fifty hosts, one request, 120ms, of which three had no record at
-// all. A destination the graph has never seen returns NO ROW, which is what
-// lets the preview count it as unknown rather than as clean.
+// THESE SHAPES MIRROR THE RESOLVER'S OWN, DELIBERATELY. A preview that
+// evaluates a protection differently from the network that enforces it is
+// worse than no preview: it is a second opinion presented as the first. Each
+// predicate below is the corrected enforcement predicate, verified against
+// the live graph on 2026-09-04, and each one had a trap in it:
 //
-// One protection is deliberately absent from this query. Registration age
-// lives in whisper.history, which answers for ONE name per call (a list
-// argument is refused) and returns every WHOIS snapshot it holds. So it
-// cannot ride here, and shared/policy-preview.ts reports it as not previewed
-// rather than as zero.
+//   sanctions   the reconciled OFAC flag ON THE NAME. Not the blocking
+//               verdict (that fires on any threat listing, which is a
+//               different and much broader claim) and not the flag on a
+//               resolved address, which is shared with every other name on
+//               that address.
+//   rpki        the announcing prefix's own rpkiStatus. NOT rpkiInvalidReason:
+//               measured live, 87 prefixes are invalid with a null reason and
+//               6 carry a reason while status says valid, so the reason field
+//               both misses and over-reports.
+//   tor         isTor on the name or any resolved address; every address with
+//               an OPERATES_EXIT_NODE edge carries it (checked live).
+//   countries   collected from :COUNTRY nodes, and ALL of them. Two traps
+//               here. HAS_COUNTRY|LOCATED_IN also reaches CITY, so without
+//               the label constraint a LIMIT 1 can return "Frankfurt am
+//               Main, DE" as a country code. And a host lands in SEVERAL
+//               countries at once, so any single-country answer is an
+//               evasion: enforcement fires when ANY resolved country is
+//               denied, and so must this.
+//
+// The address hop is deliberately UNLABELLED. Constraining it to IPV4 is an
+// evasion of its own on a dual-stack host: google.com reads US alone through
+// its v4 addresses and US, DE, NL across all 89 of them (measured live).
 export const POLICY_FACTS_QUERY =
   "UNWIND $hosts AS host MATCH (n:HOSTNAME {name: host}) " +
-  "OPTIONAL MATCH (n)-[:RESOLVES_TO]->(ip:IPV4) " +
+  "OPTIONAL MATCH (n)-[:RESOLVES_TO]->(ip) " +
   "OPTIONAL MATCH (ip)-[:ANNOUNCED_BY]->(p:ANNOUNCED_PREFIX) " +
-  "OPTIONAL MATCH (p)<-[:ROUTES]-(a:ASN) " +
-  "WITH host, n, collect(DISTINCT ip) AS ips, collect(DISTINCT p) AS prefixes, collect(DISTINCT a) AS asns " +
-  "RETURN host, n.verdictLevel AS band, coalesce(n.verdictBlocking, false) AS blocking, " +
-  "coalesce(n.isOfacSanctioned, false) OR any(x IN ips WHERE coalesce(x.isOfacSanctioned, false)) AS sanctioned, " +
+  "OPTIONAL MATCH (ip)-[:HAS_COUNTRY|LOCATED_IN]-(c:COUNTRY) " +
+  "WITH host, n, collect(DISTINCT ip) AS ips, collect(DISTINCT p) AS prefixes, " +
+  "collect(DISTINCT c.name) AS countries " +
+  "RETURN host, n.verdictLevel AS band, " +
+  "coalesce(n.isOfacSanctioned, false) AS sanctioned, " +
   "coalesce(n.isTor, false) OR any(x IN ips WHERE coalesce(x.isTor, false)) AS tor, " +
-  "head([x IN prefixes WHERE x.rpkiInvalidReason IS NOT NULL | x.rpkiInvalidReason]) AS rpkiReason, " +
-  "[x IN asns WHERE x.reputationCategory = 'HIGHLY_SUSPICIOUS' | x.name] AS suspectAsns, " +
-  "head([x IN asns WHERE x.reputationCategory = 'HIGHLY_SUSPICIOUS' | x.reputationCategory]) AS suspectClass, " +
-  "head([x IN asns | x.name]) AS asn";
+  "head([x IN prefixes WHERE toLower(coalesce(x.rpkiStatus, '')) = 'invalid' " +
+  "| coalesce(x.rpkiInvalidReason, x.name)]) AS rpkiReason, " +
+  "countries";
+
+/**
+ * The bulletproof-hosting posture, from the SAME procedure the resolver asks.
+ *
+ * This one cannot be a property read. The resolver decides bulletproof by
+ * looking for that word in the assess verdict's band, label and sub_labels,
+ * so the only way for the preview to agree with it is to ask assess the same
+ * question. It is batched and keyless, and it is the second and last request
+ * the whole preview makes.
+ *
+ * (An earlier version of this preview keyed on the announcing ASN's
+ * reputationCategory instead. That is a defensible signal and it is NOT what
+ * the network enforces, which made the two disagree by construction.)
+ */
+export const POLICY_BULLETPROOF_QUERY =
+  "CALL whisper.assess($hs) YIELD host,band,label,sub_labels RETURN host,band,label,sub_labels";
+
 /** Destinations per policy-facts request. Sized to cover a whole endpoint's
  *  busiest-60 destination list in ONE call, so the preview is a request and
- *  not a crawl. */
+ *  not a crawl. Measured live: 50 destinations, 126ms. */
 export const POLICY_FACTS_BATCH = 60;
 /** How long a destination's protection facts stay fresh. Shorter than
  *  enrichment's hour: ownership is near-static, a threat listing is not. */

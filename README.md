@@ -133,9 +133,17 @@ history.
   call instead of reporting a zero it never measured. And a read that fails
   renders as "not checked", never as "nothing matched".
 
+  Every predicate is the one the resolver itself evaluates, down to asking
+  the same procedure for the same field, because a preview that judges a
+  protection differently from the network enforcing it is a second opinion
+  presented as the first.
+
   The country blocker lists the countries this endpoint's traffic actually
-  lands in, busiest first, each with the number of destinations blocking it
-  would cost and each one click away.
+  lands in, each with the number of destinations blocking it would cost and
+  each one click away. A destination usually lands in more than one country,
+  and blocking any one of them stops it, so each appears under all of its
+  countries: a single-country view would quote a price lower than the block
+  actually costs.
 - **Protect this browser (opt-in, off by default).** One control does the
   whole thing, and the panel and the dashboard mount the same one: it
   reserves this browser's own routable Whisper

@@ -56,8 +56,9 @@ function seedHost(
   host: string,
   country: string,
   facts?: Parameters<E2ENetwork["setPolicyFacts"]>[1],
+  verdict?: Parameters<E2ENetwork["setVerdict"]>[1],
 ): void {
-  net.setVerdict(host, { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.setVerdict(host, verdict ?? { band: "NONE", coverage: "known-clean", label: "clean" });
   net.setEnrich(host, {
     ip: "203.0.113.7",
     city: "Somewhere",
@@ -91,9 +92,14 @@ test("a preset shows what it would block on this endpoint's own traffic, and nev
   const CLEAN = "prev1-clean-guard-e2e.com";
   const UNSEEN = "prev1-unseen-guard-e2e.com";
 
-  seedHost(TOR, "DE", { tor: true, asn: "AS64500" });
-  seedHost(BAD_NET, "DE", { suspectAsns: ["AS64666"], suspectClass: "HIGHLY_SUSPICIOUS", asn: "AS64666" });
-  seedHost(CLEAN, "US", {});
+  seedHost(TOR, "DE", { tor: true, countries: ["DE"] });
+  // Bulletproof is decided by the ASSESS verdict, because that is what the
+  // resolver asks. Putting the marker in sub_labels rather than the label
+  // exercises the same three-field search enforcement performs.
+  seedHost(BAD_NET, "DE", { countries: ["DE"] }, {
+    band: "HIGH", coverage: "partial", label: "suspicious", subLabels: ["bulletproof-hosting"],
+  });
+  seedHost(CLEAN, "US", { countries: ["US"] });
   // UNSEEN gets enrichment but NO protection facts: the graph answers the
   // batch cleanly and simply has no row for it.
   net.setEnrich(UNSEEN, { ip: "203.0.113.9", country: "US", asn: "AS64500", owner: "Seeded Operator", verdict: "UNKNOWN" });
@@ -148,7 +154,7 @@ test("a preset shows what it would block on this endpoint's own traffic, and nev
   await expect(bpRow).toContainText("1 of 3 checked");
   await bpRow.locator("details summary").click();
   await expect(bpRow.locator(".b-hit-host")).toHaveText(BAD_NET);
-  await expect(bpRow.locator(".b-hit-why")).toContainText("AS64666");
+  await expect(bpRow.locator(".b-hit-why")).toContainText("bulletproof-hosting");
 
   // The clean destination is on nobody's list, and the UNSEEN one is on
   // nobody's list either - which is the whole point: it is in neither the
@@ -167,8 +173,8 @@ test("with nothing on the graph's lists, the same surface draws zero rather than
   const B = "prev2-b-guard-e2e.com";
   // Fresh names: the background caches protection facts per host, so reusing
   // the first test's hostnames would measure its answers, not these.
-  seedHost(A, "SE", {});
-  seedHost(B, "SE", {});
+  seedHost(A, "SE", { countries: ["SE"] });
+  seedHost(B, "SE", { countries: ["SE"] });
 
   net.addEndpoint({
     agent: AGENT,
@@ -202,7 +208,7 @@ test("with nothing on the graph's lists, the same surface draws zero rather than
 test("the protection that cannot be previewed says so and names the call it would need", async () => {
   const AGENT = "agent-e2eprev3";
   const A = "prev3-a-guard-e2e.com";
-  seedHost(A, "NL", {});
+  seedHost(A, "NL", { countries: ["NL"] });
   net.addEndpoint({
     agent: AGENT, address: "2a04:2a01:e2e:9::3", label: "Preview desk", device: true,
     logs: logsFor(AGENT, [A]),
@@ -231,12 +237,12 @@ test("when the check itself fails, the surface says not checked and never says n
   const AGENT = "agent-e2eprev4";
   const A = "prev4-a-guard-e2e.com";
   const B = "prev4-b-guard-e2e.com";
-  seedHost(A, "FR", { tor: true });
-  seedHost(B, "FR", {});
+  seedHost(A, "FR", { tor: true, countries: ["FR"] });
+  seedHost(B, "FR", { countries: ["FR"] });
   // A PARTIAL outage: this one query 500s while enrichment and the control
   // plane answer normally. That is the state that produces a plausible-
   // looking empty page in a product that treats an error as an answer.
-  net.failQueries.add("suspectAsns");
+  net.failQueries.add("rpkiStatus");
 
   net.addEndpoint({
     agent: AGENT, address: "2a04:2a01:e2e:9::4", label: "Offline-graph phone", device: true,
@@ -263,7 +269,7 @@ test("when the check itself fails, the surface says not checked and never says n
   net.failQueries.clear();
   const AGENT2 = "agent-e2eprev4b";
   const C = "prev4-c-guard-e2e.com";
-  seedHost(C, "FR", { tor: true });
+  seedHost(C, "FR", { tor: true, countries: ["FR"] });
   net.addEndpoint({
     agent: AGENT2, address: "2a04:2a01:e2e:9::5", label: "Recovered phone", device: true,
     logs: logsFor(AGENT2, [C]),
@@ -284,9 +290,14 @@ test("the country blocker offers the countries this endpoint actually reaches, w
   const D1 = "prev5-de1-guard-e2e.com";
   const D2 = "prev5-de2-guard-e2e.com";
   const U1 = "prev5-us1-guard-e2e.com";
-  seedHost(D1, "DE", {});
-  seedHost(D2, "DE", {});
-  seedHost(U1, "US", {});
+  seedHost(D1, "DE", { countries: ["DE"] });
+  seedHost(D2, "DE", { countries: ["DE"] });
+  // THE EVASION. This destination lands in the United States AND Germany at
+  // once, which is the ordinary case for anything behind a CDN. A preview
+  // that reads one country per name calls it American, reports that blocking
+  // Germany costs two destinations, and is wrong by one: enforcement fires on
+  // ANY resolved country, so blocking Germany stops this one too.
+  seedHost(U1, "US", { countries: ["US", "DE"] });
 
   net.addEndpoint({
     agent: AGENT, address: "2a04:2a01:e2e:9::6", label: "Travelling laptop", device: true,
@@ -299,17 +310,22 @@ test("the country blocker offers the countries this endpoint actually reaches, w
   await expect(suggest).toBeVisible({ timeout: 15_000 });
   await expect(suggest).toContainText("3 of 3 destinations placed");
 
+  // THREE, not two: the dual-country destination is counted under Germany as
+  // well as the United States, because blocking either one stops it.
   const de = suggest.locator(".geo-pill", { hasText: "Germany" });
   await expect(de).toHaveCount(1);
-  await expect(de.locator(".gp-count")).toHaveText("2");
+  await expect(de.locator(".gp-count")).toHaveText("3");
   await expect(suggest.locator(".geo-pill", { hasText: "United States" }).locator(".gp-count")).toHaveText("1");
 
   // One click blocks it, and the write is a real op:policy carrying geo:deny.
   await de.click();
   await expect(dash.locator("#g-geo-chips")).toContainText("DE", { timeout: 15_000 });
   expect(net.endpoints.find((e) => e.agent === AGENT)?.policy?.bundles).toContain("geo:deny:DE");
-  // The cost of that choice is now drawn on the row itself.
-  await expect(dash.locator("#g-geo-cost")).toContainText("2 of 3 checked");
+  // All THREE stop resolving, and the one a reader thinks of as American is
+  // told exactly why it is on the list.
+  await expect(dash.locator("#g-geo-cost")).toContainText("3 of 3 checked");
+  await dash.locator("#g-geo-cost details summary").click();
+  await expect(dash.locator("#g-geo-cost .b-hit", { hasText: U1 })).toContainText("resolves in DE (also US)");
   await dash.close();
 });
 
