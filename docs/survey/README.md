@@ -209,7 +209,7 @@ single mark appears, and one sits on the fleet view through two full
 fifteen-second poll cycles with an unchanged fixture and fails if the poll
 alone ticks it. Both are mutation-proved against a planted timer.
 
-## What is still narrated
+## What was still narrated after that pass
 
 - **dashboard / endpoint, 11 narrated.** The identity ring moved to the
   shared arc primitive, but the protection policy below it (four presets,
@@ -226,3 +226,115 @@ alone ticks it. Both are mutation-proved against a planted timer.
   fleet has no traffic. In that state the analytics are now hidden rather
   than drawn as six tiles of zeros inside four empty card frames, which is
   the honest answer and the reason the narrated count fell from 10 to 5.
+
+---
+
+# The consequence pass
+
+The two surfaces named above, done. The endpoint's protection policy now
+shows what each setting would do to that endpoint's own destinations, and
+the first run draws its state instead of describing it.
+
+**The fixture changed with the surfaces, and the table has to say so.** The
+endpoint and fleet used to be captured against an account whose endpoint had
+an empty log, so the census measured a page whose entire subject - where this
+endpoint went and what the settings would do about it - was absent from the
+frame. It now has five events over three destinations, one of them blocked
+and one of them deliberately absent from the graph. That makes the endpoint
+and fleet rows below **not** comparable like-for-like with the ones above:
+they are counts over a page that finally has something on it.
+
+| surface | content / viewport | drawn | narrated | previous (drawn / narrated) |
+|---|---|---|---|---|
+| popup / signed out / flagged | 1336 / 600 | 12 | 3 | 12 / 3 |
+| popup / signed out / ordinary | 1187 / 600 | 12 | 1 | 12 / 1 |
+| popup / signed out / unknown name | 1201 / 600 | 12 | 1 | 12 / 1 |
+| popup / signed in | 1168 / 600 | 11 | 1 | 11 / 1 |
+| **dashboard / this browser** | 1081 / 900 | **12** | **0** | 9 / 4 |
+| dashboard / fleet (now populated) | 966 / 900 | 7 | 8 | 1 / 5 (empty fixture) |
+| **dashboard / endpoint** (now populated) | 2348 / 900 | **20** | **2** | 3 / 11 (empty fixture) |
+| options | 1545 / 900 | 0 | 0 | 0 / 0 |
+| **first run** | 1219 / 900 | **8** | **0** | 0 / 1 |
+| warning interstitial | 900 / 900 | 11 | 2 | 11 / 2 |
+| check a link | 618 / 560 | 9 | 0 | 9 / 0 |
+
+## What changed, and what each number is
+
+**A preset now carries its own consequence.** Every preset card and every
+protection checkbox draws a bar of matched-against-checked over the
+destinations that endpoint actually reached, with the matched hostnames and
+the fact that fired behind a disclosure. It costs ONE graph call for the
+whole page: a three-hop walk (name to address to announcing prefix to
+network) that returns, per destination, the fact each protection keys on.
+Measured against the live graph on 2026-09-04: fifty destinations, one
+request, 120ms.
+
+**Three outcomes per destination, never two.** Matched; checked and clear;
+or not in the graph at all. The third is counted and shown separately every
+time, because a name the graph has never seen cannot match anything and is
+not evidence of safety. In the capture, one of the three destinations is
+unknown, so every count on the page reads "of the 2 checked, 1 not in the
+graph" rather than "of 3".
+
+**One protection reports that it cannot be previewed, and names the call.**
+Registration age lives in `whisper.history`, which answers for one name per
+call (a list argument is refused) and returns every WHOIS snapshot it holds:
+37 rows and 252ms for one ordinary domain, measured the same day. Previewing
+it over a page of destinations would be one such call per destination, so
+that row says "not previewed" and prints the reason, instead of reporting a
+zero it never measured. Any preset containing it says "at least" or "(one
+protection not previewed)" rather than claiming a total.
+
+**A failed read is drawn as a failed read.** When that one query 500s while
+everything else answers, the card says the check did not complete and states
+that it is not claiming the destinations are clear. It never borrows the
+sentence for "the graph holds nothing about these names", which is a claim
+about the world made out of a network error.
+
+**The country blocker became a decision over real traffic.** It lists the
+countries this endpoint's destinations actually land in, busiest first, each
+with the number it would cost and each one click from being blocked. That
+row costs no request at all: the ISO2 of every destination is a column the
+page had already drawn.
+
+**The endpoint gained the axis it was missing.** The browser and fleet views
+both had a 24-hour time strip; the one view that drills into a single
+endpoint did not, so it was the only surface that could not show whether
+twelve sightings were spread over a day or fired inside four minutes.
+Blocked events draw hot.
+
+**Counters carry the whole they came out of.** "Blocked 18" is unreadable
+until you know it came out of 2,210 lookups. Every counter that is a part of
+another counter is now drawn against it; the ones that are a part of nothing
+(the query total, the last sighting) get no mark rather than a meaningless
+one.
+
+**The ledger's lookup counts are ranked, in all three views.** A column of
+bare integers sorted descending gives the order and nothing else. The mark
+is refused when every row is equal, which is why the endpoint capture still
+shows three plain `1`s: there is no ranking there to draw, and drawing one
+would invent it. Those three are the endpoint's remaining narrated facts.
+
+**First run draws its state.** The graph it checks against, counted live,
+with the resolvers' own pulse beside it; the sample verdict with the same
+rail the panel uses; and the actual on/off state of six protections read
+from this browser's settings as the page opened. The one number that used to
+be typed into the page - "800+ brands" - is now counted from the corpus the
+detector actually loaded, so it cannot go stale against the thing it
+describes.
+
+## What is still narrated
+
+- **dashboard / fleet, 8 narrated** is now the largest remaining piece. It
+  shares the ledger, the join flow and the time strip with the browser view,
+  so its narration is in the roster and the merged feed rather than in the
+  analytics. It has not been looked at in this pass.
+- **dashboard / endpoint, 2 narrated** are the two ledger rows whose lookup
+  counts are equal, where the share mark is correctly refused.
+- **options, 0 drawn.** Still a settings page, still left alone. Nothing on
+  it is a state; every line is a preference.
+- **first run and options both still read 50% dead** in the first viewport.
+  That is a centred 760px reading column measured across a 1280px window,
+  not empty product: the census samples the full window width and counts the
+  side margins. It is a limit of the instrument, and it is recorded here
+  rather than designed around.

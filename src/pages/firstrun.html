@@ -18,21 +18,62 @@
       </div>
     </div>
 
+    <!-- FIRST RUN IS A STATE, NOT A PREAMBLE.
+         This page used to be three cards of prose about what the extension
+         would do. Everything on it was true and none of it was evidence, so
+         the first thing anyone saw from a security product was a paragraph
+         asking to be believed. Every claim below is now READ at the moment
+         the page opens: a real verdict from the live graph, the live size of
+         that graph and the pulse of the resolvers in front of it, and the
+         actual on/off state of every protection, off this browser's own
+         settings. Nothing here is written into the build, so nothing here
+         can be stale, and when something cannot be read the page says so
+         instead of falling back to a remembered figure. -->
     <section class="card">
       <h2>See it work</h2>
-      <!-- The graph's size is READ, never written here. A figure typed into
-           this page is stale the day after it ships, and a security product
-           quoting a stale number about its own coverage is worse than one
-           quoting none. When the endpoint cannot be reached the sentence
-           simply does not claim a size. -->
       <p>Every site you visit is checked live against the Whisper security
-      graph<span id="scale-claim"></span>. Here is a real verdict, fetched
-      just now:</p>
+      graph. Here is a real verdict, fetched just now:</p>
       <div id="sample" class="sample">
+        <span id="sample-rail" class="band-rail" aria-hidden="true"></span>
         <span id="sample-host" class="w-host">github.com</span>
         <span id="sample-chip" class="w-chip unknown">CHECKING…</span>
         <span id="sample-note" class="w-note"></span>
       </div>
+
+      <!-- The graph behind that verdict, and the resolvers in front of it,
+           both measured on load. Never a figure typed into this page: one
+           about our own coverage is stale the day after it ships. -->
+      <div id="scale" class="scale" hidden>
+        <div class="scale-figs">
+          <div class="scale-fig">
+            <span id="scale-nodes" class="scale-num">-</span>
+            <span class="scale-cap">nodes</span>
+          </div>
+          <div class="scale-fig">
+            <span id="scale-edges" class="scale-num">-</span>
+            <span class="scale-cap">edges joining them</span>
+          </div>
+          <div class="scale-fig">
+            <span id="scale-ids" class="scale-num">-</span>
+            <span class="scale-cap">identities on the network</span>
+          </div>
+        </div>
+        <div class="scale-pulse-row">
+          <span id="scale-pulse" class="scale-pulse"></span>
+          <span id="scale-pulse-cap" class="w-note"></span>
+        </div>
+      </div>
+      <p id="scale-down" class="w-note" hidden>The public statistics endpoint
+      could not be read just now, so this page is not claiming a size for the
+      graph. The verdict above was still a live answer.</p>
+    </section>
+
+    <section class="card">
+      <h2>On right now, with no account</h2>
+      <p class="w-note">Read from this browser's own settings as this page
+      opened, not from a list of features. Every one of these can be turned
+      off in the extension's settings.</p>
+      <div id="active-list" class="active-list"></div>
     </section>
 
     <section class="card">
@@ -51,16 +92,12 @@
 
     <section class="card">
       <h2>What signing in adds (free)</h2>
-      <p><strong>Already active:</strong> the live graph verdict on every site, who runs
-      it and where it lives, registered look-alike alerts, the on-device detector for
-      800+ heavily phished brands, and the "This browser" dashboard: where this browser
-      goes, by company, country and kind. Right-click any link to vet it before you
-      open it.</p>
       <p><strong>With an account:</strong> your whole fleet in one view (every device and
       agent on your Whisper account), per-endpoint drill-downs with verifiable identity
-      health, and one control that gives this browser its own routable Whisper IPv6 address
-      and routes its traffic through it, so it becomes a first-class endpoint that anyone
-      can verify by RDAP.</p>
+      health, protection presets that show you what they would have blocked on your own
+      traffic, and one control that gives this browser its own routable Whisper IPv6
+      address and routes its traffic through it, so it becomes a first-class endpoint
+      that anyone can verify by RDAP.</p>
       <div class="row gap">
         <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
         <button id="btn-dashboard" class="w-btn">Open the dashboard</button>

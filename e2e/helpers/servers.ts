@@ -95,6 +95,24 @@ function makeSelfSignedCert(): { key: string; cert: string } {
   return out;
 }
 
+/**
+ * The facts the protection presets key on, per destination. A host with NO
+ * entry here is answered with NO ROW, which is exactly what the live graph
+ * does for a name it has never seen - and it is the only way to exercise the
+ * third state the preview must never collapse: not matched, not clear,
+ * simply not known.
+ */
+export interface PolicyFactRow {
+  band?: string;
+  blocking?: boolean;
+  sanctioned?: boolean;
+  tor?: boolean;
+  rpkiReason?: string;
+  suspectAsns?: string[];
+  suspectClass?: string;
+  asn?: string;
+}
+
 export interface EnrichRow {
   ip?: string;
   city?: string;
@@ -158,6 +176,7 @@ export class E2ENetwork {
   private variantRows = new Map<string, Record<string, unknown>[]>();
   private historyRows = new Map<string, Record<string, unknown>[]>();
   private cohostRows = new Map<string, Record<string, unknown>>();
+  private policyFactRows = new Map<string, PolicyFactRow>();
   private presence = new Map<string, PresenceRow>();
   private density = new Map<string, { listedIps: number; announcedIpv4: number; routedPrefixes: number }>();
   /** The keyless tier the mock graph reports. Mutable so a spec can drive
@@ -255,6 +274,11 @@ export class E2ENetwork {
   }
   setCohost(host: string, row: Record<string, unknown>): void {
     this.cohostRows.set(host.toLowerCase(), row);
+  }
+  /** Seed the protection facts for one destination. An unseeded host is
+   *  answered with no row at all: "the graph has never heard of this name". */
+  setPolicyFacts(host: string, row: PolicyFactRow): void {
+    this.policyFactRows.set(host.toLowerCase(), row);
   }
   /** The physical presence of one ASN: the chain's last rung. */
   setPresence(asn: string, row: PresenceRow): void {
@@ -557,6 +581,26 @@ export class E2ENetwork {
             : { name: h, owner: null, country: null, asn: null, band: "UNKNOWN", prevalence: null, coverage: "no-data" },
         );
       }
+    } else if (q.includes("rpkiInvalidReason") && q.includes("suspectAsns")) {
+      // The policy-consequence read: one row per destination the graph knows,
+      // and NO row for one it does not.
+      const hs = Array.isArray(params["hosts"]) ? (params["hosts"] as string[]) : [];
+      for (const raw of hs) {
+        const h = raw.toLowerCase();
+        const f = this.policyFactRows.get(h);
+        if (!f) continue;
+        rows.push({
+          host: h,
+          band: f.band ?? null,
+          blocking: f.blocking ?? false,
+          sanctioned: f.sanctioned ?? false,
+          tor: f.tor ?? false,
+          rpkiReason: f.rpkiReason ?? null,
+          suspectAsns: f.suspectAsns ?? [],
+          suspectClass: f.suspectClass ?? null,
+          asn: f.asn ?? null,
+        });
+      }
     } else if (q.includes("whisper.resolve")) {
       const h = String(params["h"] ?? "").toLowerCase();
       const e = this.enrichRows.get(h);
@@ -567,8 +611,16 @@ export class E2ENetwork {
         freshest_observation_ms: null,
         coverage: e?.ip ? "resolved" : "no-data",
       });
-    } else if (q.includes("ANNOUNCED_BY") && q.includes("ROUTES")) {
+    } else if (params["ip"] !== undefined && q.includes("ANNOUNCED_BY") && q.includes("ROUTES")) {
       // The chain's route rung: IP -> ANNOUNCED_PREFIX -> ASN.
+      //
+      // The `$ip` binding is what makes this branch specific, and it is not
+      // decoration. Without it this arm also swallowed the KEYED enrichment
+      // query, which walks ANNOUNCED_BY->ROUTES too but binds `$hosts` - so
+      // it answered with the no-rows shape of a different question, every
+      // keyed surface in this suite silently fell back to the name-derived
+      // row, and nothing failed. A branch keyed on a substring two queries
+      // share is a fixture quietly answering the wrong one.
       const ip = String(params["ip"] ?? "");
       for (const e of this.enrichRows.values()) {
         if (e.ip !== ip || !e.prefix) continue;

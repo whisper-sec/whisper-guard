@@ -55,28 +55,28 @@
     "contentHeight": 1081,
     "viewportHeight": 900,
     "deadFractionFirstViewport": 0.021,
-    "drawnMarks": 9,
-    "narratedFacts": 4,
+    "drawnMarks": 12,
+    "narratedFacts": 0,
     "selfAnimating": 0
   },
   {
     "surface": "dashboard / fleet",
     "file": "dashboard-fleet.png",
-    "contentHeight": 900,
+    "contentHeight": 966,
     "viewportHeight": 900,
     "deadFractionFirstViewport": 0,
-    "drawnMarks": 1,
-    "narratedFacts": 5,
+    "drawnMarks": 7,
+    "narratedFacts": 8,
     "selfAnimating": 0
   },
   {
     "surface": "dashboard / endpoint",
     "file": "dashboard-endpoint.png",
-    "contentHeight": 1622,
+    "contentHeight": 2348,
     "viewportHeight": 900,
     "deadFractionFirstViewport": 0.005,
-    "drawnMarks": 3,
-    "narratedFacts": 11,
+    "drawnMarks": 20,
+    "narratedFacts": 2,
     "selfAnimating": 0
   },
   {
@@ -92,11 +92,11 @@
   {
     "surface": "first run",
     "file": "firstrun.png",
-    "contentHeight": 973,
+    "contentHeight": 1219,
     "viewportHeight": 900,
     "deadFractionFirstViewport": 0.5,
-    "drawnMarks": 0,
-    "narratedFacts": 1,
+    "drawnMarks": 8,
+    "narratedFacts": 0,
     "selfAnimating": 0
   },
   {

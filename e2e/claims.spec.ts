@@ -135,6 +135,7 @@ const INVENTED_PARTIES = new Set([
   "Tracky Ads Inc.",
   "WorkMail Cloud GmbH",
   "Sketchy Co",
+  "Seeded Operator",
   // The short VENDOR forms of the same invented parties, which the atlas
   // returns as canonical_name and the RUNS ON rung draws.
   "Bad Hosting",

@@ -219,6 +219,16 @@
       co-hosting fan-in and announcing-prefix threat neighbours, straight from the graph. An RDAP
       provenance link anchors every identity.</figcaption>
     </figure>
+    <figure class="wide">
+      <img src="dashboard-policy-consequence.png" alt="Protection policy showing what each preset would block on this endpoint's own destinations">
+      <figcaption><strong>Protection policy, with its consequence (signed in).</strong> Every preset
+      and every protection is a count over the destinations this endpoint actually reached, read from
+      the same graph in one call: how many it would block, which ones, and the fact that fired for
+      each. Destinations the graph holds no record of are counted separately and never as clear, and
+      the one protection whose evidence needs a per-name WHOIS read says so and names the call
+      instead of reporting a zero it never measured. The country blocker offers the countries this
+      endpoint's traffic actually lands in, each with the price of blocking it.</figcaption>
+    </figure>
     <figure>
       <img src="dashboard-egress.png" alt="Protect this browser: the one control, on the dashboard">
       <figcaption><strong>Protect this browser (opt-in, off by default).</strong> The dashboard

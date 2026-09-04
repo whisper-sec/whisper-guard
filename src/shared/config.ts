@@ -248,6 +248,42 @@ export const NAVLOG_MAX_HOSTS = 600;
 export const ENRICH_BATCH = 60;
 export const ENRICH_TTL_MS = 3600_000;
 
+// The policy-consequence read: for a page of destinations, the ONE fact each
+// named protection keys on. Keyed only, because it is a three-hop walk (name
+// -> address -> announcing prefix -> network) and the public tier caps a raw
+// query at two; the surface that shows it is behind sign-in anyway.
+//
+// Measured against the live graph on 2026-09-04: ten hosts, one request,
+// 11ms; fifty hosts, one request, 120ms, of which three had no record at
+// all. A destination the graph has never seen returns NO ROW, which is what
+// lets the preview count it as unknown rather than as clean.
+//
+// One protection is deliberately absent from this query. Registration age
+// lives in whisper.history, which answers for ONE name per call (a list
+// argument is refused) and returns every WHOIS snapshot it holds. So it
+// cannot ride here, and shared/policy-preview.ts reports it as not previewed
+// rather than as zero.
+export const POLICY_FACTS_QUERY =
+  "UNWIND $hosts AS host MATCH (n:HOSTNAME {name: host}) " +
+  "OPTIONAL MATCH (n)-[:RESOLVES_TO]->(ip:IPV4) " +
+  "OPTIONAL MATCH (ip)-[:ANNOUNCED_BY]->(p:ANNOUNCED_PREFIX) " +
+  "OPTIONAL MATCH (p)<-[:ROUTES]-(a:ASN) " +
+  "WITH host, n, collect(DISTINCT ip) AS ips, collect(DISTINCT p) AS prefixes, collect(DISTINCT a) AS asns " +
+  "RETURN host, n.verdictLevel AS band, coalesce(n.verdictBlocking, false) AS blocking, " +
+  "coalesce(n.isOfacSanctioned, false) OR any(x IN ips WHERE coalesce(x.isOfacSanctioned, false)) AS sanctioned, " +
+  "coalesce(n.isTor, false) OR any(x IN ips WHERE coalesce(x.isTor, false)) AS tor, " +
+  "head([x IN prefixes WHERE x.rpkiInvalidReason IS NOT NULL | x.rpkiInvalidReason]) AS rpkiReason, " +
+  "[x IN asns WHERE x.reputationCategory = 'HIGHLY_SUSPICIOUS' | x.name] AS suspectAsns, " +
+  "head([x IN asns WHERE x.reputationCategory = 'HIGHLY_SUSPICIOUS' | x.reputationCategory]) AS suspectClass, " +
+  "head([x IN asns | x.name]) AS asn";
+/** Destinations per policy-facts request. Sized to cover a whole endpoint's
+ *  busiest-60 destination list in ONE call, so the preview is a request and
+ *  not a crawl. */
+export const POLICY_FACTS_BATCH = 60;
+/** How long a destination's protection facts stay fresh. Shorter than
+ *  enrichment's hour: ownership is near-static, a threat listing is not. */
+export const POLICY_FACTS_TTL_MS = 15 * 60_000;
+
 // Fleet: per-device activity pull and the merged busiest-host cap.
 export const FLEET_LOGS_LIMIT = 400;
 export const FLEET_HOST_CAP = 800;

@@ -68,7 +68,14 @@ export const BUNDLE_INFO: BundleInfo[] = [
   {
     id: "block:newly-registered",
     label: "Brand-new domains",
-    description: "Blocks domains first seen in the last 24 hours, where phishing lives.",
+    // The window is THIRTY DAYS, and this line used to say twenty-four
+    // hours. The resolver's own newly-registered check tests the WHOIS
+    // creation date against a P30D duration, so the sentence under the
+    // checkbox described a control a month narrower than the one it turns
+    // on. A description of what a switch does is a promise like any other,
+    // and a switch that quietly does thirty times more than its label says
+    // is the kind of surprise this product exists to not produce.
+    description: "Blocks domains registered in the last 30 days, where phishing lives.",
   },
   {
     id: "block:tor-exits",

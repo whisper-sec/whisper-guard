@@ -23,6 +23,7 @@ import type { BgRequest, BgResponse, CheckHostResult, EndpointDetail } from "../
 import type { AssessVerdict, TabState } from "../shared/types";
 import { computeEndpointHealth, isFlagged, reportTotals } from "../shared/report";
 import { detect } from "../detector/detector";
+import { getIndex } from "../detector/corpus";
 import { assessHost } from "./assess";
 import { cacheClear, cacheGet, cachePut } from "./cache";
 import {
@@ -49,6 +50,7 @@ import { graphQuota, resetQuotaCache } from "./quota";
 import { protectHost, variantNeighborhood } from "./protect";
 import { getDestinations, onNavRecorded, recordNav } from "./navlog";
 import { enrichDestinations } from "./enrich";
+import { clearPolicyFacts, policyFacts } from "./policy-facts";
 import { COHOST_QUERY } from "../shared/config";
 import { graphQuery } from "./graph-client";
 import { endpointCounters, endpointLogs, fleetActivity, listEndpoints } from "./fleet";
@@ -484,12 +486,20 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
     case "getSettings": {
       const stored = await chrome.storage.local.get(["corpus", "corpusUpdated"]);
       const corpus = stored["corpus"] as { version?: number } | undefined;
+      // The brand count is READ off the corpus the detector actually loaded,
+      // never written into a surface as a round number. "800+ brands" was
+      // true when someone typed it and is a hostage to the next corpus
+      // update; the loaded index cannot go stale against itself.
+      const brands = await getIndex()
+        .then((i) => i.corpus.brands.length)
+        .catch(() => 0);
       return {
         ok: true,
         settings: await getSettings(),
         signedIn: await hasKey(),
         corpusVersion: corpus?.version ?? 1,
         corpusUpdated: (stored["corpusUpdated"] as string | undefined) ?? "bundled",
+        corpusBrands: brands,
       };
     }
     case "setSettings":
@@ -505,6 +515,8 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
     case "signOut":
       await signOut();
       await resetFeed();
+      // The protection facts were read against the account that just left.
+      clearPolicyFacts();
       return { ok: true };
     case "saveKey":
       await saveKey(msg.key);
@@ -580,6 +592,11 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       } catch (e) {
         return nokeyResponse(e) ?? { ok: false, error: String(e instanceof Error ? e.message : e) };
       }
+    case "getPolicyFacts":
+      // Never throws and never half-answers: the fact set itself carries
+      // which hosts could not be read, so a fault here draws as "not
+      // checked" on the surface instead of as "nothing matched".
+      return { ok: true, facts: await policyFacts(msg.hosts) };
     case "revokeEndpoint":
       try {
         const revoked = await revokeEndpoint(msg.agent);

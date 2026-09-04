@@ -117,6 +117,25 @@ history.
   connection constellation from the endpoint to where it went, and destination
   receipts with co-hosting fan-in and announcing-prefix threat neighbours. Every
   identity is anchored by an RDAP provenance link.
+- **Protection policy that shows its consequence.** Each endpoint's DNS policy
+  (four presets, five graph-evaluated protections, a country blocker, an
+  allow/block rule list) is written and read back through the same control
+  verb the console uses. Every one of those controls is drawn as a COUNT over
+  the destinations that endpoint actually reached: how many it would block,
+  which ones, and the fact that fired for each, read from the graph in one
+  call for the whole page.
+
+  Three outcomes per destination, never two: matched, checked and clear, or
+  not in the graph at all. The third is counted and shown separately, because
+  a name the graph has never seen cannot match anything and is not evidence
+  of safety. One protection cannot be previewed in a batch at all, because its
+  evidence is a per-name WHOIS read, so it says exactly that and names the
+  call instead of reporting a zero it never measured. And a read that fails
+  renders as "not checked", never as "nothing matched".
+
+  The country blocker lists the countries this endpoint's traffic actually
+  lands in, busiest first, each with the number of destinations blocking it
+  would cost and each one click away.
 - **Protect this browser (opt-in, off by default).** One control does the
   whole thing, and the panel and the dashboard mount the same one: it
   reserves this browser's own routable Whisper

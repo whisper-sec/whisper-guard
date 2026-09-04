@@ -118,6 +118,24 @@ test.beforeAll(async () => {
     ],
   });
   net.setCohost(LOOKALIKE, { ip: "192.0.2.66", cohosted: 37, prefix: "192.0.2.0/24", threatNeighbors: 9 });
+  // The facts the protection presets key on, for the governor capture. The
+  // look-alike is on the graph's own blocking verdict AND on a network the
+  // graph classes as bulletproof; the ad tracker is announced over an
+  // RPKI-invalid route; the rest are answered for and match nothing. Every
+  // destination this endpoint reached IS in the graph here, so the published
+  // figure carries no "not in the graph" clause: that third state is
+  // exercised, with its own controls, in e2e/policy-preview.spec.ts rather
+  // than asserted from a picture.
+  net.setPolicyFacts(LOOKALIKE, {
+    band: "CRITICAL", blocking: true, suspectAsns: ["AS64550"],
+    suspectClass: "HIGHLY_SUSPICIOUS", asn: "AS64550",
+  });
+  net.setPolicyFacts("ads.tracker-vendor.com", {
+    band: "NONE", rpkiReason: "no covering ROA", asn: "AS64520",
+  });
+  for (const h of ["mail.workmail-vendor.com", "cdn.mediastream-vendor.com", "searchy-vendor.com", "news.mediaco-vendor.com"]) {
+    net.setPolicyFacts(h, { band: "NONE" });
+  }
   // The chain's own inputs for the gallery. Without these the published
   // figure shows a walk that stops three rungs early, which is a picture of
   // the fixture rather than of the product.
@@ -463,6 +481,28 @@ test("dashboard: Fleet total (keyed) and Per-endpoint drill (keyed)", async () =
   await ep.waitForTimeout(800);
   await pageShots(ep, "dashboard-endpoint", { width: 1180, height: 1600 });
   await storeShot(ep, "dashboard-endpoint-store");
+
+  // The governor, on its own. This is the card that turns a protection from
+  // a promise into a count over this endpoint's own destinations, and it is
+  // below the fold of every other capture on this page.
+  //
+  // Asserted before it is saved, in both directions: a preset that has
+  // measured something says so, and the protection that CANNOT be previewed
+  // says that instead of a zero. A capture of a card that quietly failed to
+  // load its evidence would look almost identical and nothing else here
+  // would go red.
+  await expect(ep.locator("#g-consequence")).toContainText("destinations checked", { timeout: 15_000 });
+  await expect(ep.locator(".preset-card", { hasText: "Strict" })).toContainText("blocks at least");
+  await expect(ep.locator(".bundle-row", { hasText: "Brand-new domains" })).toContainText("not previewed");
+  // A sticky masthead and an element capture do not mix: Playwright scrolls
+  // the card into view and the header is then painted across the middle of
+  // the picture, over the headline it is covering. Pinning it for the shot
+  // shows the card as a reader sees it. Only visible by looking at the
+  // framed result, which is how it got shipped the first time.
+  await ep.addStyleTag({ content: "header.topbar { position: static !important; }" });
+  await ep.locator("#e-govern").scrollIntoViewIfNeeded();
+  await ep.waitForTimeout(400);
+  await ep.locator("#e-govern").screenshot({ path: join(SHOTS, "dashboard-policy-consequence.png") });
   await ep.close();
 });
 

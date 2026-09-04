@@ -280,6 +280,15 @@
           <div class="w-label">Recent activity</div>
           <span class="w-note" id="e-feed-note"></span>
         </div>
+        <!-- The axis this view was missing. A ledger sorted newest-first
+             cannot show that eleven of twelve events happened inside four
+             minutes, and that clustering is often the only visible
+             difference between a person browsing and something running on
+             its own. Blocked events are drawn hot. -->
+        <div class="card-head">
+          <div id="e-when" class="whenstrip"></div>
+          <span class="w-note" id="e-when-note"></span>
+        </div>
         <div id="e-activity" class="w-ledger"></div>
       </section>
 
@@ -295,6 +304,26 @@
         </div>
         <div id="g-error" class="w-note" hidden></div>
         <div id="g-body" hidden>
+          <!-- THE CONSEQUENCE.
+               Every control below used to be a promise: "blocks bulletproof
+               hosting" is true, unfalsifiable and useless, because a reader
+               cannot tell whether turning it on changes nothing about their
+               week or cuts off the site their payroll runs on. So each one
+               is now a COUNT over the destinations this endpoint actually
+               reached, read from the same graph the resolver evaluates
+               against, and every count carries the denominator it was
+               measured over: a destination the graph has no record of is
+               counted as unknown, never quietly as clean. -->
+          <div class="g-row" id="g-consequence" hidden>
+            <div class="g-sub">What these settings do to this endpoint's own traffic</div>
+            <div class="cons-wrap">
+              <div id="g-cons-mark" class="cons-mark"></div>
+              <div>
+                <div id="g-cons-head" class="cons-head"></div>
+                <div id="g-cons-note" class="w-note"></div>
+              </div>
+            </div>
+          </div>
           <div class="g-row">
             <div class="g-sub">Preset</div>
             <div id="g-presets" class="g-presets"></div>
@@ -306,6 +335,13 @@
           <div class="g-row">
             <div class="g-sub">Blocked countries</div>
             <div id="g-geo-chips" class="g-chips"></div>
+            <div id="g-geo-cost" class="b-preview" hidden></div>
+            <!-- The countries this endpoint ACTUALLY reaches, with what
+                 blocking each one would cost, so the control is a decision
+                 over real traffic rather than a free-text box over an atlas.
+                 Every count here is read off the destination list already on
+                 this page, so it costs no request at all. -->
+            <div id="g-geo-suggest" class="geo-suggest" hidden></div>
             <form id="g-geo-form" class="g-add">
               <input id="g-geo-input" class="g-input" list="g-countries"
                      placeholder="Country name or ISO code" autocomplete="off" aria-label="Country to block">

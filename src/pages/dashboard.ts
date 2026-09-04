@@ -18,7 +18,7 @@
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
 import { addressNode, mountProtectControl, type ProtectControl } from "../shared/protect-control";
 import { CANVAS_MONO, categoryColor, chartInk, onThemeChange } from "../shared/theme";
-import type { EgressStatus, FleetEndpoint, GraphScale, SiteChain } from "../shared/types";
+import type { ActivityRow, EgressStatus, FleetEndpoint, GraphScale, SiteChain } from "../shared/types";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { compact, countUp, sparkline } from "../shared/spark";
 import { arcGauge, donut as donutSvg, flowJoin, pulseTrack, ratioBar, stackShare, timeStrip, type FlowColumn, type FlowLink, type FlowNode, type PulseHandle, type Slice, type TimeEvent } from "../shared/viz";
@@ -51,6 +51,14 @@ import {
   type DevicePolicy,
   type RevokeResult,
 } from "../shared/policy";
+import {
+  GEO_PREVIEW_ID,
+  presetSentence,
+  previewBundles,
+  previewPreset,
+  type BundlePreview,
+  type PolicyFactSet,
+} from "../shared/policy-preview";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -533,6 +541,7 @@ function hostRow(
   fresh: Set<string>,
   onClick?: (h: ReportHost) => void,
   onExpand?: (row: HTMLElement, h: ReportHost) => void,
+  busiest = 0,
 ): HTMLElement {
   const row = el("div", `w-ledger-row${fresh.has(h.host) ? " fresh" : ""}`);
   const catDot = el("span", "w-dot");
@@ -545,7 +554,7 @@ function hostRow(
     cat,
     el("span", "cell-geo", h.country ? flagEmoji(h.country) || h.country : ""),
     verdictChip(h.verdict),
-    el("span", "cell-q", String(h.q)),
+    qCell(h, busiest),
   );
   if (onClick) {
     row.style.cursor = "pointer";
@@ -566,6 +575,34 @@ function hostRow(
   return row;
 }
 
+/**
+ * The lookup count, against the busiest row on the list.
+ *
+ * A column of bare integers sorted descending tells a reader the order and
+ * nothing else: 141 and 3 look the same width, and the shape of the tail -
+ * one destination doing almost all the work, or fifty sharing it evenly - is
+ * the actual finding. The mark is refused when every row is equal, because a
+ * row of full bars would imply a ranking that was never measured.
+ */
+function qCell(h: ReportHost, busiest: number): HTMLElement {
+  const cell = el("span", "cell-q");
+  cell.appendChild(el("span", "q-num", String(h.q)));
+  if (busiest > 1) {
+    const bar = ratioBar(h.q, busiest, {
+      width: 34,
+      height: 3,
+      tone: hostTone(h) === "hot" ? "hot" : "accent",
+      title: `${h.q} of the busiest destination's ${busiest}`,
+    });
+    if (bar) {
+      const mark = el("span", "q-bar");
+      mark.appendChild(bar);
+      cell.appendChild(mark);
+    }
+  }
+  return cell;
+}
+
 function renderHostLedger(
   container: HTMLElement,
   hosts: ReportHost[],
@@ -573,7 +610,8 @@ function renderHostLedger(
   onClick?: (h: ReportHost) => void,
   onExpand?: (row: HTMLElement, h: ReportHost) => void,
 ): void {
-  container.replaceChildren(...hosts.map((h) => hostRow(h, fresh, onClick, onExpand)));
+  const busiest = hosts.reduce((m, h) => Math.max(m, h.q), 0);
+  container.replaceChildren(...hosts.map((h) => hostRow(h, fresh, onClick, onExpand, busiest)));
 }
 
 // ----------------------------------------------------------- browser view
@@ -834,6 +872,27 @@ function drawConstellation(canvas: HTMLCanvasElement, d: EndpointDetail): void {
   });
 }
 
+/** The endpoint's own activity on a real 24h axis, blocks drawn hot. */
+function renderActivityStrip(mount: HTMLElement, noteEl: HTMLElement, activity: ActivityRow[]): void {
+  const events: TimeEvent[] = activity
+    .filter((r) => r.ts > 0)
+    .map((r) => ({
+      at: r.ts,
+      tone: (r.decision ?? "").toLowerCase().startsWith("block") ? ("hot" as const) : ("accent" as const),
+      label: r.target,
+    }));
+  const svg = timeStrip(events, { width: 520, height: 56, hours: 24 });
+  if (!svg) {
+    mount.replaceChildren();
+    noteEl.textContent = activity.length === 0 ? "nothing in the last 24 hours" : "";
+    return;
+  }
+  mount.replaceChildren(svg);
+  const blocked = events.filter((e) => e.tone === "hot").length;
+  noteEl.textContent =
+    blocked > 0 ? `${events.length} events, ${blocked} blocked` : `${events.length} events`;
+}
+
 function drillKv(k: string, v: string | HTMLElement): HTMLElement {
   const row = el("div", "drill-kv");
   const kEl = el("span", "k", k);
@@ -914,13 +973,38 @@ async function refreshEndpoint(agent: string): Promise<void> {
   $("e-fqdn").textContent = d.endpoint.fqdn ?? "";
 
   const c = d.counters;
+  // Six bare integers in a row was the densest narration on this page.
+  // "Blocked 14" is unreadable until you know it came out of 9,400 lookups,
+  // and once you know that, the PAIR is the finding. Every counter that is a
+  // part of another counter is drawn against its whole; the ones that are
+  // not a part of anything (the query total, the last sighting) get no mark
+  // rather than a meaningless one.
+  const queries = c?.dnsQueries ?? null;
+  const bytesTotal = (c?.bytesUp ?? 0) + (c?.bytesDown ?? 0);
+  const ofQueries = (n: number | null | undefined, noun: string): TileSpec["of"] =>
+    queries !== null && queries > 0 && n !== null && n !== undefined
+      ? { part: n, whole: queries, caption: `${n} of ${queries} ${noun}` }
+      : undefined;
+  const ofBytes = (n: number | null | undefined): TileSpec["of"] =>
+    bytesTotal > 0 && n !== null && n !== undefined
+      ? { part: n, whole: bytesTotal, caption: `${fmtBytes(n)} of ${fmtBytes(bytesTotal)} moved` }
+      : undefined;
   renderTiles($("e-tiles"), [
     { label: "DNS queries", value: c?.dnsQueries !== null && c ? String(c.dnsQueries) : "-" },
-    { label: "Blocked", value: c?.dnsBlocked !== null && c ? String(c.dnsBlocked) : "-", hot: (c?.dnsBlocked ?? 0) > 0 },
-    { label: "NXDOMAIN", value: c?.dnsNxdomain !== null && c ? String(c.dnsNxdomain) : "-" },
+    {
+      label: "Blocked",
+      value: c?.dnsBlocked !== null && c ? String(c.dnsBlocked) : "-",
+      hot: (c?.dnsBlocked ?? 0) > 0,
+      of: ofQueries(c?.dnsBlocked, "lookups"),
+    },
+    {
+      label: "NXDOMAIN",
+      value: c?.dnsNxdomain !== null && c ? String(c.dnsNxdomain) : "-",
+      of: ofQueries(c?.dnsNxdomain, "lookups"),
+    },
     { label: "Connections", value: c?.connectionsTotal !== null && c ? String(c.connectionsTotal) : "-" },
-    { label: "Bytes up", value: fmtBytes(c?.bytesUp ?? null) },
-    { label: "Bytes down", value: fmtBytes(c?.bytesDown ?? null) },
+    { label: "Bytes up", value: fmtBytes(c?.bytesUp ?? null), of: ofBytes(c?.bytesUp) },
+    { label: "Bytes down", value: fmtBytes(c?.bytesDown ?? null), of: ofBytes(c?.bytesDown) },
     { label: "Last seen", value: c?.lastSeen ? agoLabel(c.lastSeen) : "-" },
   ]);
 
@@ -935,6 +1019,14 @@ async function refreshEndpoint(agent: string): Promise<void> {
   renderHostLedger($("e-hosts"), d.topHosts.slice(0, 40), new Set(), (h) => {
     void showDrill(h);
   });
+
+  // WHEN it went there. The browser and fleet views both carry a time axis
+  // and this one did not, so the surface that drills into a single endpoint
+  // was the only one that could not show whether its twelve sightings were
+  // spread over a day or fired inside four minutes - which is often the only
+  // visible difference between a person browsing and something running on
+  // its own.
+  renderActivityStrip($("e-when"), $("e-when-note"), d.activity);
 
   $("e-activity").replaceChildren(
     ...d.activity.slice(0, 80).map((r) => {
@@ -956,7 +1048,14 @@ async function refreshEndpoint(agent: string): Promise<void> {
   governLabel = d.endpoint.label;
   $("d-hint").textContent = `Type "${governLabel.trim() || "revoke"}" to confirm.`;
   updateRevokeArmed();
+  // Drop the previous endpoint's evidence BEFORE anything repaints. Without
+  // this the governor's first frame draws one endpoint's destinations under
+  // another endpoint's policy, which is a true picture of nothing.
+  governFacts = null;
+  governFactHosts = [];
+  governFactsPending = false;
   void refreshGovern(agent);
+  void refreshPolicyFacts(agent, d.topHosts);
 }
 
 async function populatePicker(): Promise<void> {
@@ -999,6 +1098,127 @@ let governAgent: string | null = null;
 let governLabel = "";
 let governPolicy: DevicePolicy | null = null;
 let governBusy = false;
+
+// The evidence behind every control below: the destinations this endpoint
+// actually reached, and the one fact each protection keys on for each of
+// them. Held raw rather than pre-evaluated, because the blocked-countries
+// preview depends on the policy currently on screen and the policy changes
+// under the reader's hands; recomputing from the facts on every render costs
+// nothing and cannot drift out of step with the checkboxes.
+let governFacts: PolicyFactSet | null = null;
+let governFactHosts: ReportHost[] = [];
+let governFactsPending = false;
+
+/** How many of this endpoint's destinations the preview is measured over. */
+const PREVIEW_HOST_CAP = 60;
+
+/**
+ * Read the protection facts for this endpoint's destinations.
+ *
+ * Never on the poll: this is a graph read, and re-running it every fifteen
+ * seconds would spend a reader's allowance on a number that does not move.
+ * It runs once per endpoint switch, exactly like the policy read it sits
+ * beside.
+ */
+async function refreshPolicyFacts(agent: string, hosts: ReportHost[]): Promise<void> {
+  governFactHosts = hosts.slice(0, PREVIEW_HOST_CAP);
+  governFacts = null;
+  governFactsPending = governFactHosts.length > 0;
+  renderGovern();
+  if (governFactHosts.length === 0) return;
+  const res = await send<{ ok: true; facts: PolicyFactSet } | { ok: false; error: string }>({
+    kind: "getPolicyFacts",
+    hosts: governFactHosts.map((h) => h.host),
+  });
+  if (governAgent !== agent) return; // switched away while reading
+  governFactsPending = false;
+  // A failed transport is NOT an empty answer: every destination becomes
+  // unknown, which is what makes the counts below draw as "not checked"
+  // rather than as "nothing matched".
+  governFacts = res.ok
+    ? res.facts
+    : { byHost: {}, unread: governFactHosts.map((h) => h.host), error: res.error };
+  renderGovern();
+}
+
+/** The preview, recomputed from the facts and the policy on screen now. */
+function currentPreview(p: DevicePolicy): Record<string, BundlePreview> | null {
+  if (!governFacts) return null;
+  const country = new Map(governFactHosts.map((h) => [h.host, h.country]));
+  return previewBundles(
+    governFactHosts.map((h) => h.host),
+    governFacts,
+    p.geoDeny,
+    (host) => country.get(host) ?? undefined,
+  );
+}
+
+/**
+ * One protection's consequence, drawn: a bar of matched-against-checked and
+ * the matched destinations themselves behind a disclosure.
+ *
+ * The three states are never collapsed. Matched is a count with the names
+ * under it; checked-and-clear is a count; and a destination the graph holds
+ * no record of is neither, so it is named separately every single time. A
+ * "0 matched" with no denominator beside it is the shape of a survey that
+ * never ran, and this product has already shipped one of those.
+ */
+function previewMark(p: BundlePreview | undefined): HTMLElement | null {
+  if (!p || p.considered === 0) return null;
+  const wrap = el("div", "b-preview");
+  if (p.unavailable) {
+    // Its own layout: the reason is a sentence, not a caption, and it reads
+    // as an afterthought when it is set beside the words "not previewed"
+    // rather than under them.
+    wrap.classList.add("unavailable");
+    wrap.appendChild(el("span", "b-count muted", "not previewed"));
+    wrap.appendChild(el("div", "b-why", p.unavailable));
+    return wrap;
+  }
+  // A read that FAILED is reported as a failed read. Borrowing the sentence
+  // below - "none of these are in the graph" - for a request that never came
+  // back would be a claim about the world made out of a network error, which
+  // is the one defect this whole surface exists to not commit.
+  if (p.error) {
+    wrap.appendChild(el("span", "b-count muted", `not checked: ${p.error}`));
+    return wrap;
+  }
+  const checked = p.considered - p.unknown;
+  const n = p.matched.length;
+  if (checked === 0) {
+    wrap.appendChild(
+      el("span", "b-count muted", `not checked: none of these ${p.considered} destinations are in the graph`),
+    );
+    return wrap;
+  }
+  const bar = ratioBar(n, checked, { width: 88, height: 5, tone: n > 0 ? "hot" : "ok" });
+  if (bar) {
+    const mark = el("span", "b-bar");
+    mark.appendChild(bar);
+    wrap.appendChild(mark);
+  }
+  wrap.appendChild(
+    el(
+      "span",
+      `b-count${n > 0 ? " hot" : ""}`,
+      `${n} of ${checked} checked${p.unknown > 0 ? `, ${p.unknown} not in the graph` : ""}`,
+    ),
+  );
+  if (n > 0) {
+    const det = document.createElement("details");
+    det.className = "b-hits";
+    const sum = document.createElement("summary");
+    sum.textContent = n === 1 ? "which one" : "which ones";
+    det.appendChild(sum);
+    for (const host of p.matched) {
+      const row = el("div", "b-hit");
+      row.append(el("span", "b-hit-host", host), el("span", "b-hit-why", p.reasons[host] ?? ""));
+      det.appendChild(row);
+    }
+    wrap.appendChild(det);
+  }
+  return wrap;
+}
 
 async function refreshGovern(agent: string, force = false): Promise<void> {
   if (!force && agent === governAgent && governPolicy) return;
@@ -1072,6 +1292,9 @@ function renderGovern(): void {
   body.hidden = false;
   const busy = governBusy;
 
+  const preview = currentPreview(p);
+  renderConsequence(p, preview);
+
   const active = presetOf(p.bundles);
   $("g-presets").replaceChildren(
     ...PRESETS.map((info) => {
@@ -1079,6 +1302,27 @@ function renderGovern(): void {
       card.type = "button";
       card.setAttribute("aria-pressed", info.id === active ? "true" : "false");
       card.append(el("div", "pc-label", info.label), el("div", "pc-promise", info.promise));
+      // The consequence of CHOOSING this preset, on this endpoint's own
+      // traffic. A preset that cannot show what it would change is a
+      // checkbox asking to be trusted; one that says "blocks 2 of the 47
+      // destinations you reached" is a decision a person can actually make.
+      if (preview) {
+        const want = info.id === "custom" ? p.bundles : (bundlesForPreset(info.id) ?? p.bundles);
+        const roll = previewPreset(want, preview, governFactHosts.length);
+        const line = el("div", "pc-consequence");
+        const bar = ratioBar(roll.matched.length, Math.max(1, roll.considered - roll.unknown), {
+          width: 132,
+          height: 4,
+          tone: roll.matched.length > 0 ? "hot" : "ok",
+        });
+        if (bar) {
+          const mark = el("div", "pc-bar");
+          mark.appendChild(bar);
+          line.appendChild(mark);
+        }
+        line.appendChild(el("div", "pc-count", presetSentence(roll)));
+        card.appendChild(line);
+      }
       // Custom is a state you reach by mixing below, not a button target.
       card.disabled = busy || info.id === "custom";
       if (info.id !== "custom") {
@@ -1094,6 +1338,10 @@ function renderGovern(): void {
   );
 
   const bundleRows: HTMLElement[] = BUNDLE_INFO.map((b) => {
+    // The disclosure of matched destinations is a SIBLING of the label, not
+    // a child: nested inside it, every click on "which ones" would also toggle
+    // the checkbox it sits under.
+    const row = el("div", "bundle-row");
     const label = el("label", "bundle");
     const box = document.createElement("input");
     box.type = "checkbox";
@@ -1106,7 +1354,11 @@ function renderGovern(): void {
       }));
     });
     label.append(box, el("span", "b-label", b.label), el("span", "b-desc", b.description));
-    return label;
+    row.appendChild(label);
+    const mark = preview ? previewMark(preview[b.id]) : null;
+    if (mark) row.appendChild(mark);
+    else if (governFactsPending) row.appendChild(el("div", "b-preview", "checking your destinations..."));
+    return row;
   });
   if (p.passthrough.length > 0) {
     // Honesty: settings from another surface (console/CLI) we don't model
@@ -1131,6 +1383,19 @@ function renderGovern(): void {
       return chip;
     }),
   );
+
+  // What the country list currently costs, and what each further country
+  // would cost, both read off the destinations already on this page.
+  const geoCost = $("g-geo-cost");
+  const geoMark = preview ? previewMark(preview[GEO_PREVIEW_ID]) : null;
+  if (p.geoDeny.length > 0 && geoMark) {
+    geoCost.replaceChildren(...geoMark.childNodes);
+    geoCost.hidden = false;
+  } else {
+    geoCost.replaceChildren();
+    geoCost.hidden = true;
+  }
+  renderGeoSuggestions(p, busy);
 
   const def = $<HTMLSelectElement>("g-default");
   def.value = p.defaultAction;
@@ -1158,6 +1423,152 @@ function renderGovern(): void {
     }),
   );
   $("g-rules-empty").hidden = p.rules.length > 0;
+}
+
+/**
+ * The countries this endpoint's traffic actually lands in, busiest first,
+ * each one a single click away from being blocked and each one carrying the
+ * price of that click.
+ *
+ * The country blocker was a text box over the whole atlas, which asks a
+ * reader to already know the answer. Every count here comes from the
+ * destination list this page has already drawn, so the whole row costs no
+ * request; a country the graph could not place for a destination is not
+ * guessed at, it simply does not appear.
+ */
+function renderGeoSuggestions(p: DevicePolicy, busy: boolean): void {
+  const box = $("g-geo-suggest");
+  const tally = new Map<string, number>();
+  for (const h of governFactHosts) {
+    const cc = h.country?.trim().toUpperCase();
+    if (!cc) continue;
+    tally.set(cc, (tally.get(cc) ?? 0) + 1);
+  }
+  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
+  if (ranked.length === 0) {
+    box.hidden = true;
+    box.replaceChildren();
+    return;
+  }
+  box.hidden = false;
+  const placed = [...tally.values()].reduce((a, b) => a + b, 0);
+  box.replaceChildren(
+    el(
+      "div",
+      "w-note",
+      `Where this endpoint's traffic lands, ${placed} of ${governFactHosts.length} destinations placed:`,
+    ),
+    ...ranked.map(([cc, n]) => {
+      const on = p.geoDeny.includes(cc);
+      const btn = el("button", `geo-pill${on ? " on" : ""}`) as HTMLButtonElement;
+      btn.type = "button";
+      btn.disabled = busy || on;
+      btn.title = on
+        ? `${countryName(cc)} is blocked: ${n} of these destinations do not resolve`
+        : `Block ${countryName(cc)}: ${n} of these ${governFactHosts.length} destinations would stop resolving`;
+      btn.append(
+        el("span", "gp-flag", flagEmoji(cc)),
+        el("span", "gp-name", countryName(cc)),
+        el("span", "gp-count", String(n)),
+      );
+      if (!on) {
+        btn.addEventListener("click", () => {
+          void applyGovern((cur) => (cur.geoDeny.includes(cc) ? null : { ...cur, geoDeny: [...cur.geoDeny, cc] }));
+        });
+      }
+      return btn;
+    }),
+  );
+}
+
+/**
+ * The headline of the governor: what the settings CURRENTLY on cost this
+ * endpoint, over its own destinations, drawn as one bar.
+ *
+ * Three segments, never two: blocked by what is on, reaching the endpoint
+ * untouched, and not in the graph at all. The third segment is the one that
+ * makes the first two honest, so it is drawn in its own muted colour rather
+ * than folded into either neighbour.
+ */
+function renderConsequence(p: DevicePolicy, preview: Record<string, BundlePreview> | null): void {
+  const row = $("g-consequence");
+  const head = $("g-cons-head");
+  const note = $("g-cons-note");
+  const mark = $("g-cons-mark");
+
+  if (governFactHosts.length === 0) {
+    // No destinations is not "nothing was blocked": it is a log with nothing
+    // in it yet, and those are different facts. Drawing a bar of zeroes here
+    // would say the settings were measured and found harmless, which is a
+    // claim nobody made. Say the true thing instead.
+    row.hidden = false;
+    mark.replaceChildren();
+    head.textContent = "Nothing to measure these settings against yet";
+    note.textContent =
+      "This endpoint has no recorded destinations in the window, so there is no traffic to test " +
+      "the protections below on. The settings still apply the moment it starts resolving.";
+    return;
+  }
+  row.hidden = false;
+
+  if (!preview) {
+    head.textContent = governFactsPending ? "Checking your destinations..." : "";
+    note.textContent = governFactsPending
+      ? `Reading the ${governFactHosts.length} destinations this endpoint reached against the graph.`
+      : "";
+    mark.replaceChildren();
+    return;
+  }
+
+  const on = [...p.bundles, ...(p.geoDeny.length > 0 ? [GEO_PREVIEW_ID] : [])];
+  const roll = previewPreset(on, preview, governFactHosts.length);
+  const checked = roll.considered - roll.unknown;
+  const blocked = roll.matched.length;
+
+  const bar = stackShare(
+    [
+      { label: "blocked by what is on", value: blocked, color: "var(--w-v-high)" },
+      // NOT the verdict green. That hue is reserved for safety meaning, and
+      // a destination reaching this endpoint is not a statement that it is
+      // safe - it is a statement that nothing currently on stopped it.
+      { label: "reaches this endpoint", value: Math.max(0, checked - blocked), color: "var(--w-accent)" },
+      { label: "not in the graph, so not checked", value: roll.unknown, color: "var(--w-line)" },
+    ],
+    {
+      width: 260,
+      height: 10,
+      title: `${blocked} blocked, ${Math.max(0, checked - blocked)} reaching this endpoint, ${roll.unknown} not in the graph`,
+    },
+  );
+  mark.replaceChildren(bar ?? el("span", "w-note", "nothing measured yet"));
+
+  if (roll.error) {
+    // Nothing was measured, so nothing is claimed. The bar above still draws
+    // the whole list as "not checked" grey rather than as green.
+    head.textContent = "These settings could not be checked against your traffic";
+    note.textContent =
+      `The read did not complete: ${roll.error}. Nothing on this page is claiming that these ` +
+      `${governFactHosts.length} destinations are clear; it is claiming that we could not find out.`;
+    return;
+  }
+  head.textContent =
+    blocked === 0
+      ? `Nothing currently on blocks any of the ${checked} destinations checked`
+      : `${blocked} of ${checked} destinations checked would not resolve`;
+  const parts: string[] = [
+    `Measured over the ${governFactHosts.length} busiest destinations in this endpoint's log.`,
+  ];
+  if (roll.unknown > 0) {
+    parts.push(
+      `${roll.unknown} of them are not in the graph at all, so no protection can match them and they are not counted as clear.`,
+    );
+  }
+  if (roll.partial) {
+    parts.push(
+      "Brand-new domains are not included in this count (see the reason under that protection), so the real figure can only be higher.",
+    );
+  }
+  note.textContent = parts.join(" ");
 }
 
 function addRuleSubmit(ev: Event): void {

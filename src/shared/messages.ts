@@ -31,6 +31,7 @@ import type {
 } from "./types";
 import type { EndpointHealth, ReportHost, ReportTotals } from "./report";
 import type { DevicePolicy, RevokeResult } from "./policy";
+import type { PolicyFactSet } from "./policy-preview";
 import type { PreemptDecision, PreemptDisposition } from "./preempt";
 
 export type BgRequest =
@@ -58,6 +59,12 @@ export type BgRequest =
   | { kind: "getDevicePolicy"; agent: string }
   | { kind: "setDevicePolicy"; agent: string; policy: DevicePolicy }
   | { kind: "revokeEndpoint"; agent: string }
+  // The evidence behind the protection presets: for the destinations an
+  // endpoint actually reached, the ONE fact each named protection keys on,
+  // read in a single call. It is what turns a preset from a promise into a
+  // count, and it carries which hosts could NOT be read so the count is
+  // never mistaken for a complete survey.
+  | { kind: "getPolicyFacts"; hosts: string[] }
   | { kind: "getDestinationDrill"; host: string }
   | { kind: "openDashboard"; view?: string }
   | { kind: "egressStatus" }
@@ -159,7 +166,16 @@ export interface DestinationDrill {
 export type BgResponse =
   | { ok: true; tabState: TabState }
   | { ok: true; session: SessionRisk[] }
-  | { ok: true; settings: Settings; signedIn: boolean; corpusVersion: number; corpusUpdated: string }
+  | {
+      ok: true;
+      settings: Settings;
+      signedIn: boolean;
+      corpusVersion: number;
+      corpusUpdated: string;
+      /** Brands the on-device detector watches, counted from the loaded
+       *  corpus rather than quoted as a round number in a surface. */
+      corpusBrands: number;
+    }
   | { ok: true; device: DeviceFlowState }
   | { ok: true; explain: ExplainResult }
   | { ok: true; candidates: CandidateVerdict[] }
@@ -169,6 +185,7 @@ export type BgResponse =
   | { ok: true; fleet: FleetReport }
   | { ok: true; endpoint: EndpointDetail }
   | { ok: true; policy: DevicePolicy }
+  | { ok: true; facts: PolicyFactSet }
   | { ok: true; revoked: RevokeResult }
   | { ok: true; drill: DestinationDrill }
   | { ok: true; egress: EgressStatus }

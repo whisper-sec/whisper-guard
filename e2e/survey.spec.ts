@@ -250,6 +250,17 @@ test.beforeAll(async () => {
   });
   net.setVerdict(NEW, { band: "UNKNOWN", coverage: "no-data", label: null });
 
+  // The facts the protection presets key on. EVIL is on the graph's own
+  // blocking verdict and sits on a network classed as bulletproof; GOOD is
+  // answered for and matches nothing; NEW is deliberately absent, so the
+  // governor has a real "not in the graph" count to draw rather than a
+  // capture in which every destination happens to be known.
+  net.setPolicyFacts(EVIL, {
+    band: "CRITICAL", blocking: true, suspectAsns: ["AS64550"],
+    suspectClass: "HIGHLY_SUSPICIOUS", asn: "AS64550",
+  });
+  net.setPolicyFacts(GOOD, { band: "NONE", asn: "AS64540" });
+
   ext = await launchExtension({ proxyPort: net.proxyPort, dist: makeShieldDist() });
 });
 
@@ -288,8 +299,21 @@ test("survey: the popup, signed in", async () => {
   net.addEndpoint({
     agent: "agent-surveylaptop", address: "2a04:2a01:5ec5:2::b2", label: "This browser",
     device: true, created: now - 6 * 86_400_000,
-    counters: { dns_queries: 2210, dns_blocked: 18, connections_total: 30, last_seen: now - 4 * 60_000 },
-    logs: [],
+    counters: {
+      dns_queries: 2210, dns_blocked: 18, dns_nxdomain: 47, connections_total: 30,
+      bytes_up: 3_407_872, bytes_down: 48_234_496, last_seen: now - 4 * 60_000,
+    },
+    // The endpoint view is a picture of an endpoint that GOES somewhere. It
+    // used to be captured with an empty log, so the census measured a page
+    // whose whole subject - where this endpoint went and what the settings
+    // would do about it - was absent from the frame.
+    logs: [
+      { ts: now - 60_000, kind: "dns", qname: `${GOOD}.`, qtype: "A", decision: "allow", agent: "agent-surveylaptop" },
+      { ts: now - 120_000, kind: "dns", qname: `${GOOD}.`, qtype: "AAAA", decision: "allow", agent: "agent-surveylaptop" },
+      { ts: now - 180_000, kind: "dns", qname: `${EVIL}.`, qtype: "A", decision: "block", agent: "agent-surveylaptop" },
+      { ts: now - 240_000, kind: "dns", qname: `${NEW}.`, qtype: "A", decision: "allow", agent: "agent-surveylaptop" },
+      { ts: now - 300_000, kind: "conn", peer: GOOD, agent: "agent-surveylaptop", bytes_up: 91_000, bytes_down: 1_200_000 },
+    ],
   });
   await setKey(ext, MOCK_KEY);
   const { page, tabId } = await visit(ext, `https://${GOOD}/`);
