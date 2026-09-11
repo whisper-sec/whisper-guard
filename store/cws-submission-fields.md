@@ -103,22 +103,32 @@ graph.whisper.online: the graph, carrying both arms. The safety check + destinat
 No, I am not using Remote code.
 
 --- Data usage: what user data do you collect ---
-Tick ONLY: Web history
+Tick TWO boxes: Web history AND Website content.
+
 (Leave everything else unchecked: no PII, health, financial, authentication,
-personal communications, location, user activity, or website content. The
-on-device destination log never leaves the device. Website content IS collected,
-and only in one place: the on-demand page scan reads the current page's
-visible text WHEN THE READER CLICKS SCAN, extracts indicators from it, and sends
-only those indicators (hostnames, file hashes and CVE ids). The page text
-itself never leaves the browser.
+personal communications, location, or user activity. The on-device destination
+log never leaves the device.)
+
 Web history is ticked because the current site's hostname is transmitted to the
 server for the live safety verdict, and Google counts any off-device
 transmission as "collection".
 
-"Website content" IS TICKED as of 2.6.0, because the page scan reads page text.
-Before 2.6.0 it was unticked and that was true of what shipped: the scanner was
-merged but unreachable, so no build could run it. Making it reachable and leaving
-the answer unticked is what would have been dishonest, so the two ship together.
+Website content is ticked because the on-demand page scan reads the current
+page's visible text WHEN THE READER CLICKS SCAN, extracts indicators from it,
+and sends only those indicators (hostnames, file hashes and CVE ids). The page
+text itself never leaves the browser, but reading it is collection under
+Google's definition and the honest answer is yes.
+
+It has been ticked since 2.6.0. Before 2.6.0 it was unticked and that was true
+of what shipped: the scanner was merged but unreachable, so no build could run
+it. Making it reachable and leaving the answer unticked is what would have been
+dishonest, so the two shipped together.
+
+This paragraph is the operative instruction. If any sentence elsewhere in this
+file or its siblings says Web history is the only ticked box, that sentence is
+stale and this one is correct: a 2.6.0 edit added the new truth without
+retracting the old one, and for two releases the file told an operator to
+under-declare what the extension collects.
 
 The rest of this note remains accurate for the LINK sweep, which is a separate
 feature and still sends no page content:

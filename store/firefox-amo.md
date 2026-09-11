@@ -17,15 +17,29 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 **Description:** use the Chrome Web Store description from
 `store/chrome-web-store.md` verbatim; it is engine-neutral.
 
-## Data collection (the manifest already declares this)
+## Data collection (the manifest declares this; keep the two in step)
 
-- `data_collection_permissions.required = ["websiteActivity"]`: the live safety
-  check sends the hostname of the site you visit to `graph.whisper.online`,
-  on by default, to answer "is this site safe?". Only the bare hostname leaves,
-  never the page, path, or your history (the on-demand page scan is the one
-  exception, and only on an explicit click), and hostnames are not retained to build
-  a browsing profile. One switch in settings turns the live check off, after
-  which only the on-device look-alike detector runs and nothing leaves at all.
+- `websiteActivity`: the live safety check sends the hostname of the site you
+  visit to `graph.whisper.online`, on by default, to answer "is this site
+  safe?". Only the bare hostname leaves, never the page, path, or your history,
+  and hostnames are not retained to build a browsing profile. One switch in
+  settings turns the live check off, after which only the on-device look-alike
+  detector runs and nothing leaves at all.
+
+- `websiteContent`: the on-demand page scan reads the current page's visible
+  text when the reader clicks Scan, extracts indicators from it, and sends only
+  those indicators (hostnames, file hashes, CVE ids). The page text itself never
+  leaves the browser.
+
+  It is declared because reading the page IS collecting website content, even
+  though the text does not leave. This is the same answer we give Google, whose
+  "Website content" box has been ticked since 2.6.0, and the symmetry is
+  deliberate: two stores being told two different things about one feature is
+  how a disclosure stops being trustworthy. It sits under `required` rather than
+  `optional` because there is no separate grant for it; a click is not a
+  permission, so the capability is present in every install and should be
+  declared that way. Added in 2.6.1, which is the release that noticed the
+  Chrome answer had been ticked for two releases while Firefox's was not.
 
 ## Review notes (paste into "Notes for reviewers")
 

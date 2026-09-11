@@ -196,10 +196,11 @@ pre-emptive story on the docs page instead.
     Active Shield (warnings), the pre-click link sweep (this-site access,
     requested per site), or the browser-egress route. The default install has
     no broad host access.
-- **Data usage:** Web history: COLLECTED, and it is the only category ticked.
+- **Data usage:** TWO categories are ticked, Web history and Website content.
   Google counts transmitting the current site's hostname off the device as
   collection even though we do not retain it to build a profile, so the
-  honest answer is yes. Nothing else is collected: not website content, not
+  honest answer is yes. Website content is ticked because the on-demand page
+  scan reads page text; see below. Nothing else is collected: not
   personally identifiable information, financial, health, authentication,
   communications, location, or user activity. The on-device destination log
   never leaves the device. Page content IS read by one feature, the on-demand page
