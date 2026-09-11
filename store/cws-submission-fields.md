@@ -1,4 +1,11 @@
-# Chrome Web Store: paste-ready fields (Whisper Guard 2.5.0)
+# Chrome Web Store: paste-ready fields
+
+No version in this title, deliberately. This file is the source of truth for
+what gets typed into the CWS console, so a version in its heading is a claim
+about the build being submitted, and it went stale twice: it still read 2.5.0
+while the manifests read 2.6.1 and its own body discussed 2.6.0. Its siblings
+carry no version for the same reason. Where a version genuinely matters below,
+it is stated as the release a behaviour arrived in, which stays true.
 
 Open this file in your editor and copy each block into the matching CWS field.
 
