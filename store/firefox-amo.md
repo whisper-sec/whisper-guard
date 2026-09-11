@@ -43,6 +43,20 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 ## Review notes (paste into "Notes for reviewers")
 
+- **What changed in 2.6.1, and why a new data category appears.** The code
+  change is small: the proxy hooks that route this browser through Whisper
+  egress are now registered in the background script's first turn instead of
+  after a storage read, because registering them late meant Chromium asked the
+  user for a proxy password on every restart and Firefox routed direct until
+  the handler existed. No permission, endpoint or capability changed, and the
+  permission lists are byte-identical to 2.6.0. The manifest does declare one
+  additional data collection category, `websiteContent`, and that is a
+  disclosure correction rather than a behaviour change: the on-demand page scan
+  has read page text since 2.6.0 and the Chrome listing has declared the
+  equivalent category since then, while this manifest declared only
+  `websiteActivity`. Two stores were being told different things about one
+  feature, so this release makes them agree. Nothing new is collected in 2.6.1;
+  what was already collected is now declared here too.
 - Build from source: `npm ci && npm run build`; the Firefox package is
   `dist/firefox`. Node 22, esbuild; the build is deterministic and
   self-checking.

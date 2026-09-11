@@ -130,17 +130,15 @@ stale and this one is correct: a 2.6.0 edit added the new truth without
 retracting the old one, and for two releases the file told an operator to
 under-declare what the extension collects.
 
-The rest of this note remains accurate for the LINK sweep, which is a separate
-feature and still sends no page content:
-The old note said Website content stayed unticked even though the justification above
-says Guard reads the <a href> hostnames of the page. A reviewer diffing this
-listing against itself lands exactly there, so to pre-empt it: Google's
-"Website content" category enumerates hyperlinks, and what LEAVES the device is
-never a hyperlink. The link sweep runs on the user's click, takes each
-link's hostname on the device and reduces it to the registrable domain (the
-bare hostname when no domain can be derived), and sends only those. That is the
-same shape as the current site's hostname already covered by Web history. No
-href, no path, no query, no anchor text and no page text is transmitted.)
+The LINK SWEEP is a separate feature and sends no page content. It is worth
+stating here because Google's "Website content" category enumerates hyperlinks,
+and the justification above says Guard reads the <a href> hostnames of the
+page, so a reviewer lands on the apparent conflict. What LEAVES the device is
+never a hyperlink: the sweep runs on the user's click, takes each link's
+hostname on the device, reduces it to the registrable domain (the bare
+hostname where none can be derived), and sends only those. That is the same
+shape as the current site's hostname already covered by Web history. No href,
+no path, no query, no anchor text and no page text is transmitted.
 
 --- Certify all three ---
 [x] I do not sell or transfer user data to third parties, outside of the approved use cases
