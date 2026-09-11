@@ -221,8 +221,20 @@ async function provisionEgress(identity: EgressIdentity): Promise<EgressConfig> 
 
 let authListenerInstalled = false;
 
-/** Supply the egress credentials to Chromium's proxy-auth challenge. */
-function installAuthListener(): void {
+/**
+ * Supply the egress credentials to Chromium's proxy-auth challenge.
+ *
+ * Call this synchronously, in the service worker's first turn. Chromium
+ * builds its record of which events may wake a dormant worker out of the
+ * listeners registered in that turn, and one added after an await is not in
+ * that record. The proxy setting persists across a restart, so the browser
+ * comes back routing through egress with nobody awake to answer the 407,
+ * and asks the human instead. The callback re-reads storage on every
+ * challenge and defers to the default handler unless egress is on and the
+ * challenge is the proxy's, so arming it early costs nothing and changes
+ * nothing while egress is off.
+ */
+export function armEgressAuth(): void {
   if (IS_FIREFOX || authListenerInstalled) return;
   if (!chrome.webRequest?.onAuthRequired) return;
   const attempts = new Map<string, number>();
@@ -415,7 +427,7 @@ export async function egressEnable(): Promise<EgressStatus> {
       installFirefoxProxy();
       await setStored({ on: true, error: null });
     } else {
-      installAuthListener();
+      armEgressAuth();
       await applyChromiumProxy(config);
       await setStored({ on: true, error: null });
       await hardenWebRtc(true);
@@ -482,7 +494,7 @@ export async function resumeEgress(): Promise<void> {
     installFirefoxProxy();
     return;
   }
-  installAuthListener();
+  armEgressAuth();
   if (s.config) {
     try {
       await applyChromiumProxy(s.config);

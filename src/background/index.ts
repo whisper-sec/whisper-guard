@@ -63,7 +63,7 @@ import {
   onPollAlarm,
   resetFeed,
 } from "./monitor";
-import { egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
+import { armEgressAuth, egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
 import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
 import { scanTabLinks } from "./link-scan";
 import { scanTabIocs } from "./page-scan";
@@ -387,6 +387,13 @@ ext.runtime.onConnect.addListener((port) => {
     dashboardClosed();
   });
 });
+
+// Armed here, in the first turn, before anything awaits. The proxy setting
+// outlives the worker: a restart comes back already routing through egress,
+// and if the answer to its challenge is not registered by this point the
+// browser asks the human for a password instead of asking us. resumeEgress
+// below re-arms too, but it reads storage first, and by then it is late.
+armEgressAuth();
 
 void resumeDeviceFlow();
 void resumeEgress();
