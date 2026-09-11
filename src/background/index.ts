@@ -63,7 +63,7 @@ import {
   onPollAlarm,
   resetFeed,
 } from "./monitor";
-import { armEgressAuth, egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
+import { armEgressRouting, egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
 import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
 import { scanTabLinks } from "./link-scan";
 import { scanTabIocs } from "./page-scan";
@@ -388,12 +388,15 @@ ext.runtime.onConnect.addListener((port) => {
   });
 });
 
-// Armed here, in the first turn, before anything awaits. The proxy setting
-// outlives the worker: a restart comes back already routing through egress,
-// and if the answer to its challenge is not registered by this point the
-// browser asks the human for a password instead of asking us. resumeEgress
-// below re-arms too, but it reads storage first, and by then it is late.
-armEgressAuth();
+// Armed here, in the first turn, before anything awaits. Chromium's proxy
+// setting outlives the worker, so a restart comes back already routing and
+// asks the human for a password if nothing is registered to answer the
+// challenge (#29). Firefox has no persisted setting, so the same lateness
+// costs the opposite thing: with no route handler registered yet its requests
+// go direct, and traffic quietly leaves without the identity (#30). Loud on
+// one, silent on the other, same await to blame. resumeEgress re-arms too,
+// but it reads storage first, and by then it is late on both.
+armEgressRouting();
 
 void resumeDeviceFlow();
 void resumeEgress();

@@ -234,7 +234,7 @@ let authListenerInstalled = false;
  * challenge is the proxy's, so arming it early costs nothing and changes
  * nothing while egress is off.
  */
-export function armEgressAuth(): void {
+function installChromiumAuthListener(): void {
   if (IS_FIREFOX || authListenerInstalled) return;
   if (!chrome.webRequest?.onAuthRequired) return;
   const attempts = new Map<string, number>();
@@ -263,6 +263,29 @@ export function armEgressAuth(): void {
     ["asyncBlocking"],
   );
   authListenerInstalled = true;
+}
+
+/**
+ * Arm this platform's egress hook. THE ONE THING BOTH PLATFORMS NEED EARLY.
+ *
+ * Chromium answers a 407 the proxy sends; Firefox is asked to choose a route
+ * for every request and answers with the credential inline. Different hooks,
+ * different failures, same cause when they are late: on Chromium the browser
+ * comes back already routed and asks the human for a password (#29), and on
+ * Firefox there is no handler to ask yet, so the request goes DIRECT and the
+ * traffic quietly does not take the identity it was supposed to (#30).
+ *
+ * The loud one gets noticed. The quiet one does not, which is why both are
+ * armed from the same call, in the worker's first turn, before any await.
+ * Both listeners re-read storage per request and both defer when egress is
+ * off, so arming them early is free.
+ */
+export function armEgressRouting(): void {
+  if (IS_FIREFOX) {
+    installFirefoxProxy();
+    return;
+  }
+  installChromiumAuthListener();
 }
 
 // Firefox: one per-request hook, registered lazily once the permission
@@ -423,11 +446,14 @@ export async function egressEnable(): Promise<EgressStatus> {
     const config = stored.config ?? (await provisionEgress(identity));
     await setStored({ config, error: null });
 
+    /* Same call on both platforms; it picks the hook. Here it is the
+       mid-session case the first-turn call cannot cover: the optional
+       permission was granted a moment ago, so the binding did not exist at
+       module scope. */
+    armEgressRouting();
     if (IS_FIREFOX) {
-      installFirefoxProxy();
       await setStored({ on: true, error: null });
     } else {
-      armEgressAuth();
       await applyChromiumProxy(config);
       await setStored({ on: true, error: null });
       await hardenWebRtc(true);
@@ -486,15 +512,19 @@ export async function forgetIdentity(agent: string): Promise<void> {
   await setStored({ identity: null, config: null, error: null });
 }
 
-/** Re-arm listeners + proxy after a service-worker restart. */
+/**
+ * Re-arm the proxy after a service-worker restart.
+ *
+ * The hooks themselves are armed from the module body (armEgressRouting), not
+ * here: this function reads storage first, and a listener registered after an
+ * await is already too late for both #29 and #30. What is left for this to do
+ * is the Chromium proxy setting, which is state rather than a listener.
+ */
 export async function resumeEgress(): Promise<void> {
   const s = await getStored();
   if (!s.on) return;
-  if (IS_FIREFOX) {
-    installFirefoxProxy();
-    return;
-  }
-  armEgressAuth();
+  armEgressRouting();
+  if (IS_FIREFOX) return;
   if (s.config) {
     try {
       await applyChromiumProxy(s.config);
