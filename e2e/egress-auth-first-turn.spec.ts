@@ -35,6 +35,7 @@
 
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync } from "node:fs";
+import { inflateRawSync } from "node:zlib";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -168,4 +169,87 @@ test("the shipped bundle registers with no await, when a build is present", () =
   expect(/^armEgressRouting\(\);$/m.test(built), "the bundle never arms at the top level").toBe(true);
   const callAt = built.search(/^armEgressRouting\(\);$/m);
   expect(/^await\b/m.test(built.slice(0, callAt)), "a top-level await precedes it").toBe(false);
+});
+
+/**
+ * Read one entry out of a zip, with no dependency.
+ *
+ * This exists because the check above reads `dist/`, and `dist/` is not what
+ * ships. `npm run build` refreshes `dist/<target>/background.js`; `npm run
+ * package` is a SEPARATE step that makes the zip. Run the first and not the
+ * second and the zip keeps yesterday's code under today's version number,
+ * which is undetectable by version alone and passed a green suite because the
+ * suite was reading the fresh half. It happened on the commit that fixed #30,
+ * and the Firefox zip is the one that carries that fix.
+ */
+function readZipEntry(zipPath: string, entry: string): Buffer | null {
+  const buf = readFileSync(zipPath);
+  const EOCD = 0x06054b50;
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 70000; i--) {
+    if (buf.readUInt32LE(i) === EOCD) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd === -1) return null;
+
+  let p = buf.readUInt32LE(eocd + 16);
+  const count = buf.readUInt16LE(eocd + 10);
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) return null;
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    const name = buf.toString("utf8", p + 46, p + 46 + nameLen);
+    if (name === entry) {
+      const local = buf.readUInt32LE(p + 42);
+      const method = buf.readUInt16LE(p + 10);
+      const compressed = buf.readUInt32LE(p + 20);
+      const lNameLen = buf.readUInt16LE(local + 26);
+      const lExtraLen = buf.readUInt16LE(local + 28);
+      const start = local + 30 + lNameLen + lExtraLen;
+      const raw = buf.subarray(start, start + compressed);
+      return method === 0 ? Buffer.from(raw) : inflateRawSync(raw);
+    }
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return null;
+}
+
+const pkgVersion = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { version: string })
+  .version;
+
+test("the packaged zips carry this build, and arm in the first turn themselves", () => {
+  const targets = ["chromium", "firefox"] as const;
+  const zips = targets
+    .map((t) => ({ t, path: join(ROOT, `dist/whisper-guard-${t}-${pkgVersion}.zip`) }))
+    .filter((z) => existsSync(z.path));
+  test.skip(zips.length === 0, "no packaged zips in dist; run npm run package");
+
+  for (const { t, path } of zips) {
+    const packaged = readZipEntry(path, "background.js");
+    expect(packaged, `${t}: background.js is not in the package`).not.toBeNull();
+    const text = (packaged as Buffer).toString("utf8");
+
+    /* The package must satisfy the invariant on its own terms, so a stale zip
+       cannot pass by matching an equally stale dist. */
+    expect(/^armEgressRouting\(\);$/m.test(text), `${t}: the package never arms at the top level`).toBe(
+      true,
+    );
+    const decl = /\n(async\s+)?function installChromiumAuthListener\s*\(/.exec(text);
+    if (t === "chromium") {
+      expect(decl, "chromium: the auth listener is not in the package").not.toBeNull();
+      expect(decl?.[1], "chromium: the auth listener is async in the package").toBeUndefined();
+    }
+
+    /* And it must be THIS build, not one from before the last edit. */
+    const built = join(ROOT, `dist/${t}/background.js`);
+    if (existsSync(built)) {
+      expect(
+        (packaged as Buffer).equals(readFileSync(built)),
+        `${t}: the packaged background.js is not the one that was just built - run npm run package`,
+      ).toBe(true);
+    }
+  }
 });
