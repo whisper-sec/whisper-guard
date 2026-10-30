@@ -49,7 +49,11 @@ test.beforeAll(async () => {
     explanation: `${EVIL} is listed in 2 threat feed(s).`,
     sources: [{ feedId: "openphish", firstSeen: "2026-07-02T00:00:00Z" }],
   }]);
-  net.setHistory(EVIL, [{ createDate: "2026-08-19T00:00:00Z", updateDate: "2026-08-19T00:00:00Z" }]);
+  // Registered 16 days before the run, not on a fixed date: a literal date
+  // keeps ageing, and the age-bar assertion below went red once it passed
+  // ten percent of a year.
+  const registered = new Date(Date.now() - 16 * 86_400_000).toISOString();
+  net.setHistory(EVIL, [{ createDate: registered, updateDate: registered }]);
   net.setPage(EVIL, "<!doctype html><html><body><h1>sign in</h1></body></html>");
 
   for (const [host, ip, asn] of [
