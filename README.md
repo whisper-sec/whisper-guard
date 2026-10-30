@@ -320,6 +320,11 @@ npx playwright test e2e/review.spec.ts       # render every surface, both
                                              # schemes, into shots-review/
 ```
 
+`e2e:live` is the release gate. It takes its malicious test subject from the
+graph's own feed listings at run time (nothing is hardcoded), pins that
+hostname to a harmless local page, and fails rather than skips when it has
+no key or no subject.
+
 `e2e/review.spec.ts` ships nothing. It exists so a design can be LOOKED at
 rather than reasoned about: every surface and every state of the one control,
 in both colour schemes, from the real built extension against the same

@@ -12,12 +12,12 @@
     "build:chromium": "npm run typecheck && node scripts/build.mjs chromium",
     "build:firefox": "npm run typecheck && node scripts/build.mjs firefox",
     "package": "npm run build && node scripts/package.mjs",
-    "e2e": "playwright test",
-    "e2e:live": "playwright test e2e/live.spec.ts",
-    "e2e:consent-live": "playwright test e2e/consent-live.spec.ts",
+    "e2e": "playwright test --project=hermetic",
+    "e2e:live": "playwright test --project=live e2e/live.spec.ts",
+    "e2e:consent-live": "playwright test --project=live e2e/consent-live.spec.ts",
     "e2e:all": "playwright test",
     "e2e:firefox": "node scripts/e2e-firefox.mjs",
-    "shots": "npm run build && playwright test e2e/screenshots.spec.ts e2e/overhaul.spec.ts"
+    "shots": "npm run build && playwright test --project=hermetic e2e/screenshots.spec.ts e2e/overhaul.spec.ts"
   },
   "license": "MIT",
   "author": "Whisper Security (viaGraph B.V.)",

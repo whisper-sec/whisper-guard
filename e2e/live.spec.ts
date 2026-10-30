@@ -29,6 +29,7 @@ import {
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
+import { closeQuietly, graphReader, isLiveGate, pickCriticalSubject } from "./helpers/live-gate";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIVE_KEY = process.env["WHISPER_GUARD_E2E_KEY"] ?? "";
@@ -37,26 +38,25 @@ const EVIDENCE = resolve(HERE, "../e2e-artifacts/live-evidence.md");
 
 // NO HARDCODED BAD HOSTS. This file used to carry six real domains as a
 // fallback list of "recently-listed" malware hosts, and that is a claim a
-// security company must not freeze into a public repository.
+// security company must not freeze into a public repository: a listing is a
+// moment in time, and the repository would go on asserting it for ever about
+// named third parties.
 //
-// A feed listing is a moment in time. URLhaus delists a site once it is
-// cleaned, and several of those six read as ordinary businesses that were
-// compromised rather than built for the purpose - so the feed would have
-// moved on and this repository would have gone on asserting it, in English,
-// for ever, about named third parties who never heard of us.
+// The subject is drawn on every run from the graph's OWN feed listings
+// (e2e/helpers/live-gate.ts): the feeds the graph ingests are walked in a
+// stable order and the first hostname the graph rates CRITICAL right now is
+// the subject. The repository names where to look, never what is bad.
 //
-// The subject is now taken from the LIVE feed on every run, which is the
-// only place a listing is true as of now. If the feed cannot be reached the
-// test SKIPS, which is the honest failure: "we could not obtain a subject"
-// is a different fact from "the product is broken", and a suite that
-// invents a subject to stay green is measuring its own fixture.
+// And if no subject can be had, the gate FAILS with what it searched. It
+// used to skip, which is how a retired third-party download turned the whole
+// release gate into nine "skipped" lines that read as nothing wrong.
 
 const LOOKALIKE = "paypa1-login-verify.com";
 
 let ext: Extension;
 let badHost = "";
 let badVerdict: Record<string, unknown> = {};
-let localServer: http.Server;
+let localServer: http.Server | undefined;
 let localPort = 0;
 
 function evidence(line: string): void {
@@ -64,80 +64,32 @@ function evidence(line: string): void {
   appendFileSync(EVIDENCE, line + "\n");
 }
 
-async function assess(hosts: string[]): Promise<Record<string, unknown>[]> {
-  const res = await fetch(GRAPH, {
-    method: "POST",
-    headers: { "content-type": "application/json", "X-API-Key": LIVE_KEY },
-    body: JSON.stringify({
-      query: "CALL whisper.assess($hs) YIELD host,label,band,coverage RETURN host,label,band,coverage",
-      parameters: { hs: hosts },
-    }),
-  });
-  if (!res.ok) throw new Error(`graph returned ${res.status}`);
-  const parsed = (await res.json()) as { rows?: Record<string, unknown>[] };
-  return parsed.rows ?? [];
-}
-
-/**
- * A subject for the live run, taken fresh from the feed every time and
- * never from this file. Returns null when no subject can be obtained, and
- * the suite skips rather than inventing one.
- */
-async function pickCriticalHost(): Promise<{ host: string; row: Record<string, unknown> } | null> {
-  let candidates: string[] = [];
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 15_000);
-    const feed = await fetch("https://urlhaus.abuse.ch/downloads/text_online/", { signal: ctl.signal });
-    clearTimeout(t);
-    if (feed.ok) {
-      const text = await feed.text();
-      candidates = [
-        ...new Set(
-          text
-            .split("\n")
-            .filter((l) => /^https?:\/\//.test(l))
-            .map((l) => l.replace(/^[a-z]+:\/\//, "").replace(/[/:].*$/, ""))
-            .filter((h) => h && !/^[0-9.]+$/.test(h)),
-        ),
-      ].slice(0, 30);
-    }
-  } catch {
-    // The feed is unreachable. There is no second list to fall back to, by
-    // design; the caller skips.
-  }
-  if (candidates.length === 0) return null;
-  const rows = await assess(candidates);
-  const critical = rows.find((r) => r["band"] === "CRITICAL");
-  // The graph agreeing with no listing today is a fact about today, not a
-  // regression, and it is not a reason to reach for a frozen name.
-  return critical ? { host: String(critical["host"]), row: critical } : null;
-}
-
 test.describe("live graph, real key", () => {
-  test.skip(LIVE_KEY === "", "set WHISPER_GUARD_E2E_KEY to run the live suite");
+  // The release gate (npm run e2e:live) cannot run without a key and must say
+  // so as a failure. Only an incidental run of every spec may skip, labelled.
+  if (LIVE_KEY === "" && isLiveGate()) {
+    throw new Error("the live gate needs WHISPER_GUARD_E2E_KEY; it does not skip");
+  }
+  test.skip(LIVE_KEY === "", "set WHISPER_GUARD_E2E_KEY to run the live suite (npm run e2e:live)");
 
   test.beforeAll(async () => {
     test.setTimeout(180_000);
 
-    const picked = await pickCriticalHost();
-    // No subject, no run. The alternative is a suite that measures a name
-    // this repository chose rather than one the feed listed today.
-    test.skip(
-      picked === null,
-      "no CRITICAL subject available from the live feed right now; nothing is hardcoded to fall back to",
-    );
-    badHost = picked!.host;
-    badVerdict = picked!.row;
+    // Throws NoLiveSubjectError, naming what was searched, when the graph
+    // offers no subject: a failed gate, never a skipped one.
+    const picked = await pickCriticalSubject(graphReader(GRAPH, LIVE_KEY));
+    badHost = picked.host;
+    badVerdict = picked.row;
 
     // Harmless local page standing in for the malicious host's content.
-    localServer = http.createServer((_req, res) => {
+    const server = http.createServer((_req, res) => {
       res
         .writeHead(200, { "content-type": "text/html" })
         .end("<!doctype html><title>stand-in</title><h1>harmless local stand-in page</h1>");
     });
-    await new Promise<void>((r) => localServer.listen(0, "127.0.0.1", r));
-    localPort = (localServer.address() as net.AddressInfo).port;
+    localServer = server;
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    localPort = (server.address() as net.AddressInfo).port;
 
     ext = await launchExtension({
       hostResolverRules: `MAP ${badHost} 127.0.0.1, MAP ${LOOKALIKE} 127.0.0.1`,
@@ -148,13 +100,15 @@ test.describe("live graph, real key", () => {
     evidence(`- run: ${new Date().toISOString()}`);
     evidence(`- key: whisper-****************************************************(redacted)`);
     evidence(`- graph endpoint: graph.whisper.online (production reads)`);
+    evidence(`- subject source: the graph's own listing in feed ${picked.feed}, rated CRITICAL at run time`);
     evidence(`- evidenced-malicious host under test: ${badHost} (DNS pinned to a local harmless page; verdict is the real graph's)`);
     evidence(`- baseline assess row: ${JSON.stringify(badVerdict)}`);
   });
 
   test.afterAll(async () => {
+    // Safe when beforeAll failed part-way: neither may have been created.
     await ext?.close();
-    await new Promise((r) => localServer?.close(r));
+    await closeQuietly(localServer);
   });
 
   test("keyless: on-device look-alike protection works against the real network", async () => {

@@ -7,13 +7,26 @@
 
 import { defineConfig } from "@playwright/test";
 
+/** The specs that need the real network (and, for live.spec.ts, a key). */
+export const LIVE_SPECS = ["**/live.spec.ts", "**/consent-live.spec.ts"];
+
 export default defineConfig({
   testDir: "./e2e",
-  // Run EVERY spec in testDir. Do not enumerate specs in package.json: a hand-written
-  // list silently drops each new file, and a spec that never runs is worse than no spec
-  // (it reads as coverage). The live specs are the only exclusions; they need the
-  // network and a key, and have their own scripts.
-  testIgnore: ["**/live.spec.ts", "**/consent-live.spec.ts"],
+  // Two projects, because a config-level testIgnore is applied AFTER the
+  // command line: `playwright test e2e/live.spec.ts` with the live specs in a
+  // top-level testIgnore reported "No tests found", and the release gate
+  // (`npm run e2e:live`) silently ran nothing.
+  //
+  // hermetic: EVERY spec in testDir except the live ones. Do not enumerate
+  //   specs in package.json: a hand-written list silently drops each new
+  //   file, and a spec that never runs is worse than no spec (it reads as
+  //   coverage).
+  // live: only the specs that need the real network and a key. Their
+  //   scripts select this project by name.
+  projects: [
+    { name: "hermetic", testIgnore: LIVE_SPECS },
+    { name: "live", testMatch: LIVE_SPECS },
+  ],
   timeout: 90_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
