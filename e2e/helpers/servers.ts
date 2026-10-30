@@ -226,6 +226,15 @@ export class E2ENetwork {
   readonly endpoints: MockEndpoint[] = [];
   /** Monotonic per-instance counter behind every minted identity. */
   private registerSeq = 0;
+  /**
+   * The agents the plane has already revoked behind the roster's back (from
+   * another surface). The roster still lists them; a revoke of one answers
+   * "nothing was revoked" in the shape `revokedElsewhereShape` names: the
+   * current in-row NOT_FOUND error, or the older ok row with status
+   * not_found.
+   */
+  readonly revokedElsewhere = new Set<string>();
+  revokedElsewhereShape: "not-found-error" | "not-found-row" = "not-found-error";
   readonly submits: Record<string, unknown>[] = [];
   readonly device: DeviceFlowMockState = {
     pollsUntilApproved: 2,
@@ -310,6 +319,7 @@ export class E2ENetwork {
   }
   clearEndpoints(): void {
     this.endpoints.length = 0;
+    this.revokedElsewhere.clear();
   }
   clearLog(): void {
     this.log.length = 0;
@@ -791,11 +801,35 @@ export class E2ENetwork {
         };
       }
     } else if (op === "revoke") {
-      // Idempotent like the engine: an unknown selector is a clean
-      // not_found status row, never an error envelope.
+      // An unknown selector, or one revoked already, answers "nothing was
+      // revoked" in either of the plane's two shapes (see revokedElsewhere).
       const agentMatch = /agent:'([^']+)'/.exec(query);
-      const idx = this.endpoints.findIndex((x) => x.agent === agentMatch?.[1]);
-      if (idx >= 0) {
+      const selector = agentMatch?.[1] ?? "";
+      const idx = this.endpoints.findIndex((x) => x.agent === selector);
+      const gone = this.revokedElsewhere.has(selector);
+      if (gone) {
+        // The plane no longer lists it either: the roster refresh drops it.
+        if (idx >= 0) this.endpoints.splice(idx, 1);
+        this.revokedElsewhere.delete(selector);
+      }
+      if ((gone || idx < 0) && this.revokedElsewhereShape === "not-found-error") {
+        const envelope = {
+          columns: ["op", "ok", "status", "result", "error", "retry_after"],
+          rows: [{
+            op, ok: false, status: 404, result: null, retry_after: null,
+            error: {
+              code: "NOT_FOUND",
+              message: `nothing was revoked: no agent of yours matches '${selector}'. If you revoked it before, there is nothing left to revoke`,
+              retryable: false,
+            },
+          }],
+        };
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(envelope));
+        return;
+      }
+      if (gone) {
+        result = { columns: ["agent", "status"], rows: [[selector, "not_found"]] };
+      } else if (idx >= 0) {
         const gone = this.endpoints.splice(idx, 1)[0];
         result = { columns: ["agent", "status"], rows: [[gone?.agent ?? "", "revoked"]] };
       } else {

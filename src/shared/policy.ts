@@ -38,10 +38,17 @@ export interface DevicePolicy {
   passthrough: string[];
 }
 
-/** The op:revoke outcome row, verbatim from the control plane. */
+/**
+ * The op:revoke outcome. `status` is the plane's own word ("revoked"), or
+ * "not_found" when nothing was revoked: no agent of this account matches,
+ * because it was revoked already or belongs elsewhere. That is an answer,
+ * not a fault, so it is never retried; `message` carries the plane's own
+ * explanation when it gave one.
+ */
 export interface RevokeResult {
   agent: string;
   status: string;
+  message?: string;
 }
 
 // ------------------------------------------------------------ bundles

@@ -16,7 +16,7 @@ import {
   type DevicePolicy,
   type RevokeResult,
 } from "../shared/policy";
-import { controlCall, ControlError } from "./control";
+import { controlCall, ControlError, type ControlResult } from "./control";
 
 /** The device's policy currently in force (no body args = read-back). */
 export async function readDevicePolicy(agent: string): Promise<DevicePolicy> {
@@ -35,15 +35,35 @@ export async function writeDevicePolicy(agent: string, policy: DevicePolicy): Pr
 
 /**
  * Revoke an endpoint: its /128 is retired everywhere (AAAA, reverse-DNS
- * and RDAP withdrawn; egress tokens dropped). Idempotent on the engine
- * side; a selector the account does not own comes back as a clean
- * not_found status row, never an opaque failure.
+ * and RDAP withdrawn; egress tokens dropped).
+ *
+ * A selector that matches nothing of this account resolves to status
+ * "not_found" (nothing was revoked), never to a failure and never to a
+ * success. The plane has said that two ways: current servers answer an
+ * in-row error with code NOT_FOUND (HTTP 200, status 404 inside the row),
+ * older ones an ok row whose status is "not_found". Both are read here,
+ * keyed on the code, so a 404 without NOT_FOUND stays an error.
  */
 export async function revokeEndpoint(agent: string): Promise<RevokeResult> {
-  const res = await controlCall("revoke", { agent }, CONTROL_PROVISION_TIMEOUT_MS);
-  const row = res.rows[0];
-  if (!row) throw new ControlError(0, "revoke returned no status");
-  const status = typeof row["status"] === "string" ? row["status"] : "unknown";
+  let res: ControlResult;
+  try {
+    res = await controlCall("revoke", { agent }, CONTROL_PROVISION_TIMEOUT_MS);
+  } catch (e) {
+    if (e instanceof ControlError && (e.code ?? "").toUpperCase() === "NOT_FOUND") {
+      return { agent, status: "not_found", message: e.message };
+    }
+    throw e;
+  }
+  const first = res.rows[0];
+  if (!first) throw new ControlError(0, "revoke returned no status");
+  const item = first["item"];
+  const row =
+    typeof item === "object" && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : first;
+  const raw = typeof row["status"] === "string" ? row["status"] : "unknown";
   const id = typeof row["agent"] === "string" && row["agent"] !== "" ? row["agent"] : agent;
-  return { agent: id, status };
+  if (raw.toLowerCase() === "not_found") {
+    const said = [row["message"], row["detail"]].find((v): v is string => typeof v === "string" && v.trim() !== "");
+    return said ? { agent: id, status: "not_found", message: said } : { agent: id, status: "not_found" };
+  }
+  return { agent: id, status: raw };
 }

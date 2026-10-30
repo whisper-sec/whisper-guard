@@ -340,6 +340,49 @@ test("endpoint danger zone revokes only behind type-to-confirm, then lands on th
   await dash.close();
 });
 
+for (const shape of ["not-found-error", "not-found-row"] as const) {
+  test(`revoking an endpoint the plane revoked already says nothing was revoked (${shape})`, async () => {
+    // The roster still lists the phone, but the plane revoked it elsewhere.
+    // Current servers answer an in-row NOT_FOUND, older ones an ok row with
+    // status not_found. Neither is a success, and neither is a fault: the
+    // dashboard says nothing was revoked, with the plane's reason, and
+    // rebuilds the stale roster.
+    await setKey(ext, MOCK_KEY);
+    net.clearEndpoints();
+    net.addEndpoint({
+      agent: "agent-e2ephone", address: "2a04:2a01:e2e:1::1", label: "My iPhone",
+      device: true, created: Date.now(), logs: [],
+    });
+    net.addEndpoint({
+      agent: "agent-e2elaptop", address: "2a04:2a01:e2e:2::1", label: "Work laptop",
+      created: Date.now() - 60_000, logs: [],
+    });
+    net.revokedElsewhere.add("agent-e2ephone");
+    net.revokedElsewhereShape = shape;
+    try {
+      const dash = await openDashboard(ext, "endpoint");
+      await expect(dash.locator("#e-address")).toHaveText("2a04:2a01:e2e:1::1", { timeout: 15_000 });
+      await dash.locator("#d-confirm").fill("my iphone");
+      await dash.locator("#d-revoke").click();
+
+      const status = dash.locator("#d-status");
+      await expect(status).toContainText("Nothing was revoked", { timeout: 15_000 });
+      await expect(status).not.toContainText("Endpoint revoked");
+      await expect(status).not.toContainText("⚠");
+      if (shape === "not-found-error") {
+        // The plane's own message, not a made-up one.
+        await expect(status).toContainText("there is nothing left to revoke");
+      }
+      // The stale roster was rebuilt and the view landed on what is left.
+      await expect(dash.locator("#e-address")).toHaveText("2a04:2a01:e2e:2::1", { timeout: 15_000 });
+      expect(net.endpoints.map((e) => e.agent)).toEqual(["agent-e2elaptop"]);
+      await dash.close();
+    } finally {
+      net.revokedElsewhereShape = "not-found-error";
+    }
+  });
+}
+
 test("endpoint identity chip verifies a routed address against keyless rdap", async () => {
   await setKey(ext, MOCK_KEY);
   net.clearEndpoints();
