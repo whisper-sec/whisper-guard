@@ -1,6 +1,6 @@
 {
   "name": "whisper-guard",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "private": true,
   "description": "Whisper Guard browser extension: the Whisper security graph native in your browser. The join path behind every name (address, prefix, network, operator, the buildings it sits in), live per-site verdicts, a where-your-devices-go dashboard, on-device look-alike protection, multilingual cookie auto-decline, and optional browser-as-endpoint egress. MIT, MV3, Chromium + Firefox.",
   "type": "module",
