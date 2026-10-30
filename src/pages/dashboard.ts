@@ -1633,6 +1633,24 @@ async function revokeClick(): Promise<void> {
     updateRevokeArmed();
     return;
   }
+  if (res.revoked.status === "not_found") {
+    // Nothing was revoked: the plane holds no such agent for this account
+    // (revoked already, from here or elsewhere). Not a success and not a
+    // fault worth retrying. The roster is stale, so rebuild it.
+    $<HTMLInputElement>("d-confirm").value = "";
+    currentAgent = null;
+    governAgent = null;
+    governPolicy = null;
+    await populatePicker();
+    if ($<HTMLSelectElement>("e-picker").options.length === 0) {
+      switchView("fleet");
+    }
+    status.textContent = `Nothing was revoked: ${
+      res.revoked.message ??
+      "no endpoint of yours matches this one. It was revoked already or is not in this account."
+    }`;
+    return;
+  }
   if (res.revoked.status !== "revoked") {
     status.textContent = `The control plane answered "${res.revoked.status}"; nothing was changed.`;
     updateRevokeArmed();

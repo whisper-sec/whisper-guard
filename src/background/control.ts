@@ -14,10 +14,18 @@ import { CONTROL_QUERY_URL, CONTROL_TIMEOUT_MS } from "../shared/config";
 import { GraphError, graphQuery, hasKey } from "./graph-client";
 
 export class ControlError extends Error {
+  /**
+   * `code` is the plane's own error code (NOT_FOUND, FORBIDDEN, ...) and
+   * `retryable` its own verdict on a retry; each is null when the plane did
+   * not say. Decide on `code`, never on a bare status: a 404 without the
+   * NOT_FOUND code is not "nothing matched".
+   */
   constructor(
     public readonly status: number,
     message: string,
     public readonly retryAfter: number | null = null,
+    public readonly code: string | null = null,
+    public readonly retryable: boolean | null = null,
   ) {
     super(message);
     this.name = "ControlError";
@@ -128,7 +136,10 @@ export async function controlCall(
         : isObject(err) && typeof err["message"] === "string"
           ? (err["message"] as string)
           : `control op ${op} failed (status ${status})`;
-    throw new ControlError(status, message, retry);
+    const code = isObject(err) && typeof err["code"] === "string" ? (err["code"] as string) : null;
+    const retryable =
+      isObject(err) && typeof err["retryable"] === "boolean" ? (err["retryable"] as boolean) : null;
+    throw new ControlError(status, message, retry, code, retryable);
   }
   return coerceResult(envelope["result"]);
 }
