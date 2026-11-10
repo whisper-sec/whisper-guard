@@ -48,7 +48,8 @@
     "scripting",
     "contextMenus",
     "declarativeNetRequest",
-    "alarms"
+    "alarms",
+    "dns"
   ],
   "host_permissions": [
     "https://graph.whisper.online/*",

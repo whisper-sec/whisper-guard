@@ -180,6 +180,8 @@ export const GRAPH_MAX_RESPONSE_BYTES = 1_048_576;
 // permission (Chrome forbids it in optional_permissions), so it is NOT in the
 // runtime-requested set there; the rest are requested on the user's click.
 // Firefox DOES allow `proxy` as optional, so it is requested at runtime there.
+// Firefox's `dns` (looks up `.ts.net` names only, see
+// shared/direct-destinations.ts) cannot be optional, so the manifest declares it.
 export const EGRESS_REQUEST = {
   chromium: {
     permissions: ["webRequest", "webRequestAuthProvider", "privacy"],

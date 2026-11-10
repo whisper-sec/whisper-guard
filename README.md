@@ -149,8 +149,52 @@ history.
   reserves this browser's own routable Whisper
   identity (a real IPv6 address with reverse-DNS, verifiable by anyone via
   public RDAP) and routes the browser's traffic out through that identity, so
-  it joins your fleet as a device whose activity you can audit. WebRTC is
-  hardened to proxied-only so nothing leaks around the route.
+  it joins your fleet as a device whose activity you can audit. On Chromium,
+  WebRTC is hardened to proxied-only. On Firefox, Whisper Guard does not pin
+  WebRTC, so a page can still learn your real address through a peer
+  connection. Private windows are not routed unless Whisper Guard is allowed
+  in them.
+
+  Some destinations are never proxied, so internal tools keep working and see
+  you rather than the egress node: plain intranet names (no dot), `.local`,
+  `.home.arpa`, `.internal` and `.localhost` names, and IP literals in the
+  private (`10/8`, `172.16/12`, `192.168/16`), CGNAT (`100.64/10`), loopback,
+  link-local and IPv6 ULA/link-local ranges, the unspecified addresses
+  `0.0.0.0`, `::` and `::ffff:0:0`, and `localhost` with a trailing dot
+  (`localhost.`). These are decided on the name or address in the URL,
+  with no lookup first.
+
+  Where each name is resolved depends on the route it takes:
+
+  - A routed name is resolved at the egress, not by your own resolver, except
+    for the `*.ts.net` check and the Firefox lookup, both described below.
+  - A name that goes direct is resolved on your own network, as it would be
+    with routing off. A `.local` name is resolved by multicast on the local
+    link. Any page can cause such a lookup.
+  - A public name that resolves to a private address is still routed: apart
+    from `*.ts.net` names (below), the decision never looks at the answer. The
+    reverse also holds: if your network answers one of the never-proxied names
+    above with a public address, that connection still goes direct.
+  - On Firefox, opening an `http://` address, or a name typed without a
+    scheme, can also send that name to your own resolver (or your
+    DNS-over-HTTPS provider) as an HTTPS-record lookup while routed. Firefox
+    makes that lookup without waiting for Whisper Guard's answer about the
+    route (see [Mozilla bug 2013465][moz-2013465]). The page itself still goes
+    through the egress.
+
+  One suffix is the exception. `*.ts.net` is a public namespace (anyone can
+  publish a Tailscale Funnel host there), so such a name goes direct only when
+  it resolves to a Tailscale address (`100.64/10` or `fd7a:115c:a1e0::/48`).
+  The `*.ts.net` names are the only ones Whisper Guard itself looks up to
+  choose the route.
+  With MagicDNS on, your own are answered on the device. If the browser sends
+  that lookup only over DNS over HTTPS, with no fallback to your system
+  resolver, your own names are not found and stay routed. Someone else's
+  Funnel host, or a name that does not resolve, stays routed too. Chrome does
+  this in a PAC script; Firefox declares the `dns` permission (it cannot be
+  optional there) and uses it for these names only. The route line in the
+  panel and the dashboard says that tailnet and private-network destinations
+  connect directly.
 
   The two halves are separate underneath, which is what lets the failures stay
   honest. The identity is pure control plane: no browser permission, reserved
@@ -223,10 +267,10 @@ public identity verification all work with no key.
 
 ## Privacy model
 
-- The only browsing datum that leaves the browser on its own is a **hostname**,
-  sent to exactly one endpoint, `graph.whisper.online`, whether or not you are
-  signed in. Extraction happens at parse time; path, query, fragment, page
-  content, and form data are discarded before any network code runs. Your
+- The only browsing datum Guard itself sends is a **hostname**,
+  sent to exactly one Whisper endpoint, `graph.whisper.online`, whether or not
+  you are signed in. Extraction happens at parse time; path, query, fragment,
+  page content, and form data are discarded before any network code runs. Your
   on-device navigation list and session allow-list never leave the device.
 - **One exception, on an explicit click (2.6.0):** the on-demand page scan reads
   the current page's visible text and sends only the indicators it finds there,
@@ -234,6 +278,14 @@ public identity verification all work with no key.
   browser. It runs only when the reader presses Scan;
   nothing scans a page in the background. This is why the store listings tick
   Website content from 2.6.0 onward.
+- **While routing is on (opt-in), your page loads take a different path.** That
+  is not something Guard sends to the graph. Names are resolved at the egress,
+  except for the Firefox HTTPS-record lookup described above. Tailnet,
+  private-network and intranet destinations connect directly from your own
+  address and are resolved on your own network. A `*.ts.net` name is
+  first looked up by your own resolver, or your browser's DNS-over-HTTPS
+  provider, to tell your tailnet from a public Funnel host. None of this
+  changes what Guard sends to `graph.whisper.online`.
 - The same host also carries the keyed control plane: your fleet roster,
   enrollment and egress, always with your key and never with a browsing
   hostname. Signed out, that half is never called at all. The two are separate
@@ -402,9 +454,11 @@ Default permissions are deliberately minimal: `activeTab`, `webNavigation`,
 `proxy`, and host access to the five Whisper endpoints above. `proxy` is
 declared but inert: Chrome does not allow it to be optional, and Guard never
 touches the browser's proxy setting until you turn routing on (in Firefox it is
-genuinely optional and requested on that click). There is no `<all_urls>` grant
-and no standing content script; broad host access exists only as the optional,
-revocable Active Shield permission, requested at runtime.
+genuinely optional and requested on that click). Firefox also declares `dns`.
+It cannot be optional there, and Firefox grants it without a prompt. Guard uses
+it only while routing is on, to look up `*.ts.net` names. There is no
+`<all_urls>` grant and no standing content script; broad host access exists
+only as the optional, revocable Active Shield permission, requested at runtime.
 
 ## Browser support
 
@@ -428,3 +482,5 @@ MIT (c) 2026 viaGraph B.V. (Whisper Security). See `LICENSE`.
 
 The bundled Public Suffix List snapshot is maintained by Mozilla and the PSL
 community under the Mozilla Public License 2.0; see `NOTICE`.
+
+[moz-2013465]: https://bugzilla.mozilla.org/show_bug.cgi?id=2013465

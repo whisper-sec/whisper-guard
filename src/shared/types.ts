@@ -270,6 +270,9 @@ export interface EgressStatus {
   controlledByOther: boolean;
   /** WebRTC leak hardening state (Chromium only; null elsewhere). */
   webrtcHardened: boolean | null;
+  /** Whether private/incognito windows are routed: only when the user allowed
+   *  the extension in them (null when the browser cannot say). */
+  privateWindowsRouted: boolean | null;
   /** Last error, human-readable, when a step failed. */
   error: string | null;
 }

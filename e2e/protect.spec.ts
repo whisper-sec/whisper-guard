@@ -198,6 +198,14 @@ test.describe("the routing permission is granted", () => {
     // ONE click did both halves.
     await expect(popup.locator("#route-line")).toContainText("Protected", { timeout: 25_000 });
     await expect(popup.locator("#identity-state")).toHaveText("VERIFIED", { timeout: 15_000 });
+    // The popup's half of the route line: the static exception and, because the
+    // extension is not allowed in private windows in this run, that limit too.
+    await expect(popup.locator("#route-line")).toContainText(
+      "Every window in this profile leaves from this address, except tailnet and private-network destinations, which connect directly.",
+    );
+    await expect(popup.locator("#route-line")).toContainText(
+      "Private windows are not routed unless Whisper Guard is allowed in them.",
+    );
     const registered = net.endpoints.find((e) => e.label.includes("This browser"));
     expect(registered, "the browser registered itself as a device").toBeTruthy();
     await expect(popup.locator("#identity-detail")).toContainText(registered!.address);

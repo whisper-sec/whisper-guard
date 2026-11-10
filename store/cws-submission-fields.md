@@ -34,7 +34,7 @@ An on-device detector also checks every site against 800+ heavily phished brands
 
 The "This browser" dashboard shows where this browser goes, enriched through the graph: which companies answer, in which countries, on which networks, and what is flagged. No account needed.
 
-Sign in free (one tap, no API key to handle) to unlock your whole fleet: every device and agent on your Whisper account in one view, per-endpoint drill-downs with an explainable identity-health score, and one control that gives this browser its own routable Whisper IPv6 identity and routes its traffic out through it, so it becomes a first-class endpoint anyone can verify by public RDAP. The same one control is in the toolbar panel and on the dashboard.
+Sign in free (one tap, no API key to handle) to unlock your whole fleet: every device and agent on your Whisper account in one view, per-endpoint drill-downs with an explainable identity-health score, and one control that gives this browser its own routable Whisper IPv6 identity and routes its traffic out through it (tailnet and private-network destinations excepted), so it becomes a first-class endpoint anyone can verify by public RDAP. The same one control is in the toolbar panel and on the dashboard.
 
 Every surface follows your system's light or dark setting, and all of them use the same design system as the Whisper console, so moving between the two is moving inside one product.
 
@@ -85,7 +85,7 @@ Blocks navigation to evidenced-malicious sites before the request leaves the bro
 Schedules the daily signed brand-corpus update check and, when the user is signed in, the periodic fleet-activity poll for the dashboard.
 
 --- proxy justification ---
-Powers the optional "Protect this browser" feature, which routes this browser through Whisper egress so it becomes an endpoint on the user's account. Chrome does not allow "proxy" to be optional, so it is declared required, but the proxy is only set when the user turns routing on and is never touched otherwise. Routing is off by default.
+Powers the optional "Protect this browser" feature, which routes this browser through Whisper egress so it becomes an endpoint on the user's account. Chrome does not allow "proxy" to be optional, so it is declared required, but the proxy is only set when the user turns routing on and is never touched otherwise. Routing is off by default. While routing is on, private-network, intranet and tailnet destinations connect directly, and the PAC script looks up *.ts.net names only, sending one direct only when it resolves to a Tailscale address.
 
 --- webRequest justification ---
 Supplies the egress credential for the optional "Protect this browser" routing. Used at runtime only on the user's click to enable routing, never for general request monitoring.
@@ -94,7 +94,7 @@ Supplies the egress credential for the optional "Protect this browser" routing. 
 Provides the proxy authorization for the optional Whisper egress route, so the routed browser authenticates to the egress. Used only when the user enables routing.
 
 --- privacy justification ---
-Hardens WebRTC to proxied-only while the optional Whisper egress route is on, so the browser's real IP cannot leak around the proxy. Applied only when routing is enabled.
+Hardens WebRTC to proxied-only while the optional Whisper egress route is on, so WebRTC cannot reveal the browser's address around the proxy. Tailnet and private-network destinations connect directly by design. Applied only when routing is enabled.
 
 --- Host permission justification ---
 graph.whisper.online: the graph, carrying both arms. The safety check + destination enrichment (hostname only) is the only thing a browsing hostname ever reaches. The signed-in control plane (the user's own fleet roster, enrollment and egress) always carries the user's key and never a browsing hostname, and is not called at all when signed out. console.whisper.security: the sign-in device flow, two unauthenticated endpoints, and nothing else (no browsing data); it is a sign-in origin, never a destination. get.whisper.online: signed brand-corpus updates (no browsing data). rdap.whisper.online: public identity verification of the user's own endpoints (IP literals only). nic.whisper.online: the public network statistics document, a plain GET of one public JSON file with no query string, no header, no body and no cookie, so nothing about the user can ride on it. It is how the extension shows the live size of the graph and the resolvers' current latency instead of quoting a figure baked into the build, which would be stale the day after release. No other host is ever contacted. The extension also OPENS console.whisper.online in a tab when the user asks for the console; it is never fetched from, so it needs no host permission.

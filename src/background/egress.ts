@@ -17,13 +17,17 @@
 //             setting nothing else owns; when it cannot engage, enrollment
 //             stands and the UI says exactly what is in the way.
 //
-//   route     ONE HTTPS-CONNECT code path for both engines:
-//             Chromium fixed_servers + onAuthRequired credentials;
+//   route     ONE HTTPS-CONNECT code path for both engines (private-network
+//             and tailnet destinations excepted: they go direct, see
+//             shared/direct-destinations.ts):
+//             Chromium pac_script (mandatory) + onAuthRequired credentials;
 //             Firefox proxy.onRequest + proxyAuthorizationHeader.
 //   WebRTC    disable_non_proxied_udp rides the toggle on Chromium, or the
 //             "everything sources from the /128" claim would be false.
-//             (Firefox has no such extension control; the limit is stated
-//             in the UI, not papered over.)
+//             (Firefox has the control too, privacy.network.webRTCIPHandlingPolicy
+//             behind the optional `privacy` permission, but Guard does not
+//             request it there: STUN then goes out over direct UDP and a page
+//             can learn the browser's real public address. The UI says so.)
 //
 // Honest limits, surfaced not hidden: the proxy setting is PROFILE-GLOBAL
 // and single-owner; when another extension controls it we say so plainly,
@@ -31,6 +35,7 @@
 
 import { ext } from "../shared/api";
 import { CONTROL_PROVISION_TIMEOUT_MS, EGRESS_REQUEST } from "../shared/config";
+import { egressPacScript, goesDirectForUrl, isValidEgressEndpoint } from "../shared/direct-destinations";
 import { IS_FIREFOX } from "../shared/engine";
 import type { EgressStatus, Enrollment } from "../shared/types";
 import { controlCall, ControlError } from "./control";
@@ -67,6 +72,23 @@ const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? 
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * True when a stored config can be applied as it is: a transport the proxy
+ * accepts, a plain host and port, and a Basic credential that is printable
+ * ASCII (btoa throws on anything else, which Firefox turns into a direct
+ * connection that still looks Protected).
+ */
+function isUsableConfig(c: unknown): c is EgressConfig {
+  if (!isObject(c)) return false;
+  const printable = (v: unknown): boolean => typeof v === "string" && /^[\x20-\x7e]*$/.test(v);
+  return (
+    (c["scheme"] === "http" || c["scheme"] === "https") &&
+    isValidEgressEndpoint(c["host"] as string, c["port"] as number) &&
+    printable(c["username"]) &&
+    printable(c["token"])
+  );
 }
 
 async function getStored(): Promise<StoredEgress> {
@@ -182,7 +204,8 @@ function parseProxyUrl(raw: string): EgressConfig | null {
     const u = new URL(raw);
     const scheme = u.protocol === "http:" ? "http" : "https";
     const port = u.port !== "" ? Number(u.port) : scheme === "http" ? 80 : 443;
-    if (!u.hostname || !Number.isFinite(port)) return null;
+    // Refused here so a bad endpoint is never stored (it would end up in a PAC directive).
+    if (!isValidEgressEndpoint(u.hostname, port)) return null;
     return {
       scheme,
       host: u.hostname,
@@ -200,19 +223,24 @@ async function provisionEgress(identity: EgressIdentity): Promise<EgressConfig> 
   const row = res.rows[0] ?? {};
   // Liberal-accept the field the platform returns the HTTP(S) form under
   // (production hands back an https egress endpoint; the field name varies).
+  // Only a config that passes isUsableConfig is ever returned, so no caller
+  // can store or apply one that would not work as written.
   const candidates = [row["http_proxy"], row["https_proxy"], row["connection_string"]];
   for (const c of candidates) {
     const s = str(c);
     if (!s || s.startsWith("socks5")) continue;
     const cfg = parseProxyUrl(s);
-    if (cfg && cfg.token !== "") return cfg;
+    if (cfg && cfg.token !== "" && isUsableConfig(cfg)) return cfg;
   }
   // Only a SOCKS5 string came back: it carries the same token + endpoint;
   // reuse its credentials on the HTTPS-CONNECT endpoint the platform docs.
   const socks = str(row["connection_string"]) ?? str(row["socks5_endpoint"]);
   if (socks) {
     const cfg = parseProxyUrl(socks.replace(/^socks5h?:/, "https:"));
-    if (cfg && cfg.token !== "") return { ...cfg, scheme: "https", port: cfg.port === 80 ? 443 : cfg.port };
+    if (cfg && cfg.token !== "") {
+      const https: EgressConfig = { ...cfg, scheme: "https", port: cfg.port === 80 ? 443 : cfg.port };
+      if (isUsableConfig(https)) return https;
+    }
   }
   throw new ControlError(0, "connect returned no egress endpoint");
 }
@@ -297,6 +325,9 @@ interface FirefoxProxyInfo {
   port?: number;
   proxyAuthorizationHeader?: string;
 }
+interface FirefoxDnsApi {
+  resolve(name: string, flags?: string[]): Promise<{ addresses: string[] }>;
+}
 interface FirefoxProxyApi {
   onRequest: {
     addListener(
@@ -306,16 +337,49 @@ interface FirefoxProxyApi {
   };
 }
 
+// The request waits on the lookup, so it is bounded. A slower answer is not
+// waited for: the name stays routed (fails closed). Matches Firefox's own TRR
+// request timeout; in TRR-first mode Firefox only then falls back to native DNS.
+const FF_LOOKUP_TIMEOUT_MS = 1500;
+
+// The one local lookup: a `.ts.net` name, to tell a tailnet node from a
+// public Funnel host. Throws when the `dns` permission is absent or the
+// lookup is slow, which the caller reads as "keep it routed". No flags: the
+// browser's own resolver settings decide how the name is asked.
+async function resolveLocally(name: string): Promise<string[]> {
+  const dns = (globalThis as { browser?: { dns?: FirefoxDnsApi } }).browser?.dns;
+  if (!dns) throw new Error("dns permission missing");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answer = await Promise.race([
+      dns.resolve(name),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("dns lookup timed out")), FF_LOOKUP_TIMEOUT_MS);
+      }),
+    ]);
+    return answer.addresses;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function installFirefoxProxy(): void {
   if (!IS_FIREFOX || ffProxyInstalled) return;
   const proxyApi = (globalThis as { browser?: { proxy?: FirefoxProxyApi } }).browser?.proxy;
   if (!proxyApi?.onRequest) return;
   proxyApi.onRequest.addListener(
-    async () => {
+    async (details) => {
+      const before = await getStored();
+      if (!before.on || !before.config) return { type: "direct" };
+      // Tailnet, intranet and private-range destinations never take the route.
+      // An unparsable URL is routed, never guessed at.
+      if (await goesDirectForUrl(details.url, resolveLocally)) return { type: "direct" };
+      // The decision may have waited on a lookup: decide on the state NOW, so a
+      // toggle turned off meanwhile is honoured and a refreshed token is used.
       const s = await getStored();
       if (!s.on || !s.config) return { type: "direct" };
       return {
-        type: s.config.scheme,
+        type: s.config.scheme === "http" ? "http" : "https",
         host: s.config.host,
         port: s.config.port,
         proxyAuthorizationHeader: `Basic ${btoa(`${s.config.username}:${s.config.token}`)}`,
@@ -326,19 +390,38 @@ function installFirefoxProxy(): void {
   ffProxyInstalled = true;
 }
 
+/** Throws (before touching the browser) when the endpoint is not a plain host and port. */
 async function applyChromiumProxy(cfg: EgressConfig): Promise<void> {
+  const data = egressPacScript({ scheme: cfg.scheme, host: cfg.host, port: cfg.port });
   await chrome.proxy.settings.set({
     value: {
-      mode: "fixed_servers",
-      rules: {
-        singleProxy: { scheme: cfg.scheme, host: cfg.host, port: cfg.port },
-        // Loopback destinations go direct (local dev servers); this never
-        // affects reaching the proxy endpoint itself.
-        bypassList: ["localhost", "127.0.0.1", "[::1]", "<local>"],
-      },
+      // A PAC script, not fixed_servers: the `.ts.net` rule needs a lookup.
+      // Tailnet, intranet and private-range destinations go direct (one
+      // table, shared with Firefox); everything else takes the route.
+      // `mandatory`: a script that cannot load must stop traffic, not let the
+      // browser fall back to a direct connection that looks Protected.
+      mode: "pac_script",
+      pacScript: { data, mandatory: true },
     },
     scope: "regular",
   });
+}
+
+/**
+ * Routing cannot be applied: turn it off in the stored state AND in the
+ * browser, so the UI never says Protected over a direct connection. The
+ * setting is cleared best-effort (our own scope only; it dies with a revoked
+ * permission anyway).
+ */
+async function failRoutingOff(error: string, forgetConfig = false): Promise<void> {
+  await setStored(forgetConfig ? { on: false, error, config: null } : { on: false, error });
+  if (IS_FIREFOX) return;
+  try {
+    await chrome.proxy.settings.clear({ scope: "regular" });
+  } catch {
+    // permission may already be revoked; the setting dies with it
+  }
+  await hardenWebRtc(false);
 }
 
 async function hardenWebRtc(on: boolean): Promise<boolean | null> {
@@ -391,6 +474,20 @@ async function permissionsGranted(): Promise<boolean> {
   }
 }
 
+// Whether the user allowed this extension in private windows. By default
+// neither engine routes them (Chromium skips an extension-controlled proxy
+// there, Firefox's proxy.onRequest never sees private requests), so the route
+// line has to say so unless this is true. null when the browser cannot say.
+async function privateWindowsRouted(): Promise<boolean | null> {
+  try {
+    const fn = ext.extension?.isAllowedIncognitoAccess;
+    if (typeof fn !== "function") return null;
+    return (await ext.extension.isAllowedIncognitoAccess()) === true;
+  } catch {
+    return null;
+  }
+}
+
 export async function egressStatus(): Promise<EgressStatus> {
   const s = await getStored();
   return {
@@ -403,6 +500,7 @@ export async function egressStatus(): Promise<EgressStatus> {
     rdapUrl: s.identity ? rdapIpUrl(s.identity.address) : null,
     controlledByOther: !IS_FIREFOX && !s.on ? await proxyControlledByOther() : false,
     webrtcHardened: IS_FIREFOX ? null : s.on,
+    privateWindowsRouted: await privateWindowsRouted(),
     error: s.error,
   };
 }
@@ -415,6 +513,7 @@ export async function egressStatus(): Promise<EgressStatus> {
  * actionable message, never silence and never a dead end.
  */
 export async function egressEnable(): Promise<EgressStatus> {
+  let touchedProxy = false;
   try {
     // 1) ENROLL first. Identity is control-plane only; nothing below may
     //    stop this browser from having its verifiable /128.
@@ -442,8 +541,12 @@ export async function egressEnable(): Promise<EgressStatus> {
       }
     }
 
+    // A stored config is reused only while it is still usable as written;
+    // anything else is dropped and a fresh endpoint is provisioned, which
+    // provisionEgress returns only when it is usable too.
     const stored = await getStored();
-    const config = stored.config ?? (await provisionEgress(identity));
+    const reusable = isUsableConfig(stored.config) ? stored.config : null;
+    const config = reusable ?? (await provisionEgress(identity));
     await setStored({ config, error: null });
 
     /* Same call on both platforms; it picks the hook. Here it is the
@@ -454,6 +557,7 @@ export async function egressEnable(): Promise<EgressStatus> {
     if (IS_FIREFOX) {
       await setStored({ on: true, error: null });
     } else {
+      touchedProxy = true;
       await applyChromiumProxy(config);
       await setStored({ on: true, error: null });
       await hardenWebRtc(true);
@@ -466,7 +570,9 @@ export async function egressEnable(): Promise<EgressStatus> {
         : e instanceof ControlError || e instanceof GraphError
           ? e.message
           : `could not enable egress: ${String(e instanceof Error ? e.message : e)}`;
-    await setStored({ on: false, error: message });
+    // Off in the state and, when the setting may be half-applied, in the browser.
+    if (touchedProxy) await failRoutingOff(message);
+    else await setStored({ on: false, error: message });
     return egressStatus();
   }
 }
@@ -523,14 +629,23 @@ export async function forgetIdentity(agent: string): Promise<void> {
 export async function resumeEgress(): Promise<void> {
   const s = await getStored();
   if (!s.on) return;
+  // Idempotent. Armed before the checks below, so the hook exists whichever way they go.
   armEgressRouting();
+  // A config stored before endpoints were validated could still be bad, and
+  // "on" with no config at all is no state this code writes. Neither may be
+  // applied, and the state must not keep saying Protected over it.
+  if (!isUsableConfig(s.config)) {
+    await failRoutingOff(
+      "the stored egress endpoint is not a plain host and port with a valid scheme and credentials, so routing was turned off. Turn it on again to fetch a fresh one.",
+      true,
+    );
+    return;
+  }
   if (IS_FIREFOX) return;
-  if (s.config) {
-    try {
-      await applyChromiumProxy(s.config);
-    } catch {
-      // proxy permission revoked while we slept: reflect the truth
-      await setStored({ on: false, error: "the proxy permission was revoked" });
-    }
+  try {
+    await applyChromiumProxy(s.config);
+  } catch {
+    // proxy permission revoked while we slept: reflect the truth
+    await setStored({ on: false, error: "the proxy permission was revoked" });
   }
 }
