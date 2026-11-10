@@ -40,6 +40,32 @@ import { ext } from "./api";
 import { IS_FIREFOX } from "./engine";
 import type { EgressStatus, Enrollment, IdentityVerification } from "./types";
 
+/** The one static sentence on the route line (popup and dashboard), verbatim. */
+export const ROUTE_LINE_BASE =
+  "Every window in this profile leaves from this address, except tailnet and private-network destinations, which connect directly.";
+
+/**
+ * The route line while routing is on. The WebRTC half is stated either way.
+ * Chromium lets an extension pin the handling policy, so "everything sources
+ * from the /128" is true there. Firefox has the control too (behind the
+ * optional `privacy` permission) but Guard does not request it, so STUN goes
+ * out over direct UDP and a page can learn the browser's real public address:
+ * a limit we have not closed is one we say out loud. Private windows are
+ * stated the same way: neither engine routes them unless the user allowed the
+ * extension there (Chromium skips an extension-controlled proxy in incognito,
+ * Firefox's request hook never sees private requests), so "every window"
+ * would otherwise overstate.
+ */
+export function routeLineText(s: Pick<EgressStatus, "webrtcHardened" | "privateWindowsRouted">): string {
+  const priv =
+    s.privateWindowsRouted === true ? "" : " Private windows are not routed unless Whisper Guard is allowed in them.";
+  const webrtc =
+    s.webrtcHardened === true
+      ? " WebRTC is hardened to proxied-only."
+      : " WebRTC is not pinned to this address, so a page can still learn your real address through a peer connection.";
+  return `${ROUTE_LINE_BASE}${priv}${webrtc}`;
+}
+
 /** The empty status: what the surfaces show when the background cannot answer. */
 const NO_EGRESS: EgressStatus = {
   on: false,
@@ -51,6 +77,7 @@ const NO_EGRESS: EgressStatus = {
   rdapUrl: null,
   controlledByOther: false,
   webrtcHardened: null,
+  privateWindowsRouted: null,
   error: null,
 };
 
@@ -264,16 +291,7 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     renderDetail(s);
 
     if (s.on) {
-      // The WebRTC half is stated either way. Chromium lets an extension
-      // pin the handling policy, so the claim "everything sources from the
-      // /128" is true there; Firefox exposes no such control, and a limit
-      // we cannot close is one we say out loud rather than leave the reader
-      // to assume.
-      const webrtc =
-        s.webrtcHardened === true
-          ? " WebRTC is hardened to proxied-only."
-          : " WebRTC cannot be pinned on this browser, so a peer connection can still reveal a local address.";
-      setRoute("on", "Protected.", `Every window in this profile leaves from this address.${webrtc}`);
+      setRoute("on", "Protected.", routeLineText(s));
       btn.className = "w-btn small";
       btn.textContent = "Turn routing off";
       btn.onclick = unprotect;

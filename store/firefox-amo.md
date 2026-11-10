@@ -43,6 +43,43 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 ## Review notes (paste into "Notes for reviewers")
 
+- **What changed since 2.6.2.** With the opt-in routing on, tailnet,
+  private-network and intranet destinations connect directly. Firefox now
+  declares `dns` (it cannot be optional there), used only while routing is on
+  and only to look up `*.ts.net` names, to tell a tailnet node from a public
+  Funnel host. The shared code now generates a PAC script for Chromium; the
+  Firefox build carries that generator but never runs it, and the same
+  decision runs in `proxy.onRequest`. No endpoint or data category changed.
+- `dns`: declared, not optional on Firefox. Used only for `*.ts.net` names; one
+  connects directly only if it resolves to a Tailscale address.
+- `proxy`: optional, requested on a click when the user turns on "Protect
+  this browser". Off by default. Uses `proxy.onRequest` with a
+  `proxyAuthorizationHeader`.
+- `<all_urls>`: optional, runtime-requested. The default install has no broad
+  host access.
+- No remote code, no analytics, no external scripts. All assets are bundled.
+- No declared content script. `content.js` is injected with
+  `scripting.executeScript`, only where the browser's permission model allows
+  it (the optional `<all_urls>` grant, or the one tab the user invoked the
+  add-on on).
+- Build from source: `npm ci && npm run build`; the Firefox package is
+  `dist/firefox`. Node 22, esbuild; deterministic and self-checking.
+
+Full notes: https://github.com/whisper-sec/whisper-guard/blob/main/store/firefox-amo.md
+
+## Review notes, background (do not paste)
+
+The full text behind the paste-ready notes above.
+
+- **What changed since 2.6.2.** With the opt-in routing on, tailnet,
+  private-network and intranet destinations connect directly. Firefox now
+  declares `dns`, which is required because Firefox does not allow it as
+  optional. `dns` is used only while routing is on, and only to look up
+  `*.ts.net` names, to tell a tailnet node from a public Funnel host. The
+  shared background code now generates a PAC script for Chromium. The Firefox
+  build carries that generator (egressPacScript) but never runs it; on Firefox
+  the same decision runs in `proxy.onRequest`. No endpoint or data-collection
+  category changed.
 - **What changed in 2.6.1, and why a new data category appears.** The code
   change is small: the proxy hooks that route this browser through Whisper
   egress are now registered in the background script's first turn instead of
@@ -103,6 +140,12 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   egress so it becomes a first-class endpoint on the user's account). It is off
   by default; keyless users never grant it. Firefox uses `proxy.onRequest` with
   a `proxyAuthorizationHeader`.
+- `dns` is a declared permission (Firefox does not allow it as optional). It is
+  used only while routing is on, to look up `*.ts.net` names and nothing else.
+  The lookup tells a tailnet node from a public Tailscale Funnel host: a
+  `*.ts.net` name connects directly only when it resolves to a Tailscale
+  address, otherwise it stays on the route. While routing is on,
+  private-network, intranet and tailnet destinations connect directly.
 - `<all_urls>` is optional and runtime-requested (Active Shield on-page
   warnings, the pre-click link sweep with this-site access requested per site,
   and the egress route); the default install has no broad host access.

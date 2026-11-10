@@ -17,7 +17,7 @@ import * as https from "node:https";
 import * as net from "node:net";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 
 export interface CapturedRequest {
@@ -158,6 +158,44 @@ export interface MockEndpoint {
   policy?: { block: string[]; allow: string[]; default: string; bundles: string[] };
 }
 
+/** A host in the ONE form the capture records: lower-case, an IPv6 literal bracketed. */
+export function hostKey(host: string): string {
+  const h = host.trim().toLowerCase();
+  return h.includes(":") && !h.startsWith("[") ? `[${h}]` : h;
+}
+
+/** This machine's first private (RFC 1918), non-loopback IPv4 address, or null. */
+export function privateInterfaceAddress(): string | null {
+  for (const addrs of Object.values(networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family === "IPv4" && !a.internal && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a.address)) {
+        return a.address;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The host of a CONNECT target ("host:443", "[fd00::1]:443") or a Host header
+ * ("host", "host:8080", "[fd00::1]:3000"), lower-cased, with the port removed
+ * and an IPv6 literal kept in ONE form: bracketed ("[fd00::1]"), exactly how a
+ * URL writes it. Splitting on the first ":" turned "[fd00::1]" into "[fd00",
+ * so an assertion about that host could never fail.
+ */
+export function authorityHost(authority: string): string {
+  const a = authority.trim().toLowerCase();
+  if (a.startsWith("[")) {
+    const end = a.indexOf("]");
+    return end === -1 ? a : a.slice(0, end + 1);
+  }
+  const colons = a.split(":").length - 1;
+  // A bare IPv6 literal (no brackets, several colons) has no port to remove;
+  // it is bracketed, the same form hostKey gives it.
+  if (colons > 1) return `[${a}]`;
+  return colons === 1 ? a.slice(0, a.indexOf(":")) : a;
+}
+
 export class E2ENetwork {
   readonly log: CapturedRequest[] = [];
   graphMode: GraphMode = "mock";
@@ -260,8 +298,23 @@ export class E2ENetwork {
   readonly egressLog: { host: string; at: number }[] = [];
   readonly egressAttempts: { host: string; authed: boolean }[] = [];
 
+  /** A plain-http origin that is reached DIRECT (never via the egress):
+   *  the stand-in for a tailnet or LAN service. Records each Host header. */
+  private directOrigin!: http.Server;
+  directPort = 0;
+  readonly directHosts: string[] = [];
+  /** The same origin on this machine's private (RFC 1918) interface address,
+   *  when it has one AND the caller asked (start({ privateOrigin: true })) AND
+   *  a probe from node reached it: a request that ARRIVES there went direct to
+   *  a private literal, which "never reached the egress" alone cannot show.
+   *  Opt-in, so no other spec opens a listener on the LAN. */
+  private directPrivateOrigin: http.Server | null = null;
+  directPrivateHost: string | null = null;
+  directPrivatePort = 0;
+
   egressConnects(host: string): number {
-    return this.egressLog.filter((r) => r.host === host).length;
+    const key = hostKey(host);
+    return this.egressLog.filter((r) => r.host === key).length;
   }
   clearEgressLog(): void {
     this.egressLog.length = 0;
@@ -325,7 +378,8 @@ export class E2ENetwork {
     this.log.length = 0;
   }
   requestsTo(host: string): CapturedRequest[] {
-    return this.log.filter((r) => r.host === host);
+    const key = hostKey(host);
+    return this.log.filter((r) => r.host === key);
   }
 
   // Chromium's own service endpoints: browser infrastructure, not the
@@ -345,7 +399,7 @@ export class E2ENetwork {
     ];
   }
 
-  async start(): Promise<void> {
+  async start(opts: { privateOrigin?: boolean } = {}): Promise<void> {
     const { key, cert } = makeSelfSignedCert();
 
     // The TLS terminator: every CONNECT is piped here; SNI/Host routing
@@ -366,7 +420,7 @@ export class E2ENetwork {
       void this.handle("http", req, res, m[1], m[2] ?? "/");
     });
     this.proxy.on("connect", (req, clientSocket, head) => {
-      const host = (req.url ?? "").split(":")[0]!.toLowerCase();
+      const host = authorityHost(req.url ?? "");
       this.log.push({ scheme: "connect", method: "CONNECT", host, path: "", body: "", key: null, at: Date.now() });
       if (this.graphMode === "down" && (host === GRAPH_READ_HOST || host === GRAPH_CONTROL_HOST)) {
         clientSocket.destroy();
@@ -385,11 +439,16 @@ export class E2ENetwork {
     this.proxyPort = (this.proxy.address() as net.AddressInfo).port;
 
     // The Whisper egress endpoint stand-in (auth-required CONNECT proxy).
-    this.egressProxy = http.createServer((_req, res) => {
+    this.egressProxy = http.createServer((req, res) => {
+      // An absolute-form GET is a plain-http request routed here; record it
+      // so "zero attempts" also covers http destinations.
+      if ((req.url ?? "").startsWith("http://")) {
+        this.egressAttempts.push({ host: new URL(req.url!).hostname.toLowerCase(), authed: false });
+      }
       res.writeHead(405).end("egress endpoint speaks CONNECT only");
     });
     this.egressProxy.on("connect", (req, clientSocket, head) => {
-      const host = (req.url ?? "").split(":")[0]!.toLowerCase();
+      const host = authorityHost(req.url ?? "");
       const auth = req.headers["proxy-authorization"];
       const expected = "Basic " + Buffer.from(`w:${this.egressToken}`).toString("base64");
       this.egressAttempts.push({ host, authed: auth === expected });
@@ -414,6 +473,47 @@ export class E2ENetwork {
     });
     await new Promise<void>((r) => this.egressProxy.listen(0, "127.0.0.1", r));
     this.egressPort = (this.egressProxy.address() as net.AddressInfo).port;
+
+    const directHandler: http.RequestListener = (req, res) => {
+      this.directHosts.push(String(req.headers.host ?? "").toLowerCase());
+      res.writeHead(200, { "content-type": "text/html" }).end("<title>direct-origin</title>direct");
+    };
+    this.directOrigin = http.createServer(directHandler);
+    await new Promise<void>((r) => this.directOrigin.listen(0, "127.0.0.1", r));
+    this.directPort = (this.directOrigin.address() as net.AddressInfo).port;
+    const privateHost = opts.privateOrigin ? privateInterfaceAddress() : null;
+    if (privateHost) {
+      const srv = http.createServer(directHandler);
+      const bound = await new Promise<boolean>((resolve) => {
+        srv.once("error", () => resolve(false));
+        srv.listen(0, privateHost, () => resolve(true));
+      });
+      // Probe it once from node: an address that is bound but not reachable
+      // (a firewall, a VPN) counts as "no address", never as a failure later.
+      const port = bound ? (srv.address() as net.AddressInfo).port : 0;
+      const reachable =
+        bound &&
+        (await new Promise<boolean>((resolve) => {
+          const req = http.get({ host: privateHost, port, path: "/", timeout: 1500 }, (res) => {
+            res.resume();
+            resolve(res.statusCode === 200);
+          });
+          req.on("timeout", () => {
+            req.destroy();
+            resolve(false);
+          });
+          req.on("error", () => resolve(false));
+        }));
+      this.directHosts.length = 0; // the probe is not a browser request
+      if (reachable) {
+        this.directPrivateOrigin = srv;
+        this.directPrivateHost = privateHost;
+        this.directPrivatePort = port;
+      } else if (bound) {
+        srv.closeAllConnections?.();
+        await new Promise((r) => srv.close(r));
+      }
+    }
   }
 
   /**
@@ -427,12 +527,14 @@ export class E2ENetwork {
    * closeAllConnections() first makes the shutdown bounded.
    */
   async stop(): Promise<void> {
-    for (const srv of [this.proxy, this.tlsServer, this.egressProxy]) {
-      srv.closeAllConnections?.();
+    for (const srv of [this.proxy, this.tlsServer, this.egressProxy, this.directOrigin, this.directPrivateOrigin]) {
+      srv?.closeAllConnections?.();
     }
     await new Promise((r) => this.proxy.close(r));
     await new Promise((r) => this.tlsServer.close(r));
     await new Promise((r) => this.egressProxy.close(r));
+    await new Promise((r) => this.directOrigin.close(r));
+    if (this.directPrivateOrigin) await new Promise((r) => this.directPrivateOrigin!.close(r));
   }
 
   private async handle(
@@ -443,7 +545,7 @@ export class E2ENetwork {
     pathOverride?: string,
   ): Promise<void> {
     const rawHost = hostOverride ?? req.headers.host ?? "";
-    const host = rawHost.split(":")[0]!.toLowerCase();
+    const host = authorityHost(rawHost);
     const path = pathOverride ?? req.url ?? "/";
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);

@@ -117,14 +117,16 @@ test("shouldInterrupt is the ladder's action row, not a private threshold", () =
   }
 });
 
-// ---------------------------------------------- no new manifest permission
+// ---------------------------------------------- manifest permissions are pinned
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-test("NO new capability: the permission sets are exactly the pre-existing ones, and the host list is pinned", () => {
-  // add no permission at all: the API permission arrays below are
-  // byte-for-byte the pre-existing sets, and the in-page layers ride the existing
-  // injection model. host_permissions is pinned rather than frozen because
+test("permission sets are pinned (Firefox gains `dns` deliberately, for the ts.net rule), and the host list is pinned", () => {
+  // The API permission arrays below are the pre-existing sets with ONE
+  // deliberate addition: `dns` on Firefox, for the `*.ts.net` rule (a public
+  // Funnel host must not bypass the egress). Chromium adds no permission; it
+  // reads that rule through a PAC script. The in-page layers ride the
+  // existing injection model. host_permissions is pinned rather than frozen because
   // does change it, by exactly one Whisper endpoint (the keyed control plane),
   // which is a re-consent prompt for every installed user and must never happen
   // by accident.
@@ -153,6 +155,10 @@ test("NO new capability: the permission sets are exactly the pre-existing ones, 
     "contextMenus",
     "declarativeNetRequest",
     "alarms",
+    // `dns` is deliberate: it looks up `*.ts.net` names only, so a public
+    // Tailscale Funnel host cannot bypass the egress (shared/direct-destinations.ts).
+    // Firefox does not allow it as an optional permission.
+    "dns",
   ]);
   for (const m of [chromium, firefox]) {
     expect(m.manifest_version).toBe(3);

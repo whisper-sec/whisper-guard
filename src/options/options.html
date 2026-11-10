@@ -69,8 +69,9 @@
       <p>One control gives this browser its own routable Whisper IPv6 address
       and sends its traffic out through it, so it joins your fleet as a device and anyone can
       check that address by RDAP. Off by default. Turning it on asks for the browser's proxy
-      permission; the route is profile-global and WebRTC is hardened to proxied-only on
-      Chromium so nothing leaks around it. The control lives in the toolbar panel and on the
+      permission. Tailnet and private-network destinations connect directly, and private
+      windows are routed only when Whisper Guard is allowed in them. WebRTC is hardened to
+      proxied-only on Chromium. The control lives in the toolbar panel and on the
       dashboard - it is the same control in both places.</p>
       <div class="row gap">
         <button id="btn-egress-dash" class="w-btn small">Open it on the dashboard</button>

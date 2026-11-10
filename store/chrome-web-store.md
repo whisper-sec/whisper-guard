@@ -191,7 +191,10 @@ pre-emptive story on the docs page instead.
     routing on, never before. `webRequest` + `webRequestAuthProvider` supply the
     egress credential and `privacy` hardens WebRTC to proxied-only; these three
     are requested at runtime on that same click. Routing is off by default; the
-    proxy setting is never touched until the user opts in.
+    proxy setting is never touched until the user opts in. While routing is
+    on, private-network, intranet and tailnet destinations connect directly,
+    and the PAC script looks up `*.ts.net` names only, sending one direct only
+    when it resolves to a Tailscale address.
   - `<all_urls>` (optional): requested at runtime only when the user enables
     Active Shield (warnings), the pre-click link sweep (this-site access,
     requested per site), or the browser-egress route. The default install has
