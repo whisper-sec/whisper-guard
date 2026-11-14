@@ -75,6 +75,13 @@ import { getWins, recordWin, recordWinOnce } from "./wins";
 const tabs = new Map<number, TabState>();
 const debounce = new Map<number, ReturnType<typeof setTimeout>>();
 /**
+ * Per-tab evaluation generation. scheduleEvaluate bumps it on every committed
+ * navigation (and every re-evaluation), and an evaluation only paints, stores
+ * or injects while its own generation is still the tab's current one. Without
+ * it a slow answer for the page a tab LEFT lands on the page it shows now.
+ */
+const navGen = new Map<number, number>();
+/**
  * The page a tab's cookie-decline win has already been counted for.
  *
  * Since the consent pass runs in every frame, one page can produce more than
@@ -112,7 +119,10 @@ function blankState(): TabState {
   };
 }
 
-async function evaluate(tabId: number, url: string): Promise<void> {
+async function evaluate(tabId: number, url: string, gen: number): Promise<void> {
+  // False once a newer navigation (or re-evaluation) of this tab was scheduled,
+  // or the tab closed. Re-checked after every await that precedes a side effect.
+  const current = (): boolean => navGen.get(tabId) === gen;
   const state = blankState();
   state.signedIn = await hasKey();
   state.shieldOn = (await getSettings()).shield && (await shieldGranted());
@@ -120,6 +130,7 @@ async function evaluate(tabId: number, url: string): Promise<void> {
   const hostname = extractHostname(url);
   if (!hostname) {
     state.icon = "neutral";
+    if (!current()) return;
     tabs.set(tabId, state);
     await paintIcon(tabId, "neutral");
     return;
@@ -143,6 +154,7 @@ async function evaluate(tabId: number, url: string): Promise<void> {
     verdict = await cacheGet(hostname);
     if (!verdict) {
       // Show progress honestly while the one assess call runs.
+      if (!current()) return;
       tabs.set(tabId, { ...state, icon: "checking" });
       await paintIcon(tabId, "checking");
       try {
@@ -180,6 +192,7 @@ async function evaluate(tabId: number, url: string): Promise<void> {
   } else {
     state.icon = settings.cloudCheck ? "unknown" : "signedout";
   }
+  if (!current()) return;
   tabs.set(tabId, state);
   await paintIcon(tabId, state.icon);
 
@@ -192,7 +205,9 @@ async function evaluate(tabId: number, url: string): Promise<void> {
         : state.detector
           ? `looks like ${state.detector.brandDomain}`
           : (verdict?.label ?? "flagged by the graph");
+    if (!current()) return;
     const first = await recordRisk(hostname, reason);
+    if (!current()) return;
     if (first) await pulseBadge(tabId, state.icon === "malicious" ? "#DC2626" : "#F59E0B");
   }
 
@@ -200,10 +215,13 @@ async function evaluate(tabId: number, url: string): Promise<void> {
   // user's Active-Shield opt-in; without it the ambient icon carries the
   // signal and the popup carries the receipts. Never for silent rungs.
   if (state.shieldOn) {
-    if (!(await sessionAllowed(hostname))) {
+    const allowed = await sessionAllowed(hostname);
+    if (!current()) return;
+    if (!allowed) {
       if (rung === "blocking") {
         await addBlockRule(hostname, state.detector);
-        await redirectToWarning(tabId, hostname, state.detector);
+        if (!current()) return;
+        await redirectToWarning(tabId, hostname, state.detector, current);
       } else if (rung === "conversational" && (settings.amberBanner || settings.fieldGuard)) {
         await injectGuard(tabId, {
           host: hostname,
@@ -241,6 +259,7 @@ async function evaluate(tabId: number, url: string): Promise<void> {
       // that ever armed the field guard. A softer page verdict the user
       // waved through stays fully silent: they said the site is fine, and
       // on a look-alike that is much likelier to be true.
+      if (!current()) return;
       await injectGuard(tabId, {
         host: hostname,
         severity: "high",
@@ -266,24 +285,30 @@ async function evaluate(tabId: number, url: string): Promise<void> {
   // layer out: no automatic injection for them (popup-open arming still
   // works, being an explicit invocation).
   if (rung !== "blocking" && (state.shieldOn || !(await shieldGranted()))) {
+    if (!current()) return;
     await armPreempt(tabId, hostname);
     // The cookie-consent auto-decline rides the same arming moment
     // and capability model; its own opt-out is honored inside armConsent.
     // Remember which page was armed so the win can be counted once for it
     // however many frames it turns out to have.
+    if (!current()) return;
     consentArmedUrl.set(tabId, url);
     await armConsent(tabId);
   }
 }
 
 function scheduleEvaluate(tabId: number, url: string): void {
+  // Bump now, not when the debounce fires: a commit invalidates in-flight work
+  // for the previous page the moment it happens.
+  const gen = (navGen.get(tabId) ?? 0) + 1;
+  navGen.set(tabId, gen);
   const t = debounce.get(tabId);
   if (t) clearTimeout(t);
   debounce.set(
     tabId,
     setTimeout(() => {
       debounce.delete(tabId);
-      evaluate(tabId, url).catch(() => undefined);
+      evaluate(tabId, url, gen).catch(() => undefined);
     }, NAV_DEBOUNCE_MS),
   );
 }
@@ -323,6 +348,7 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 
 ext.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
+  navGen.delete(tabId);
   lastUrl.delete(tabId);
   // the per-page consent ledger is per tab, so it goes with the tab.
   // Left behind it would be an unbounded map keyed by ids that never repeat.

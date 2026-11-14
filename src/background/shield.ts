@@ -92,25 +92,48 @@ export async function removeBlockRule(host: string): Promise<void> {
   await unmarkBlocked(host); // keep the session ledger in lock-step with the DNR rules
 }
 
-/** Novel-bad path: move the already-committed tab to the warning page. */
-export async function redirectToWarning(tabId: number, host: string, hit: DetectorHit | null): Promise<void> {
+/**
+ * Novel-bad path: move the already-committed tab to the warning page.
+ *
+ * The answer this acts on was fetched for `host`, and the tab may have moved on
+ * while it was in flight. Two checks keep a late verdict off another site: the
+ * injected function only navigates when the page it runs in IS `host`, and the
+ * plain-move fallback only runs while `stillCurrent()` holds.
+ */
+export async function redirectToWarning(
+  tabId: number,
+  host: string,
+  hit: DetectorHit | null,
+  stillCurrent: () => boolean = () => true,
+): Promise<void> {
   if (await sessionAllowed(host)) return;
+  if (!stillCurrent()) return;
   const url = warningUrl(host, hit);
   try {
     // location.replace, not tabs.update: it REPLACES the dangerous page's
     // history entry, so one Back from the warning returns to the last safe
     // page instead of bouncing off the block again.
+    //
+    // Runs in the page, so it cannot import extractHostname: the hostname is
+    // normalised inline the same way (trailing dot stripped, lowercased; see
+    // src/shared/hostname.ts) and must be kept in step with it. A commit can
+    // land between the check above and this injection; a page that is not
+    // `host` is left alone.
     await ext.scripting.executeScript({
       target: { tabId },
-      func: (u: string) => {
+      func: (u: string, h: string) => {
+        if (window.location.hostname.replace(/\.$/, "").toLowerCase() !== h) return false;
         window.location.replace(u);
+        return true;
       },
-      args: [url],
+      args: [url, host],
     });
+    // The injection ran: whether it navigated or declined, never fall back.
     return;
   } catch {
     // Page not scriptable (race, browser UI): fall back to a plain move.
   }
+  if (!stillCurrent()) return;
   try {
     await ext.tabs.update(tabId, { url });
   } catch {

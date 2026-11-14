@@ -212,6 +212,14 @@ export class E2ENetwork {
    *  must then show NO scale rather than a remembered one. */
   statsDown = false;
   graphDelayMs = 0;
+  /**
+   * Hold the whisper.assess answer for a request naming one of these hosts, by
+   * this many ms. Per host, so one tab's slow answer can be raced against
+   * another's fast one (graphDelayMs delays everything). Clear it in afterEach.
+   */
+  readonly assessDelayMs = new Map<string, number>();
+  /** When (epoch ms) each delayed assess answer was sent, by host. */
+  readonly lateAnswered = new Map<string, number>();
   private verdicts = new Map<string, Verdict>();
   private explainRows = new Map<string, Record<string, unknown>[]>();
   private identifyRows = new Map<string, Record<string, unknown>[]>();
@@ -319,6 +327,16 @@ export class E2ENetwork {
   clearEgressLog(): void {
     this.egressLog.length = 0;
     this.egressAttempts.length = 0;
+  }
+
+  /** Resolve once the delayed assess answer for `host` has been sent. */
+  async waitForLateAnswer(host: string, timeoutMs = 10_000): Promise<void> {
+    const key = host.toLowerCase();
+    const deadline = Date.now() + timeoutMs;
+    while (!this.lateAnswered.has(key)) {
+      if (Date.now() > deadline) throw new Error(`no delayed assess answer for ${key}`);
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   setVerdict(host: string, v: Verdict): void {
@@ -628,6 +646,14 @@ export class E2ENetwork {
 
     if (q.includes("whisper.assess")) {
       const hs = Array.isArray(params["hs"]) ? (params["hs"] as string[]) : [];
+      const delayed = hs.filter((h) => this.assessDelayMs.has(h.toLowerCase()));
+      if (delayed.length > 0) {
+        const ms = Math.max(...delayed.map((h) => this.assessDelayMs.get(h.toLowerCase()) ?? 0));
+        await new Promise((r) => setTimeout(r, ms));
+        // Recorded once the delay has elapsed, just before the answer is
+        // sent, so a spec waits on this event rather than on a guessed sleep.
+        for (const h of delayed) this.lateAnswered.set(h.toLowerCase(), Date.now());
+      }
       for (const h of hs) {
         const v = this.verdicts.get(h.toLowerCase());
         rows.push(
