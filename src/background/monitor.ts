@@ -6,10 +6,13 @@
 //
 //   this browser  genuinely live (local navigation events; the dashboard
 //                 port gets a nudge per committed navigation)
-//   fleet         op:logs POLLING: a chrome.alarms tick in the background
-//                 (eviction-safe; the browser floors alarms at 30s) plus a
-//                 tighter interval only while a dashboard tab holds its
-//                 port open. Ring + seen-keys persist in session storage.
+//   fleet         op:logs POLLING: a chrome.alarms tick (eviction-safe; the
+//                 browser floors alarms at 30s) plus a tighter interval, both
+//                 only while a dashboard tab holds its port open. The last
+//                 port to close clears the alarm, so the worker can sleep, and
+//                 a worker that starts with no dashboard clears a leftover one.
+//                 The dashboard reconnects its port after a worker restart.
+//                 Ring + seen-keys persist in session storage.
 //
 // The feed label degrades live -> polling -> offline and never pretends.
 
@@ -103,14 +106,35 @@ export async function getFleetFeed(): Promise<{ rows: ActivityRow[]; status: Fee
   return { rows: s.ring, status: { mode, updatedAt: s.updatedAt } };
 }
 
+let alarmOp: Promise<void> = Promise.resolve();
+
+/**
+ * Make the poll alarm match the dashboard ports: present while one is open,
+ * gone otherwise. Steps are chained and read openPorts when they run, so a
+ * startup clear queued before a reconnecting dashboard can never undo it.
+ */
+export function syncPollAlarm(): Promise<void> {
+  alarmOp = alarmOp.then(async () => {
+    try {
+      if (openPorts > 0) {
+        // Only create when missing: a reconnect must not reset the period.
+        if (!(await chrome.alarms.get(FLEET_POLL_ALARM))) {
+          await chrome.alarms.create(FLEET_POLL_ALARM, { periodInMinutes: POLL_ALARM_MINUTES });
+        }
+      } else {
+        await chrome.alarms.clear(FLEET_POLL_ALARM);
+      }
+    } catch {
+      // alarms unavailable: the open-tab interval still covers the feed
+    }
+  });
+  return alarmOp;
+}
+
 /** A dashboard tab connected: tighten the cadence while it is open. */
 export function dashboardOpened(): void {
   openPorts += 1;
-  try {
-    chrome.alarms.create(FLEET_POLL_ALARM, { periodInMinutes: POLL_ALARM_MINUTES });
-  } catch {
-    // alarms unavailable: the open-tab interval still covers the feed
-  }
+  void syncPollAlarm();
   if (!openTimer) {
     openTimer = setInterval(() => {
       void pollFleetOnce();
@@ -125,6 +149,7 @@ export function dashboardClosed(): void {
     clearInterval(openTimer);
     openTimer = null;
   }
+  if (openPorts === 0) void syncPollAlarm();
 }
 
 /** Alarm tick (fires even after the worker was evicted). */

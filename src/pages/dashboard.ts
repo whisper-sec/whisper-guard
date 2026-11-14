@@ -1875,20 +1875,36 @@ function init(): void {
   // Live nudges: the background pokes this port on every committed
   // navigation; the browser view repaints (debounced) while the fleet
   // and endpoint views poll on their own honest cadence.
-  const port = chrome.runtime.connect({ name: "dashboard" });
   let navTimer: ReturnType<typeof setTimeout> | null = null;
-  port.onMessage.addListener((msg: { kind?: string }) => {
-    if (msg.kind !== "nav") return;
-    // The mark goes up for every committed navigation, whichever view is
-    // open: the event happened, and a reader on the fleet tab watching the
-    // track go still would otherwise conclude the browser had stopped.
-    arrived();
-    if (view !== "browser") return;
-    if (navTimer) clearTimeout(navTimer);
-    navTimer = setTimeout(() => {
-      void refreshBrowser();
-    }, 700);
-  });
+  // The background drops the port whenever the worker stops. Reconnecting
+  // keeps the live nudges and the worker's poll alarm (which exists only
+  // while a port is open). A throw from connect means the extension context
+  // is gone, so it stops rather than loops.
+  const connectPort = (): void => {
+    let port: chrome.runtime.Port;
+    try {
+      port = chrome.runtime.connect({ name: "dashboard" });
+    } catch {
+      return;
+    }
+    port.onMessage.addListener((msg: { kind?: string }) => {
+      if (msg.kind !== "nav") return;
+      // The mark goes up for every committed navigation, whichever view is
+      // open: the event happened, and a reader on the fleet tab watching the
+      // track go still would otherwise conclude the browser had stopped.
+      arrived();
+      if (view !== "browser") return;
+      if (navTimer) clearTimeout(navTimer);
+      navTimer = setTimeout(() => {
+        void refreshBrowser();
+      }, 700);
+    });
+    port.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError;
+      setTimeout(connectPort, 500);
+    });
+  };
+  connectPort();
 
   fleetTimer = setInterval(() => {
     if (document.hidden) return;
