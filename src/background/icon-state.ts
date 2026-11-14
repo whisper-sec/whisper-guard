@@ -35,6 +35,10 @@ export function bandToIcon(band: GraphBand): IconState {
   }
 }
 
+// Mirrors what the browser currently shows for each tab. The browser resets
+// per-tab action values on every cross-document main-frame commit, so the
+// mirror must be forgotten at commit (forgetTab) as well as at tab close;
+// otherwise an identical next paint is skipped and the mark stays default.
 const lastState = new Map<number, IconState>();
 
 export async function paintIcon(tabId: number, state: IconState): Promise<void> {
@@ -70,6 +74,7 @@ export async function pulseBadge(tabId: number, color: string): Promise<void> {
   }
 }
 
+/** Drop the mirror: on tab close, and when a main frame commits (browser resets the icon). */
 export function forgetTab(tabId: number): void {
   lastState.delete(tabId);
 }
