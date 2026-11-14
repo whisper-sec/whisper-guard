@@ -26,6 +26,7 @@
 import { LOGO_DATAURI } from "../shared/brand";
 import { PREEMPT_DECIDE_TIMEOUT_MS } from "../shared/config";
 import { armConsent } from "./consent";
+import { extractHostname } from "../shared/hostname";
 import {
   linkTarget,
   modifiedDisposition,
@@ -112,6 +113,10 @@ if (!w[FLAG]) {
         return;
       }
       if (msg.kind !== "whisper-guard-config") return;
+      // A config describes ONE host. If this page is not it (a late verdict for
+      // the site the tab just left), render nothing and spend none of the
+      // page's one-shot flags below.
+      if (extractHostname(location.href) !== msg.host) return;
       // Dismissing the banner silences THE BANNER for this host, this tab,
       // this session. It is not a blanket "never speak again": the
       // password-field caution is the credential moment, a separate
