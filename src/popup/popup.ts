@@ -37,7 +37,7 @@ import {
   type WinsToday,
 } from "../shared/types";
 import type { PageScanResult } from "../background/page-scan";
-import { CONSOLE_URL, GRAPH_HOST } from "../shared/config";
+import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { compact, countUp, sparkline } from "../shared/spark";
 import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
@@ -895,6 +895,7 @@ function render(): void {
 
   if (!s.eligible || !s.hostname) {
     $("ineligible").hidden = false;
+    $("host-row").hidden = true;
     $("privacy-line").textContent = "Privacy: nothing was sent.";
     return;
   }
@@ -932,6 +933,25 @@ function render(): void {
     chip.textContent = ui.chip;
     note.textContent = verdictSentence(band, s.verdict?.label ?? null);
     if (renderCoverage(s.verdict?.coverage ?? null)) $("protect-card").hidden = false;
+    void loadProtection(host);
+  } else if (cloudCheck && s.graphError) {
+    // The check was made and Whisper did not answer. Its own word, glyph and
+    // amber, so it is never read as SUSPICIOUS or as a clean "unknown".
+    glyph.className = "glyph error";
+    rail.className = "band-rail error";
+    glyph.textContent = "!";
+    chip.className = "w-chip err";
+    chip.textContent = "COULD NOT CHECK";
+    note.textContent = "Not confirmed either way. On-device checks still ran.";
+    void loadProtection(host);
+  } else if (cloudCheck && s.lost) {
+    // The worker was stopped and no answer for this exact name was kept. Not a
+    // failed check and not a verdict: no chip, just the honest sentence.
+    glyph.className = "glyph unknown";
+    rail.className = "band-rail unknown";
+    glyph.textContent = "?";
+    chip.hidden = true;
+    note.textContent = "No answer kept for this page. Reload it to check again.";
     void loadProtection(host);
   } else if (cloudCheck) {
     glyph.className = "glyph unknown";
@@ -1085,10 +1105,41 @@ async function init(): Promise<void> {
     }),
   ]);
   if (settingsRes.ok) settings = settingsRes.settings;
-  if (stateRes.ok) {
-    state = stateRes.tabState;
-    render();
+  if (!stateRes.ok) return;
+  state = stateRes.tabState;
+  // Only after BOTH answers: a tab with the live check off must never flash
+  // CHECKING. render() attaches listeners and must run exactly once, so while a
+  // check is in flight only a minimal view is drawn and render() waits.
+  if (state.icon === "checking" && state.eligible && state.hostname && (settings?.cloudCheck ?? true)) {
+    drawChecking(state.hostname);
+    state = await waitUntilSettled(state);
   }
+  render();
+}
+
+function drawChecking(host: string): void {
+  $("host-row").hidden = false;
+  $("hostname").textContent = host;
+  $("band-glyph").className = "glyph unknown";
+  $("band-glyph").textContent = "…";
+  $("band-rail").className = "band-rail unknown";
+  $("band-chip").className = "w-chip unknown";
+  $("band-chip").textContent = "CHECKING";
+  $("band-note").textContent = "Checking this site...";
+  $("privacy-line").textContent = `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`;
+}
+
+/** Poll the worker until the check settles; bounded by the longest the worker
+ *  itself can take, after which the latest state is rendered as it is. */
+async function waitUntilSettled(first: TabState): Promise<TabState> {
+  let latest = first;
+  const deadline = Date.now() + GRAPH_TIMEOUT_MS + NAV_DEBOUNCE_MS + 1500;
+  while (latest.icon === "checking" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+    const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
+    if (res.ok) latest = res.tabState;
+  }
+  return latest;
 }
 
 void init();

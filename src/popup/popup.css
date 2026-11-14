@@ -132,6 +132,7 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 }
 .band-rail.benign { background: var(--w-ok); }
 .band-rail.suspicious { background: var(--w-v-low); }
+.band-rail.error { background: var(--w-v-low); }
 .band-rail.malicious { background: var(--w-v-crit); }
 .band-rail.unknown { background: repeating-linear-gradient(
   180deg, var(--w-line-strong) 0 3px, transparent 3px 6px); }
@@ -147,6 +148,7 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 .glyph.suspicious { border-color: var(--w-v-low); color: var(--w-v-low); }
 .glyph.malicious { border-color: var(--w-v-crit); background: var(--w-v-crit); color: #fff; }
 .glyph.unknown { border-style: dashed; border-color: var(--w-line-strong); color: var(--w-muted); }
+.glyph.error { border-style: dotted; border-color: var(--w-v-low); color: var(--w-v-low); }
 .glyph.signedout { border-color: var(--w-line-strong); color: var(--w-muted); }
 
 .host-meta { min-width: 0; flex: 1; }

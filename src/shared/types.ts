@@ -58,6 +58,11 @@ export interface TabState {
   // checks still ran, and the popup says so instead of faking a verdict.
   graphError: string | null;
   shieldOn: boolean;
+  // Set only on a state the worker rebuilt after it was stopped and no answer
+  // for this exact name was kept: the popup says so instead of faking a
+  // verdict or claiming the check failed. Optional so older saved states and
+  // fixtures stay valid.
+  lost?: true;
 }
 
 export interface SessionRisk {

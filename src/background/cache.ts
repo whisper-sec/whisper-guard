@@ -93,6 +93,18 @@ export async function cacheGet(host: string): Promise<AssessVerdict | null> {
   return null;
 }
 
+/**
+ * The fresh entry for exactly this hostname: no apex inheritance, no network,
+ * no LRU touch. It rebuilds a tab's verdict after the worker was stopped, where
+ * answering a subdomain with its parent's verdict would be a verdict nobody
+ * asked the graph for.
+ */
+export async function cacheGetExact(host: string): Promise<AssessVerdict | null> {
+  await load();
+  const v = mem.get(host.toLowerCase());
+  return v && fresh(v) ? v : null;
+}
+
 export async function cachePut(v: AssessVerdict): Promise<void> {
   await load();
   const h = v.host.toLowerCase();
