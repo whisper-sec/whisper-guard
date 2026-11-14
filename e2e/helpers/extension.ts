@@ -445,3 +445,122 @@ export async function settlePopup(
   }
   return second;
 }
+
+// ------------------------------------------------------ service-worker stop
+
+const helperPages = new WeakMap<Extension, Page>();
+
+const isGuardWorker = (w: Worker): boolean => w.url().endsWith("/background.js");
+
+/**
+ * A long-lived page of the extension's own, kept open for the whole run. It
+ * is the place to reach storage and the worker's message handler FROM WHILE
+ * THE WORKER IS STOPPED, and it must outlive stopWorker: closing a tab
+ * activates its neighbour, and that activation wakes the worker we just
+ * stopped.
+ */
+export async function extensionPage(ext: Extension): Promise<Page> {
+  let page = helperPages.get(ext);
+  if (!page || page.isClosed()) {
+    page = await ext.context.newPage();
+    await page.goto(`chrome-extension://${ext.id}/options.html`);
+    helperPages.set(ext, page);
+  }
+  return page;
+}
+
+/**
+ * Stop Guard's service worker the way the browser does after about 30 s
+ * idle, and resolve only once the worker has really stopped.
+ *
+ * Playwright's DevTools attachment keeps a worker from idling out by itself,
+ * so the stop is forced through the ServiceWorker CDP domain and resolves when
+ * the browser reports the worker stopped. A marker is set
+ * on the old worker's global first: a worker that did NOT stop still carries
+ * it, which is how workerIsFresh() tells a real restart from a stop that
+ * silently failed.
+ */
+export async function stopWorker(ext: Extension): Promise<void> {
+  const via = await extensionPage(ext);
+  await ext.sw.evaluate(() => {
+    (globalThis as unknown as { __e2eMarker?: boolean }).__e2eMarker = true;
+  });
+  const cdp = await ext.context.newCDPSession(via);
+  try {
+    // Playwright does not emit "close" for an extension worker the browser
+    // stops, so the stop is observed where it is reported: the worker version's
+    // own running status.
+    const stopped = new Promise<void>((resolveStopped, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("the service worker did not stop after stopAllWorkers")),
+        10_000,
+      );
+      cdp.on("ServiceWorker.workerVersionUpdated", (e) => {
+        if (e.versions.some((v) => v.scriptURL.endsWith("/background.js") && v.runningStatus === "stopped")) {
+          clearTimeout(timer);
+          resolveStopped();
+        }
+      });
+    });
+    await cdp.send("ServiceWorker.enable");
+    await cdp.send("ServiceWorker.stopAllWorkers");
+    await stopped;
+  } finally {
+    await cdp.detach().catch(() => undefined);
+  }
+}
+
+/**
+ * Make ext.sw usable again after stopWorker. Wakes the worker with one harmless
+ * message from the helper page, then waits until it answers. Playwright keeps
+ * the same Worker handle across a browser-initiated restart (it reconnects to
+ * the new execution context), so the handle is kept unless the context
+ * reports a different Guard worker.
+ */
+export async function rebindWorker(ext: Extension): Promise<void> {
+  const via = await extensionPage(ext);
+  await via.evaluate(() => chrome.runtime.sendMessage({ kind: "getSession" })).catch(() => undefined);
+  const until = Date.now() + 10_000;
+  for (;;) {
+    const other = ext.context.serviceWorkers().find((w) => isGuardWorker(w) && w !== ext.sw);
+    if (other) ext.sw = other;
+    try {
+      await ext.sw.evaluate(() => true);
+      return;
+    } catch {
+      if (Date.now() > until) throw new Error("the service worker did not come back");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+}
+
+/** True when the worker holds none of the old worker's in-memory state. */
+export async function workerIsFresh(ext: Extension): Promise<boolean> {
+  return ext.sw.evaluate(
+    () => (globalThis as unknown as { __e2eMarker?: boolean }).__e2eMarker === undefined,
+  );
+}
+
+/**
+ * Allow Guard in private windows and return the relaunched extension.
+ *
+ * Without that browser setting Guard never sees a private tab, so a test of
+ * "nothing is written for a private tab" would pass against a build that
+ * writes everything. The setting has no launch flag, and flipping it on the
+ * extensions page leaves a command-line extension unloaded until the browser
+ * starts again, so the toggle is persisted in the profile and the browser is
+ * relaunched on that same profile. Throws if the browser still says no.
+ */
+export async function allowInIncognito(ext: Extension, opts: LaunchOptions): Promise<Extension> {
+  const page = await ext.context.newPage();
+  await page.goto(`chrome://extensions/?id=${ext.id}`);
+  await page.locator("#allow-incognito").click();
+  await page.waitForTimeout(1500);
+  const next = await restartExtension(ext, opts);
+  const allowed = await next.sw.evaluate(() => chrome.extension.isAllowedIncognitoAccess());
+  if (!allowed) {
+    await next.close();
+    throw new Error("could not allow the extension in private windows; the private-window test would prove nothing");
+  }
+  return next;
+}

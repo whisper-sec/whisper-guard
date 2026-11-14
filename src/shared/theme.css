@@ -254,6 +254,8 @@ body {
 .w-chip.high  { color: var(--w-v-high); border-color: var(--w-v-high); }
 .w-chip.crit  { color: #fff; border-color: var(--w-v-crit); background: var(--w-v-crit); }
 .w-chip.unknown { border-style: dashed; color: var(--w-muted); }
+/* Could not check: amber like the other "not read" states, with its own word. */
+.w-chip.err { color: var(--w-v-low); border-color: var(--w-v-low); border-style: dotted; }
 .w-chip.accent { color: var(--w-accent); border-color: var(--w-accent-line); background: var(--w-accent-soft); }
 
 /* Button grammar, three tones, straight from the console: the

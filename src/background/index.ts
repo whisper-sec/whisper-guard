@@ -20,12 +20,13 @@ import { atLeast, decide } from "../shared/escalation";
 import { extractHostname } from "../shared/hostname";
 import { registrableDomain } from "../shared/psl";
 import type { BgRequest, BgResponse, CheckHostResult, EndpointDetail } from "../shared/messages";
-import type { AssessVerdict, TabState } from "../shared/types";
+import type { AssessVerdict, DetectorHit, TabState } from "../shared/types";
 import { computeEndpointHealth, isFlagged, reportTotals } from "../shared/report";
 import { detect } from "../detector/detector";
 import { getIndex } from "../detector/corpus";
 import { assessHost } from "./assess";
-import { cacheClear, cacheGet, cachePut } from "./cache";
+import { cacheClear, cacheGet, cacheGetExact, cachePut } from "./cache";
+import { clearTabState, forgetTabState, readTabState, saveTabState } from "./tab-store";
 import {
   cancelDeviceFlow,
   deviceFlowState,
@@ -104,6 +105,12 @@ const consentCountedUrl = new Map<number, string>();
 // no "tabs" permission, so tabs.query cannot see URLs; this map is what
 // lets sign-in/sign-out repaint already-open tabs).
 const lastUrl = new Map<number, string>();
+/**
+ * Tabs whose main frame committed and whose evaluation has not written a state
+ * yet (the debounce window and the on-device pass). Memory only: getTabState
+ * answers these with an honest stand-in instead of an empty state.
+ */
+const pending = new Set<number>();
 
 function blankState(): TabState {
   return {
@@ -119,6 +126,30 @@ function blankState(): TabState {
   };
 }
 
+/**
+ * ONE calm-escalation ladder decides how loudly a sighting may speak; the icon
+ * art then encodes the class it landed in. Shared by evaluate and by the
+ * rebuild of a lost tab state, so the two can never disagree.
+ */
+function decideIcon(
+  verdict: AssessVerdict | null,
+  detector: DetectorHit | null,
+  cloudCheck: boolean,
+): { rung: ReturnType<typeof decide>; icon: TabState["icon"] } {
+  const signal = {
+    band: verdict?.band ?? null,
+    label: verdict?.label ?? null,
+    lookalike: detector !== null,
+  };
+  const rung = decide(signal, "page");
+  let icon: TabState["icon"];
+  if (rung === "blocking") icon = "malicious";
+  else if (atLeast(rung, "ambient")) icon = "suspicious";
+  else if (verdict) icon = bandToIcon(verdict.band);
+  else icon = cloudCheck ? "unknown" : "signedout";
+  return { rung, icon };
+}
+
 async function evaluate(tabId: number, url: string, gen: number): Promise<void> {
   // False once a newer navigation (or re-evaluation) of this tab was scheduled,
   // or the tab closed. Re-checked after every await that precedes a side effect.
@@ -132,6 +163,8 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
     state.icon = "neutral";
     if (!current()) return;
     tabs.set(tabId, state);
+    pending.delete(tabId);
+    await saveTabState(tabId, state, current);
     await paintIcon(tabId, "neutral");
     return;
   }
@@ -155,7 +188,9 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
     if (!verdict) {
       // Show progress honestly while the one assess call runs.
       if (!current()) return;
+      // Memory only: a saved "checking" would outlive the check that set it.
       tabs.set(tabId, { ...state, icon: "checking" });
+      pending.delete(tabId);
       await paintIcon(tabId, "checking");
       try {
         verdict = await assessHost(hostname);
@@ -171,29 +206,15 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
   }
   state.verdict = verdict;
 
-  // 3) ONE calm-escalation ladder decides how loudly this sighting
-  // may speak; the icon art then encodes the class it landed in. The
-  // filled red plate is reserved for the blocking rung; the conversational
-  // rung reads as the amber nudge. De-noising stays transparent and
-  // reversible: the RAW verdict rides TabState verbatim and is one click
-  // away in the popup, never hidden.
-  const signal = {
-    band: verdict?.band ?? null,
-    label: verdict?.label ?? null,
-    lookalike: state.detector !== null,
-  };
-  const rung = decide(signal, "page");
-  if (rung === "blocking") {
-    state.icon = "malicious";
-  } else if (atLeast(rung, "ambient")) {
-    state.icon = "suspicious";
-  } else if (verdict) {
-    state.icon = bandToIcon(verdict.band);
-  } else {
-    state.icon = settings.cloudCheck ? "unknown" : "signedout";
-  }
+  // 3) The ladder (decideIcon). De-noising stays transparent and reversible:
+  // the RAW verdict rides TabState verbatim and is one click away in the
+  // popup, never hidden.
+  const { rung, icon } = decideIcon(verdict, state.detector, settings.cloudCheck);
+  state.icon = icon;
   if (!current()) return;
   tabs.set(tabId, state);
+  pending.delete(tabId);
+  await saveTabState(tabId, state, current);
   await paintIcon(tabId, state.icon);
 
   // 4) Ambient rung and up: session log + one-time badge pulse. Below it,
@@ -302,13 +323,17 @@ function scheduleEvaluate(tabId: number, url: string): void {
   // for the previous page the moment it happens.
   const gen = (navGen.get(tabId) ?? 0) + 1;
   navGen.set(tabId, gen);
+  pending.add(tabId);
   const t = debounce.get(tabId);
   if (t) clearTimeout(t);
   debounce.set(
     tabId,
     setTimeout(() => {
       debounce.delete(tabId);
-      evaluate(tabId, url, gen).catch(() => undefined);
+      evaluate(tabId, url, gen).catch(() => {
+        // An evaluation that threw must not leave the tab "checking" forever.
+        if (navGen.get(tabId) === gen) pending.delete(tabId);
+      });
     }, NAV_DEBOUNCE_MS),
   );
 }
@@ -337,17 +362,33 @@ ext.webNavigation.onCommitted.addListener((details) => {
   // cross-document navigation, so the painter's memory of it is stale now.
   forgetTab(details.tabId);
   lastUrl.set(details.tabId, details.url);
+  // The previous page's verdict is stale the moment this one commits: a worker
+  // that stops mid-check must not restore it for the new page.
+  tabs.delete(details.tabId);
   scheduleEvaluate(details.tabId, details.url);
+  void clearTabState(details.tabId);
 });
 
 ext.tabs.onActivated.addListener(({ tabId }) => {
   const state = tabs.get(tabId);
-  // Repaint from state; a brand-new tab stays neutral until it navigates.
-  paintIcon(tabId, state?.icon ?? "neutral").catch(() => undefined);
+  if (state) {
+    paintIcon(tabId, state.icon).catch(() => undefined);
+    return;
+  }
+  // A check is in flight: evaluate paints when it has something to say.
+  if (pending.has(tabId)) return;
+  // The worker was stopped: restore (or rebuild) the state and paint ITS icon,
+  // never neutral. A brand-new tab has nothing to restore and stays as the
+  // browser shows it.
+  restoreTabState(tabId)
+    .then((restored) => (restored ? paintIcon(tabId, restored.icon) : undefined))
+    .catch(() => undefined);
 });
 
 ext.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
+  pending.delete(tabId);
+  void forgetTabState(tabId);
   navGen.delete(tabId);
   lastUrl.delete(tabId);
   // the per-page consent ledger is per tab, so it goes with the tab.
@@ -431,6 +472,85 @@ void resumeDeviceFlow();
 void resumeEgress();
 
 // ---------------------------------------------------------- message router
+
+/**
+ * Bring a tab's state back after the worker was stopped. Order: the saved
+ * state (only if its hostname still matches the page the tab shows), then a
+ * rebuild from the on-device detector and the verdict cache's EXACT-name entry.
+ * Never a request: the rebuild does not call assessHost. Returns null when
+ * there is nothing to restore (a tab with no committed page).
+ */
+async function restoreTabState(tabId: number): Promise<TabState | null> {
+  const gen = navGen.get(tabId);
+  // A navigation, or a state written by one, that lands while this awaits wins.
+  const superseded = (): boolean => navGen.get(tabId) !== gen || tabs.has(tabId);
+
+  let frameUrl: string | null = null;
+  try {
+    frameUrl = (await ext.webNavigation.getFrame({ tabId, frameId: 0 }))?.url ?? null;
+  } catch {
+    frameUrl = null;
+  }
+  const saved = await readTabState(tabId);
+  if (superseded()) return tabs.get(tabId) ?? null;
+  if (frameUrl === null) return null;
+  const hostname = extractHostname(frameUrl);
+
+  if (saved && saved.hostname === hostname) {
+    tabs.set(tabId, saved);
+    return saved;
+  }
+  if (!hostname) return blankState();
+
+  const settings = await getSettings();
+  const detector = await detect(hostname, settings.nearMiss, settings.allowlist);
+  const verdict = settings.cloudCheck ? await cacheGetExact(hostname) : null;
+  const signedIn = await hasKey();
+  const shieldOn = settings.shield && (await shieldGranted());
+  if (superseded()) return tabs.get(tabId) ?? null;
+
+  const { icon } = decideIcon(verdict, detector, settings.cloudCheck);
+  const rebuilt: TabState = {
+    hostname,
+    registrable: registrableDomain(hostname),
+    eligible: true,
+    signedIn,
+    icon,
+    verdict,
+    detector,
+    graphError: null,
+    shieldOn,
+  };
+  if (settings.cloudCheck && !verdict) rebuilt.lost = true;
+  // A lost state is not kept in memory: a later read may find the cache filled.
+  if (!rebuilt.lost) tabs.set(tabId, rebuilt);
+  await paintIcon(tabId, icon);
+  return rebuilt;
+}
+
+/** What a tab shows right now, from memory, a check in flight, or a restore. */
+async function lookupTabState(tabId: number): Promise<TabState> {
+  const mem = tabs.get(tabId);
+  if (mem) return { ...mem };
+  if (pending.has(tabId)) {
+    const url = lastUrl.get(tabId);
+    const hostname = url ? extractHostname(url) : null;
+    if (!hostname) return blankState();
+    const settings = await getSettings();
+    const stand = blankState();
+    stand.hostname = hostname;
+    stand.registrable = registrableDomain(hostname);
+    stand.eligible = true;
+    stand.icon = settings.cloudCheck ? "checking" : "signedout";
+    return stand;
+  }
+  const restored = await restoreTabState(tabId);
+  if (restored) return { ...restored };
+  // restoreTabState yields null when a newer state landed or there is no page.
+  const again = tabs.get(tabId);
+  if (again) return { ...again };
+  return blankState();
+}
 
 async function checkHost(rawHost: string): Promise<CheckHostResult> {
   const host = rawHost.toLowerCase();
@@ -516,7 +636,7 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       // A COPY. Writing signedIn through to the stored object made the
       // answer to a read mutate the thing being read, so a later paint could
       // observe a field this handler set rather than one evaluate() decided.
-      const state = { ...(tabs.get(msg.tabId) ?? blankState()) };
+      const state = await lookupTabState(msg.tabId);
       state.signedIn = await hasKey();
       return { ok: true, tabState: state };
     }
