@@ -63,6 +63,7 @@ import {
   ingestFleetRows,
   onPollAlarm,
   resetFeed,
+  syncPollAlarm,
 } from "./monitor";
 import { armEgressRouting, egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
 import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
@@ -470,6 +471,9 @@ armEgressRouting();
 
 void resumeDeviceFlow();
 void resumeEgress();
+// A fresh worker has no dashboard port, so this clears an alarm left by the
+// previous one; a dashboard that reconnects recreates it through onConnect.
+void syncPollAlarm();
 
 // ---------------------------------------------------------- message router
 
