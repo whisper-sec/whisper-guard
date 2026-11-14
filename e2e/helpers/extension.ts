@@ -385,6 +385,15 @@ export async function visit(ext: Extension, url: string): Promise<{ page: Page; 
 }
 
 /**
+ * Navigate an EXISTING page (same tab id) to another URL. visit() always
+ * opens a new tab, so it cannot exercise what the browser does to a tab's
+ * per-tab action state when its main frame commits a second document.
+ */
+export async function navigateInTab(page: Page, url: string): Promise<void> {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+}
+
+/**
  * Settle a popup for a still capture: reduced motion applied BEFORE the
  * page's scripts run, then a wait until the one animated number has stopped
  * moving.

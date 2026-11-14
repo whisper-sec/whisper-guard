@@ -308,6 +308,9 @@ ext.webNavigation.onCommitted.addListener((details) => {
     }
     return;
   }
+  // The browser resets the tab's action icon and title on every committed
+  // cross-document navigation, so the painter's memory of it is stale now.
+  forgetTab(details.tabId);
   lastUrl.set(details.tabId, details.url);
   scheduleEvaluate(details.tabId, details.url);
 });
