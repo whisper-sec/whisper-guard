@@ -89,12 +89,14 @@
         widen what leaves the browser.</span>
       </label>
       <label class="toggle sub">
-        <input type="checkbox" id="opt-banner">
-        <span>Show the amber caution banner on look-alike and suspicious sites</span>
+        <input type="checkbox" id="opt-banner" aria-describedby="banner-needs">
+        <span>Show the amber caution banner on look-alike and suspicious sites
+        <span class="w-note needs-shield" id="banner-needs" hidden>needs Active Shield</span></span>
       </label>
       <label class="toggle sub">
-        <input type="checkbox" id="opt-fieldguard">
-        <span>Show a caution when a password field is focused on a flagged site</span>
+        <input type="checkbox" id="opt-fieldguard" aria-describedby="fieldguard-needs">
+        <span>Show a caution when a password field is focused on a flagged site
+        <span class="w-note needs-shield" id="fieldguard-needs" hidden>needs Active Shield</span></span>
       </label>
       <label class="toggle">
         <input type="checkbox" id="opt-cookiedecline">

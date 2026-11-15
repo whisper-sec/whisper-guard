@@ -19,6 +19,8 @@
 import { send, type CheckHostResult } from "../shared/messages";
 import type { GraphScale, Settings } from "../shared/types";
 import { compact, countUp, sparkline } from "../shared/spark";
+import { ext } from "../shared/api";
+import { shieldActive, shieldGranted } from "../shared/shield-state";
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
@@ -105,7 +107,7 @@ async function loadScale(): Promise<void> {
  * this extension doing for me right now", which is the only question a first
  * run has to answer.
  */
-function stateMark(on: boolean): SVGSVGElement {
+function stateMark(on: boolean, title?: string): SVGSVGElement {
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", "0 0 26 14");
@@ -113,7 +115,7 @@ function stateMark(on: boolean): SVGSVGElement {
   svg.setAttribute("height", "14");
   svg.setAttribute("role", "img");
   const t = document.createElementNS(NS, "title");
-  t.textContent = on ? "on" : "off";
+  t.textContent = title ?? (on ? "on" : "off");
   svg.appendChild(t);
   const track = document.createElementNS(NS, "rect");
   track.setAttribute("x", "0.75");
@@ -134,10 +136,15 @@ function stateMark(on: boolean): SVGSVGElement {
   return svg;
 }
 
-function activeRow(on: boolean, name: string, detail: string): HTMLElement {
-  const row = el("div", `active-row${on ? "" : " off"}`);
+type RowState = "on" | "off" | "needs-shield";
+
+function activeRow(state: boolean | RowState, name: string, detail: string, key?: string): HTMLElement {
+  const st: RowState = state === true ? "on" : state === false ? "off" : state;
+  const row = el("div", `active-row${st === "on" ? "" : " off"}`);
+  if (key) row.dataset["key"] = key;
+  row.dataset["state"] = st;
   const mark = el("span", "active-mark");
-  mark.appendChild(stateMark(on));
+  mark.appendChild(stateMark(st === "on", st === "needs-shield" ? "needs Active Shield" : undefined));
   row.append(mark, el("span", "active-name", name), el("span", "active-detail", detail));
   return row;
 }
@@ -160,6 +167,11 @@ async function loadActive(): Promise<void> {
     return;
   }
   const s = res.settings;
+  const granted = await shieldGranted();
+  const active = shieldActive(s, granted);
+  // A protection that cannot run yet is never drawn on. The stored
+  // preference is untouched; it reads on again once Active Shield is.
+  const gated = (pref: boolean): RowState => (!active ? "needs-shield" : pref ? "on" : "off");
   // The brand figure is the corpus the detector loaded, counted. When it
   // could not be counted the sentence simply does not carry a number.
   const brands = res.corpusBrands > 0 ? `${res.corpusBrands.toLocaleString("en")} heavily phished brands` : "the bundled brand list";
@@ -173,9 +185,10 @@ async function loadActive(): Promise<void> {
     ),
     activeRow(true, "Look-alike detector", `On-device, watching ${brands}. Sends nothing.`),
     activeRow(
-      s.fieldGuard,
+      gated(s.fieldGuard),
       "Credential-field guard",
-      "Warns before a password or card is typed into a site the graph does not vouch for.",
+      `${active ? "" : "Needs Active Shield. "}Warns before a password or card is typed into a site the graph does not vouch for.`,
+      "fieldGuard",
     ),
     activeRow(
       s.cookieDecline,
@@ -183,14 +196,15 @@ async function loadActive(): Promise<void> {
       "Clicks reject, never accept, entirely on this device.",
     ),
     activeRow(
-      s.amberBanner,
+      gated(s.amberBanner),
       "In-page warning banner",
-      "Says so on the page itself when a site is only partly trusted.",
+      `${active ? "" : "Needs Active Shield. "}Says so on the page itself when a site is only partly trusted.`,
+      "amberBanner",
     ),
     activeRow(
-      s.shield,
+      active,
       "Active Shield",
-      s.shield
+      active
         ? "Known-bad destinations are blocked before they load."
         : "Off until you grant it: it needs permission for every site.",
     ),
@@ -200,6 +214,15 @@ async function loadActive(): Promise<void> {
 void loadSample();
 void loadScale();
 void loadActive();
+
+// A grant or a settings change elsewhere (the Settings toggle) re-reads the
+// state in place. The grant lands before the setting does, so the storage
+// listener is what settles the final picture.
+ext.permissions.onAdded.addListener(() => void loadActive());
+ext.permissions.onRemoved.addListener(() => void loadActive());
+ext.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && "settings" in changes) void loadActive();
+});
 
 $("btn-later").addEventListener("click", () => {
   window.close();

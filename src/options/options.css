@@ -25,6 +25,9 @@ code { background: var(--w-elev); padding: 1px 5px; border-radius: 4px; font-fam
 
 .toggle { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0; cursor: pointer; }
 .toggle.sub { margin-left: 26px; }
+.toggle.sub input:disabled { cursor: default; }
+.toggle.sub:has(input:disabled) { cursor: default; }
+.toggle .needs-shield { margin-left: 6px; }
 .toggle input { margin-top: 3px; flex: none; accent-color: var(--w-accent); }
 
 .row { display: flex; align-items: center; }

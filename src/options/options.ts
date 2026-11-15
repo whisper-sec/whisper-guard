@@ -9,9 +9,36 @@
 import { send } from "../shared/messages";
 import { CONSOLE_URL } from "../shared/config";
 import type { Settings } from "../shared/types";
+import { ext } from "../shared/api";
+import { shieldActive, shieldGranted } from "../shared/shield-state";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const check = (id: string): HTMLInputElement => $(id) as unknown as HTMLInputElement;
+
+/**
+ * The Active Shield block. The two sub-toggles cannot do anything until
+ * Active Shield is on (setting and grant), so until then they are drawn
+ * unchecked and disabled with a note. The stored preference is never touched
+ * here: render only, no writes.
+ */
+async function renderShieldDeps(settings: Settings): Promise<void> {
+  const granted = await shieldGranted();
+  const active = shieldActive(settings, granted);
+  check("opt-shield").checked = active;
+  for (const [id, noteId, pref] of [
+    ["opt-banner", "banner-needs", settings.amberBanner],
+    ["opt-fieldguard", "fieldguard-needs", settings.fieldGuard],
+  ] as const) {
+    check(id).checked = active && pref;
+    check(id).disabled = !active;
+    $(noteId).hidden = active;
+  }
+}
+
+async function readSettings(): Promise<Settings | null> {
+  const res = await send<{ ok: true; settings: Settings }>({ kind: "getSettings" });
+  return res.ok ? res.settings : null;
+}
 
 async function refresh(): Promise<void> {
   const res = await send<{
@@ -26,10 +53,7 @@ async function refresh(): Promise<void> {
   $("account-signedout").hidden = res.signedIn;
   $("account-signedin").hidden = !res.signedIn;
 
-  const granted = await chrome.permissions.contains({ origins: ["<all_urls>"] });
-  check("opt-shield").checked = res.settings.shield && granted;
-  check("opt-banner").checked = res.settings.amberBanner;
-  check("opt-fieldguard").checked = res.settings.fieldGuard;
+  await renderShieldDeps(res.settings);
   check("opt-cookiedecline").checked = res.settings.cookieDecline;
   check("opt-nearmiss").checked = res.settings.nearMiss;
   check("opt-corpusupdate").checked = res.settings.corpusAutoUpdate;
@@ -47,6 +71,11 @@ async function refresh(): Promise<void> {
     : "";
 }
 
+async function rerenderShield(): Promise<void> {
+  const s = await readSettings();
+  if (s) await renderShieldDeps(s);
+}
+
 function wire(): void {
   check("opt-shield").addEventListener("change", async (ev) => {
     const on = (ev.target as HTMLInputElement).checked;
@@ -58,6 +87,13 @@ function wire(): void {
       }
     }
     await send({ kind: "setSettings", patch: { shield: on } });
+    await rerenderShield();
+  });
+
+  ext.permissions.onAdded.addListener(() => void rerenderShield());
+  ext.permissions.onRemoved.addListener(() => void rerenderShield());
+  ext.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && "settings" in changes) void rerenderShield();
   });
 
   for (const [id, key] of [
