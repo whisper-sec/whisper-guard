@@ -43,13 +43,13 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 ## Review notes (paste into "Notes for reviewers")
 
-- **What changed since 2.6.2.** With the opt-in routing on, tailnet,
-  private-network and intranet destinations connect directly. Firefox now
-  declares `dns` (it cannot be optional there), used only while routing is on
-  and only to look up `*.ts.net` names, to tell a tailnet node from a public
-  Funnel host. The shared code now generates a PAC script for Chromium; the
-  Firefox build carries that generator but never runs it, and the same
-  decision runs in `proxy.onRequest`. No endpoint or data category changed.
+- **What changed since 2.7.0.** Bug fixes only. The permission lists, the
+  endpoints and the data categories are unchanged. The console link now opens
+  `edr.whisper.security` in a tab (the console's new name; opened, never
+  fetched). Each tab's verdict (a hostname, the verdict and the toolbar mark,
+  never a URL) is kept in `storage.session` so it survives the background
+  script being suspended; nothing is kept for a private-window tab. A check
+  answer that arrives after the tab has moved on is discarded.
 - `dns`: declared, not optional on Firefox. Used only for `*.ts.net` names; one
   connects directly only if it resolves to a Tailscale address.
 - `proxy`: optional, requested on a click when the user turns on "Protect
@@ -71,7 +71,21 @@ Full notes: https://github.com/whisper-sec/whisper-guard/blob/main/store/firefox
 
 The full text behind the paste-ready notes above.
 
-- **What changed since 2.6.2.** With the opt-in routing on, tailnet,
+- **What changed since 2.7.0.** Five fixes, no new permission, endpoint or
+  data category; both manifests differ from 2.7.0 in the version alone.
+  "Open in console" and "Open the console" now open `edr.whisper.security`,
+  the console's new name, instead of its old name, which only redirects
+  there; it is opened in a tab and never fetched, so it needs no host
+  permission. The toolbar mark is repainted after every main-frame
+  navigation, because the browser resets it there. A check answer that
+  arrives after the tab has navigated elsewhere is discarded before it can
+  paint, store, block or inject anything. Each tab's settled state (a
+  hostname, the verdict and the mark, never a URL) is mirrored to
+  `storage.session` so the popup still has it after the background script is
+  suspended; it is never written for a private-window tab, or when the window
+  kind cannot be read. The dashboard's 30 second refresh alarm now exists only
+  while a dashboard is open.
+- **What changed in 2.7.0.** With the opt-in routing on, tailnet,
   private-network and intranet destinations connect directly. Firefox now
   declares `dns`, which is required because Firefox does not allow it as
   optional. `dns` is used only while routing is on, and only to look up
