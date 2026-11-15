@@ -69,7 +69,13 @@ The `image-size` and `adm-zip` advisories this section used to list are gone:
 `web-ext` 10.8 moved `addons-linter` onto a fixed `image-size`, and
 `adm-zip@0.6.1` fixed the extraction finding. The `overrides` entry keeps
 `adm-zip` on `^0.6.0`, so the tree cannot resolve to an older, affected
-release.
+release. The four `node-forge` advisories that `web-ext` brought in through
+`@devicefarmer/adbkit`
+([GHSA-6889-vf6x-f3g5](https://github.com/advisories/GHSA-6889-vf6x-f3g5),
+[GHSA-w4xr-hqv8-ch44](https://github.com/advisories/GHSA-w4xr-hqv8-ch44),
+[GHSA-6cv4-p8m7-4r25](https://github.com/advisories/GHSA-6cv4-p8m7-4r25),
+[GHSA-j8rw-jp99-435v](https://github.com/advisories/GHSA-j8rw-jp99-435v))
+are fixed in `node-forge` 1.4.3, which the lockfile now carries.
 
 We re-check this whenever `deepmerge` publishes a fix or `addons-linter`
 moves off it. `.github/workflows/dep-audit.yml` blocks CI on the shipped

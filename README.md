@@ -317,15 +317,17 @@ public identity verification all work with no key.
 Docs: [whisper.online/docs/whisper-guard](https://whisper.online/docs/whisper-guard) ·
 Screenshots: [`shots/`](shots/index.html)
 
-A fresh clone's `npm audit` reports 3 high-severity findings, from 2 advisories, all in
+A fresh clone's `npm audit` reports 3 low-severity findings, from one advisory, all in
 `web-ext`'s dependency tree and none of them in the extension: it declares no
 runtime dependencies at all, and `npm audit --omit=dev` is zero. They are
 named, explained and tracked in [SECURITY.md](SECURITY.md#known-advisories-in-build-tooling).
 
 ## Install
 
-Chrome Web Store and Firefox AMO listings are in submission. Until they land,
-load the built extension directly:
+- **Chrome, Edge, Brave, Opera, Vivaldi:** [Chrome Web Store](https://chromewebstore.google.com/detail/whisper-guard/ipiabkcdkhokcanmnfihfhgbjaofpakn)
+- **Firefox:** [addons.mozilla.org](https://addons.mozilla.org/en-US/firefox/addon/whisper-guard/)
+
+To run your own build instead:
 
 ```bash
 npm ci
