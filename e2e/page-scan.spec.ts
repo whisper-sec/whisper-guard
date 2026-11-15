@@ -158,12 +158,43 @@ test("should make no explain call when scanning or when a row is clicked", async
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
   await popup.locator("#iocscan-list .link-row", { hasText: "Not assessed" }).first().click();
+  // The re-scan can finish before a poll ever sees the "Scanning…" label, so
+  // the label's changes are recorded from before the click and read afterwards.
+  await popup.evaluate(() => {
+    const button = document.querySelector("#btn-iocscan")!;
+    const seen: string[] = [];
+    (window as unknown as { __scanLabels: string[] }).__scanLabels = seen;
+    new MutationObserver(() => seen.push(button.textContent ?? "")).observe(button, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  });
   await popup.locator("#btn-iocscan").click();
-  await expect(popup.locator("#btn-iocscan")).toHaveText("Scanning…");
-  await expect(popup.locator("#btn-iocscan")).toHaveText("Re-scan", { timeout: 20_000 });
+  await expect
+    .poll(
+      () =>
+        popup.evaluate(() => {
+          const seen = (window as unknown as { __scanLabels: string[] }).__scanLabels;
+          const started = seen.indexOf("Scanning…");
+          return started >= 0 && seen.slice(started + 1).includes("Re-scan");
+        }),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
 
-  const added = net.requestsTo(GRAPH_READ_HOST).slice(before).map((r) => r.body).join("\n");
-  expect(added).not.toContain("whisper.explain");
+  // The popup may explain the page's own host when it opens, and whether that
+  // lands after `before` depends on what ran earlier. The claim here is about
+  // the scan: nothing it found is ever sent for an explanation.
+  const explained = net
+    .requestsTo(GRAPH_READ_HOST)
+    .slice(before)
+    .map((r) => r.body)
+    .filter((body) => body.includes("whisper.explain"))
+    .join("\n");
+  for (const indicator of [HASH, CVE, IPV4, "evil-scan.com", "quiet-scan.com"]) {
+    expect(explained).not.toContain(indicator);
+  }
 
   await popup.close();
   await page.close();
