@@ -207,6 +207,95 @@ test("should say no answer was kept when the state and the cache are both gone",
   await rebindWorker(ext);
 });
 
+test("should say no answer was kept when the worker stops in the middle of a check", async () => {
+  const host = "stopped-mid-check-guard-e2e.com";
+  net.setVerdict(host, CLEAN);
+  // The answer is held back, so the check is still in flight when the worker stops.
+  net.assessDelayMs.set(host, 60_000);
+  const { page, tabId } = await visit(ext, `https://${host}/`);
+  await waitForIcon(ext, tabId, ["checking"]);
+  expect(stateKey(tabId) in (await sessionStore())).toBe(false);
+
+  await stopWorker(ext);
+  const popup = await openPopup(ext, tabId);
+  await expect(popup.locator("#band-note")).toHaveText(
+    "No answer kept for this page. Reload it to check again.",
+  );
+  await expect(popup.locator("#band-chip")).toBeHidden();
+  // The lost check is not reported as a failed one, and nothing was kept as a
+  // verdict. Sampled for a while, as above: a late "could not check" from the
+  // abandoned check is exactly what must not appear.
+  const until = Date.now() + 5000;
+  while (Date.now() < until) {
+    const body = await popup.locator("body").innerText();
+    expect(body).not.toMatch(/could not check/i);
+    expect(body).not.toMatch(/nothing was sent/i);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  await rebindWorker(ext);
+  expect(await workerIsFresh(ext)).toBe(true);
+  await popup.close();
+  await page.close();
+});
+
+test("should discard a saved state whose hostname is not the page's", async () => {
+  const matching = "saved-match-guard-e2e.com";
+  const mismatch = "saved-mismatch-guard-e2e.com";
+  net.setVerdict(matching, CLEAN);
+  net.setVerdict(mismatch, CLEAN);
+  const a = await visit(ext, `https://${matching}/`);
+  await waitForIcon(ext, a.tabId, ["benign"]);
+  await settled(a.tabId, matching);
+  const b = await visit(ext, `https://${mismatch}/`);
+  await waitForIcon(ext, b.tabId, ["benign"]);
+  await settled(b.tabId, mismatch);
+
+  await stopWorker(ext);
+  const via = await extensionPage(ext);
+  // Both saved states now claim a high-risk answer; only A's is for its own page.
+  // The verdict mirror is emptied so nothing else can answer for B.
+  await via.evaluate(
+    async ([ka, kb, hostA]) => {
+      const planted = (hostname: string) => ({
+        hostname,
+        registrable: hostname,
+        eligible: true,
+        signedIn: false,
+        icon: "suspicious",
+        verdict: { host: hostname, band: "HIGH", coverage: "known-bad", label: "planted" },
+        detector: null,
+        graphError: null,
+        shieldOn: false,
+      });
+      await chrome.storage.session.remove("verdicts");
+      await chrome.storage.session.set({
+        [ka!]: planted(hostA!),
+        [kb!]: planted("some-other-site-guard-e2e.com"),
+      });
+    },
+    [stateKey(a.tabId), stateKey(b.tabId), matching],
+  );
+
+  // Positive control: the planted state is read when its hostname is the page's.
+  const popupA = await openPopup(ext, a.tabId);
+  await expect(popupA.locator("#band-chip")).toHaveText("HIGH RISK");
+  await popupA.close();
+
+  // A state saved for another hostname is not shown for this page.
+  const popupB = await openPopup(ext, b.tabId);
+  await expect(popupB.locator("#band-note")).toHaveText(
+    "No answer kept for this page. Reload it to check again.",
+  );
+  await expect(popupB.locator("#band-chip")).toBeHidden();
+  expect(await popupB.locator("body").innerText()).not.toMatch(/HIGH RISK|planted/);
+  await popupB.close();
+
+  await rebindWorker(ext);
+  expect(await workerIsFresh(ext)).toBe(true);
+  for (const t of [a, b]) await t.page.close();
+});
+
 test("should move from Checking to Could not check within 4.5 s", async () => {
   const host = "never-answers-guard-e2e.com";
   net.assessDelayMs.set(host, 60_000);
