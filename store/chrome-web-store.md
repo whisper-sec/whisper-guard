@@ -181,7 +181,7 @@ pre-emptive story on the docs page instead.
     hostname); then the sign-in flow (two unauthenticated RFC 8628 endpoints
     only), corpus updates, and public identity verification of the user's own
     endpoints (IP literals only). No other host is ever contacted. The
-    extension also OPENS console.whisper.online in a tab when the user asks
+    extension also OPENS edr.whisper.security in a tab when the user asks
     for the console; it is never fetched from, so it needs no host permission.
   - `proxy` (REQUIRED), `webRequest`, `webRequestAuthProvider`, `privacy`
     (OPTIONAL): power "Protect this browser", which routes this browser through

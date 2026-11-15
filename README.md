@@ -295,7 +295,7 @@ public identity verification all work with no key.
 - `console.whisper.security` is contacted only during sign-in, for the two
   unauthenticated RFC 8628 device-flow endpoints and nothing else (no browsing
   data). It is a sign-in origin, never a destination: the one place Guard ever
-  sends you is `console.whisper.online`, the console itself.
+  sends you is `edr.whisper.security`, the console itself.
   `get.whisper.online` is contacted only for signed brand-corpus updates (no
   browsing data). `rdap.whisper.online` is contacted only to verify the
   identity of your own endpoints, and only receives IP literals of those

@@ -37,7 +37,7 @@ the two unauthenticated device-flow endpoints only), the brand-corpus host
 (`nic.whisper.online`, which is where the graph figures on our surfaces are
 read from rather than typed); reports about those services are welcome here and we
 will route them to the right team. The console the extension links to,
-`console.whisper.online`, is opened in a tab and never fetched from.
+`edr.whisper.security`, is opened in a tab and never fetched from.
 
 ## Known advisories in build tooling
 

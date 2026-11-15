@@ -5,18 +5,24 @@
 //
 // Guard shipped three references to the sign-in origin, one of them a
 // button labelled "Open in console". Measured against the live hosts on
-// 2026-09-01, that origin answers a signed-out visitor with HTTP 404 on
-// every page, while console.whisper.online answers 307 to the sign-in and
-// returns the reader afterwards. So the button did not open the console; it
-// opened a dead end, and no test noticed, because no test had ever asked
-// where the button goes.
+// 2026-09-01, that origin answered a signed-out visitor with HTTP 404 on
+// every page, while the console answered 307 to the sign-in and returned
+// the reader afterwards. So the button did not open the console; it opened
+// a dead end, and no test noticed, because no test had ever asked where
+// the button goes.
+//
+// The console itself has since moved to edr.whisper.security (2026-11-06),
+// and its old whisper.online name answers only a 301 there. CONSOLE below
+// names the new host, so a build still carrying the old one fails every
+// test in this file rather than sending readers through a redirect.
 //
 // The split that remains is deliberate and is pinned here too: the RFC
 // 8628 device-flow endpoints are unauthenticated by design and exist ONLY
-// on console.whisper.security (console.whisper.online answers 401
-// UNAUTHENTICATED for its whole /api surface, which a browserless device
-// flow cannot satisfy). So that host stays as an auth ORIGIN we fetch
-// from, and never as a destination we send a reader to.
+// on console.whisper.security (the console answers 401 UNAUTHENTICATED for
+// its whole /api surface, which a browserless device flow cannot satisfy;
+// re-probed on edr.whisper.security on 2026-11-15). So that host stays as
+// an auth ORIGIN we fetch from, and never as a destination we send a
+// reader to.
 //
 // This spec asserts the distinction from the outside, by clicking the
 // buttons and reading the tab that opens.
@@ -32,7 +38,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/chromium");
 
 /** The console a reader is sent to, and the sign-in origin we only fetch from. */
-const CONSOLE = "https://console.whisper.online";
+const CONSOLE = "https://edr.whisper.security";
 const DEVICE_FLOW = "https://console.whisper.security";
 
 const CLEAN = "intranet-tools-vendor.com";

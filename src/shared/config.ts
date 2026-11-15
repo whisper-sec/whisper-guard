@@ -11,9 +11,10 @@
 //                             plane (whisper.agents) for the fleet roster,
 //                             enrollment and egress, which is never called
 //                             without a key and never carries a hostname
-//   console.whisper.online    the Whisper console. The ONE place this
-//                             extension ever SENDS a reader. Nothing is
-//                             fetched from it
+//   edr.whisper.security      the Whisper console (the EDR console, where a
+//                             signed-in reader's endpoints and agents live).
+//                             The ONE place this extension ever SENDS a
+//                             reader. Nothing is fetched from it
 //   console.whisper.security  the sign-in origin, and nothing else. Two
 //                             unauthenticated device-flow endpoints are
 //                             fetched from it; no browsing data is sent and
@@ -59,14 +60,19 @@ export const GRAPH_HOST = new URL(GRAPH_QUERY_URL).hostname;
  * The console, and the ONE address this extension ever sends a reader to.
  * Every "open the console" affordance in the product resolves here.
  *
- * It is deliberately NOT the host the sign-in flow talks to, and the split
- * is not cosmetic: measured against both hosts on 2026-09-01, the sign-in
- * origin answers a signed-out visitor with HTTP 404 on every page, while
- * this one answers 307 to the sign-in and returns the reader afterwards.
- * Sending someone to the former is sending them to a dead end, so we do
- * not.
+ * It is the EDR console, the product whose design system theme.css
+ * carries. It moved here from its old whisper.online name on 2026-11-06,
+ * and that name now answers only a 301 to this one, so a link that kept it
+ * sent every reader through a redirect to a host we never named.
+ *
+ * It is deliberately NOT the host the sign-in flow talks to. That origin
+ * is the account console (sign-in and API keys), a different product, and
+ * on 2026-09-01 it answered a signed-out visitor with HTTP 404 on every
+ * page, which is how a button labelled "Open in console" once opened a
+ * dead end. Measured on 2026-11-15, this host answers a signed-out visitor
+ * 307 to the shared sign-in page, which returns the reader here afterwards.
  */
-export const CONSOLE_URL = "https://console.whisper.online";
+export const CONSOLE_URL = "https://edr.whisper.security";
 
 /**
  * The sign-in ORIGIN: where the RFC 8628 device-authorization endpoints
@@ -76,8 +82,10 @@ export const CONSOLE_URL = "https://console.whisper.online";
  * They are not on CONSOLE_URL and cannot be moved there by us: CONSOLE_URL
  * gates its whole /api surface behind a session, which a browserless device
  * flow by definition does not have, and it answers 401 UNAUTHENTICATED
- * accordingly (probed live, 2026-09-01). The device-flow endpoints exist
- * only on this origin. Repointing this at CONSOLE_URL would silently break
+ * accordingly (probed live on 2026-09-01 under the console's old name, and
+ * again on 2026-11-15: POST /api/device/token answers 401 on CONSOLE_URL
+ * and runs the flow here). The device-flow endpoints exist only on this
+ * origin. Repointing this at CONSOLE_URL would silently break
  * sign-in for everyone, so it stays, named for what it is.
  */
 export const DEVICE_FLOW_ORIGIN = "https://console.whisper.security";
