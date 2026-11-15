@@ -446,6 +446,26 @@ function linkRow(host: string, band: string, links: number): HTMLElement {
   return row;
 }
 
+/** One page-scan row. A null band was never assessed: it must not borrow the
+ *  ok chip, nor UNKNOWN (which means the graph was asked). */
+function iocRow(r: PageScanResult["rows"][number]): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "link-row";
+  const chip = document.createElement("span");
+  if (r.band === null) {
+    chip.className = "w-chip unassessed";
+    chip.textContent = "Not assessed";
+  } else {
+    chip.className = `w-chip ${chipClsForBand(r.band)}`;
+    chip.textContent = r.band === "CRITICAL" ? "MALICIOUS" : r.band;
+  }
+  const name = document.createElement("span");
+  name.className = "link-host";
+  name.textContent = r.value;
+  row.append(chip, name);
+  return row;
+}
+
 function renderLinkScan(scan: LinkScanResult): void {
   const summary = $("linkscan-summary");
   summary.hidden = false;
@@ -531,10 +551,12 @@ async function runLinkScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Pr
 function renderIocScan(scan: PageScanResult): void {
   const summary = $("iocscan-summary");
   summary.hidden = false;
-  const risky = scan.rows.filter((r: PageScanResult["rows"][number]) => r.band !== null && r.band !== "NONE" && r.band !== "LOW" && r.band !== "INFO");
+  const risky = scan.rows.filter((r: PageScanResult["rows"][number]) => r.band === "CRITICAL" || r.band === "HIGH" || r.band === "MEDIUM");
+  const notAssessed = scan.rows.filter((r: PageScanResult["rows"][number]) => r.band === null).length;
   const bits: string[] = [];
   if (risky.length > 0) bits.push(`${risky.length} flagged`);
   bits.push(`${scan.found} found`);
+  if (notAssessed > 0) bits.push(`${notAssessed} not assessed`);
   if (scan.ignored > 0) bits.push(`${scan.ignored} ignored`);
   summary.textContent =
     `${bits.join(", ")}; ${scan.assessed} checked against the graph.` +
@@ -545,25 +567,16 @@ function renderIocScan(scan: PageScanResult): void {
   list.hidden = scan.rows.length === 0;
   const rows = risky.length > 0 && scan.rows.length > 24 ? risky : scan.rows;
   list.replaceChildren(
-    ...rows.slice(0, 80).map((r: PageScanResult["rows"][number]) => linkRow(r.value, r.band ?? "NONE", 1)),
+    ...rows.slice(0, 80).map(iocRow),
   );
 
   const note = $("iocscan-note");
   note.hidden = false;
-  // Says what actually leaves the browser, MEASURED rather than intended.
-  //
-  // This note used to end "and CVE ids are never sent anywhere", and so did
-  // the README and the Chrome Web Store submission. It was not true: a CVE
-  // id has no host, so scanTabIocs falls back to its value as the explain
-  // subject and the id goes to the graph like any other indicator. It is
-  // sent deliberately and it is worth sending - whisper.explain answers a
-  // CVE with its KEV status, its ransomware-campaign use and its named
-  // sources, which is the most useful line on the whole scan - but a
-  // privacy note that describes a request the product then makes is the
-  // one kind of wrong this surface must never be. The claim now matches
-  // the wire, and e2e/page-scan.spec.ts asserts the wire.
+  // Says what actually leaves the browser, MEASURED rather than intended: only
+  // hostnames go to the graph. IP literals, hashes and CVE ids stay on the
+  // device and are listed as Not assessed. e2e/page-scan.spec.ts asserts the wire.
   note.textContent =
-    "This reads the page's visible text. Only the indicators found (hostnames, file hashes and CVE ids) are checked against Whisper; the page text itself never leaves your browser.";
+    "This reads the page's visible text. Only the hostnames found are checked against Whisper; IP addresses, file hashes and CVE ids are listed as Not assessed and are not sent. The page text itself never leaves your browser.";
 }
 
 let iocScanNeedsGrant = false;

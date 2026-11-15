@@ -216,6 +216,8 @@ main > .panel:first-child { border-top: none; padding-top: 0; }
 #linkscan-note { margin-top: 8px; }
 .link-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; min-width: 0; }
 .link-row .w-chip { flex: none; min-width: 74px; text-align: center; }
+/* "Not assessed" is wider than the band words; one width keeps the value column aligned. */
+#iocscan-list .link-row .w-chip { min-width: 96px; }
 .link-host { font-family: var(--w-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link-n { margin-left: auto; color: var(--w-muted); font-family: var(--w-mono); font-size: 10.5px; }
 

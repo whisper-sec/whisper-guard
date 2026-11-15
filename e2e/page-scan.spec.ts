@@ -10,12 +10,12 @@
 // every request the browser made, and the assertions below are made against
 // that whole log rather than a sample.
 //
-// The fixture deliberately carries three things a real analyst page carries and
+// The fixture deliberately carries things a real analyst page carries and
 // which must be treated DIFFERENTLY:
 //
-//   a file hash          assessable, so it SHOULD leave (whisper.assess verdicts
-//                        hashes as well as names, coverage "known-hash")
-//   a CVE id             has no assessable subject, so it must NEVER leave
+//   a hostname           the only indicator kind that SHOULD leave
+//   a hash, a CVE id,    never assessed by the scan: they must NEVER leave and
+//   a public IPv4        the popup reads them as "Not assessed"
 //   a secret-bearing     the reason the scan reads textContent and not innerHTML,
 //   path                 and it must never appear in any request
 //
@@ -33,6 +33,7 @@ let ext: Extension;
 // own, so a maintainer reading this is not tempted to look it up.
 const HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const CVE = "CVE-2026-31337";
+const IPV4 = "203.0.113.7"; // RFC 5737 documentation range, never routed
 const SECRET_PATH = "/download?token=sk_live_do_not_exfiltrate_me";
 
 const FIXTURE_HTML = `<!doctype html>
@@ -41,7 +42,8 @@ const FIXTURE_HTML = `<!doctype html>
   <h1>Incident notes</h1>
   <p>Dropper observed with sha256 ${HASH} on three hosts.</p>
   <p>Exploited via ${CVE}, patched upstream last week.</p>
-  <p>Beaconed to <span>evil-scan.com</span> shortly after.</p>
+  <p>Beaconed to <span>evil-scan.com</span> shortly after, and to ${IPV4}.</p>
+  <p>Also seen: quiet-scan.com.</p>
   <a href="https://fixture-scan.com${SECRET_PATH}">the staging download</a>
   <!-- a comment carrying ${SECRET_PATH} too, which textContent never sees -->
 </body></html>`;
@@ -93,17 +95,12 @@ test("the scan sends the indicators and nothing else of the page", async () => {
 
   // WHAT MUST LEAVE. Without this the rest of the test would pass against a
   // scanner that sent nothing at all, which is private and useless.
-  expect(bodies).toContain(HASH);
   expect(bodies).toContain("evil-scan.com");
 
-  // The CVE id leaves too, deliberately: it has no host, so it goes to
-  // whisper.explain as its own subject and comes back with its KEV status
-  // and named sources. This file used to assert the opposite, and so did
-  // the popup note, the README and the store submission - none of which had
-  // ever been run against the wire, because the fixture below was
-  // registered through a signature that does not exist and every
-  // navigation in this file died on ERR_NAME_NOT_RESOLVED.
-  expect(bodies).toContain(CVE);
+  // Hashes, CVE ids and IP literals are never assessed, so none may leave.
+  expect(bodies).not.toContain(HASH);
+  expect(bodies).not.toContain(CVE);
+  expect(bodies).not.toContain(IPV4);
 
   // WHAT MUST NOT. Each of these is a different way to leak.
   expect(bodies).not.toContain("sk_live_do_not_exfiltrate_me"); // the secret itself
@@ -116,11 +113,57 @@ test("the scan sends the indicators and nothing else of the page", async () => {
   // it promises never leaves, and the full list of what does. Naming the list
   // is what stops the note drifting back to a shorter, friendlier, false one.
   await expect(popup.locator("#iocscan-note")).toContainText("never leaves your browser");
-  await expect(popup.locator("#iocscan-note")).toContainText("hostnames, file hashes and CVE ids");
+  await expect(popup.locator("#iocscan-note")).toContainText("are not sent");
   await expect(
     popup.locator("#iocscan-note"),
-    "the note must not claim CVE ids stay in the browser while the wire shows them leaving",
-  ).not.toContainText("CVE ids are never sent");
+    "the note must not claim hashes and CVE ids are checked",
+  ).not.toContainText("file hashes and CVE ids are checked");
+
+  await popup.close();
+  await page.close();
+});
+
+test("should draw unassessed indicators as Not assessed, never the ok chip", async () => {
+  const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  const popup = await openPopup(ext, tabId);
+  await popup.locator("#btn-iocscan").click();
+  await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
+
+  for (const v of [HASH, CVE, IPV4]) {
+    const chip = popup.locator("#iocscan-list .link-row", { hasText: v }).locator(".w-chip");
+    await expect(chip).toHaveText("Not assessed");
+    await expect(chip).toHaveClass(/unassessed/);
+    await expect(chip).not.toHaveClass(/\bok\b/);
+  }
+  await expect(popup.locator("#iocscan-list .link-row", { hasText: "evil-scan.com" }).locator(".w-chip")).toHaveText("MALICIOUS");
+  await expect(popup.locator("#iocscan-list .link-row", { hasText: "quiet-scan.com" }).locator(".w-chip")).toHaveText("UNKNOWN");
+  await expect(popup.locator("#iocscan-list .w-chip.ok")).toHaveCount(0);
+
+  // UNKNOWN is not flagged: only evil-scan.com is.
+  const summary = popup.locator("#iocscan-summary");
+  await expect(summary).toContainText("1 flagged");
+  await expect(summary).toContainText("3 not assessed");
+
+  await popup.close();
+  await page.close();
+});
+
+test("should make no explain call when scanning or when a row is clicked", async () => {
+  const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  const popup = await openPopup(ext, tabId);
+  const before = net.requestsTo(GRAPH_READ_HOST).length;
+
+  await popup.locator("#btn-iocscan").click();
+  await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
+  await popup.locator("#iocscan-list .link-row", { hasText: "Not assessed" }).first().click();
+  await popup.locator("#btn-iocscan").click();
+  await expect(popup.locator("#btn-iocscan")).toHaveText("Scanning…");
+  await expect(popup.locator("#btn-iocscan")).toHaveText("Re-scan", { timeout: 20_000 });
+
+  const added = net.requestsTo(GRAPH_READ_HOST).slice(before).map((r) => r.body).join("\n");
+  expect(added).not.toContain("whisper.explain");
 
   await popup.close();
   await page.close();

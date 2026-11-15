@@ -26,31 +26,8 @@ import { isPrivateHost } from "../shared/hostname";
 import {applyIgnoreList, type Ioc} from "../shared/ioc";
 import type { GraphBand } from "../shared/types";
 import { assessHosts } from "./assess";
-import { explainHost } from "./cognition";
 import { graphQuery } from "./graph-client";
 import { cacheGet, cachePut } from "./cache";
-
-/**
- * The graph's own account of ONE indicator, from whisper.explain. This is the
- * answer a bare score cannot give: a sentence plus the named factors and the
- * named feeds behind it.
- *
- * explain auto-detects the indicator TYPE, so a hash, a CVE, an ip and a domain
- * all go through one call and come back labelled. That single fact is why this
- * replaced a hand-rolled assess-plus-vulnPosture pair: fewer calls, more answer,
- * and no type dispatch of our own to get wrong.
- */
-export interface IocExplain {
-  /** What the graph decided this indicator IS: hash / cve / ip / domain / url. */
-  type: string | null;
-  level: string | null;
-  /** A human sentence, e.g. "... is a CISA known-exploited vulnerability (KEV)". */
-  explanation: string | null;
-  /** Named, weighted reasons. Not a score - the reasons behind one. */
-  factors: string[];
-  /** The feeds that said so, by name. */
-  sources: string[];
-}
 
 /**
  * The facts only a graph holds, attached to one indicator. Both of these are
@@ -70,13 +47,11 @@ export interface IocRow {
   kind: Ioc["kind"];
   value: string;
   host: string | null;
-  /** UNKNOWN when the graph holds nothing; null only for a CVE id, which is
-   *  never put to whisper.assess (it has no host to assess) though it IS put
-   *  to whisper.explain, which answers it properly. */
+  /** `null` means the scan did not assess this indicator (no host, or a host
+   *  `isPrivateHost` keeps off the network: IP literals, file hashes, bare
+   *  names). UNKNOWN means the graph was asked and holds nothing. */
   band: GraphBand | null;
   label: string | null;
-  /** Present when the graph had an account of this indicator to give. */
-  why?: IocExplain;
   /** Registration age for a name, Tor-exit status for an address. */
   context?: IocContext;
 }
@@ -110,12 +85,11 @@ function readStashedIocs(): unknown {
 /**
  * Scan the tab and verdict every indicator the graph can speak to.
  *
- * A CVE id comes back with `band: null` rather than UNKNOWN: it has no host, so
- * it is never put to whisper.assess, and UNKNOWN would claim a verdict we did
- * not seek. It IS put to whisper.explain below, which answers a CVE with its
- * KEV status and named sources. A file HASH is asked about like any other
- * subject - whisper.assess verdicts hashes directly - so it comes back with a
- * real band.
+ * An indicator with no host (a CVE id, a file hash) or with a host
+ * `isPrivateHost` keeps off the network (an IP literal) is never sent anywhere
+ * and comes back with `band: null`: UNKNOWN would claim the graph was asked and
+ * holds nothing, which is a different statement. Only public hostnames are put
+ * to whisper.assess.
  */
 export async function scanTabIocs(
   tabId: number,
@@ -171,53 +145,6 @@ export async function scanTabIocs(
     }
   }
 
-  // Why this is one block rather than two.
-  //
-  // whisper.explain takes ANY indicator and tells you what it decided the thing
-  // IS, plus a human sentence, the named factors and the named feeds. A hash
-  // comes back type "hash" and joins the known-bad corpus and the NSRL
-  // known-good set - the same join the sensor's exec-hash bridge uses. A CVE id
-  // comes back type "cve": CVE-2021-44228 answers CRITICAL, score 10.0, "a CISA
-  // known-exploited vulnerability (KEV), with known ransomware-campaign use",
-  // over seven named sources. Keyless, so it rides the public tier.
-  //
-  // I built an assess-plus-vulnPosture pair first, having concluded from two
-  // probes that no hash surface existed. It did; I had not read the sensor,
-  // which calls exactly this. Recorded because the lesson is the method, not
-  // the fact: absence from a narrow probe is not absence.
-  //
-  // Bounded to the cap and taken in appearance order, so a long page costs a
-  // predictable number of calls. Any failure is an absent account, never a
-  // failed scan.
-  const why = new Map<string, IocExplain>();
-  const strArr = (v: unknown): string[] =>
-    Array.isArray(v)
-      ? v
-          .map((x) =>
-            typeof x === "string"
-              ? x
-              : x && typeof x === "object" && typeof (x as { source?: unknown }).source === "string"
-                ? ((x as { source: string }).source)
-                : null,
-          )
-          .filter((x): x is string => !!x)
-      : [];
-  for (const i of rows0.slice(0, LINK_SCAN_BATCH)) {
-    const subject = i.host ?? i.value;
-    if (!subject || why.has(subject)) continue;
-    const r = await explainHost(subject);
-    if (!r.ok || !r.rows.length) continue;
-    const row = r.rows[0] as Record<string, unknown>;
-    if (row["found"] !== true) continue; // "not found" is not an account
-    why.set(subject, {
-      type: typeof row["type"] === "string" ? row["type"] : null,
-      level: typeof row["level"] === "string" ? row["level"] : null,
-      explanation: typeof row["explanation"] === "string" ? row["explanation"] : null,
-      factors: strArr(row["factors"]),
-      sources: strArr(row["sources"]),
-    });
-  }
-
   // The two facts a browser has never been able to state, both keyless.
   //
   // An IP that is a Tor exit relay is a different thing from an IP that merely
@@ -257,18 +184,15 @@ export async function scanTabIocs(
 
   const rows: IocRow[] = rows0.map((i) => {
     if (!i.host || isPrivateHost(i.host)) {
-      const w0 = why.get(i.host ?? i.value);
       return {
         kind: i.kind,
         value: i.value,
         host: i.host,
         band: null,
         label: null,
-        ...(w0 ? { why: w0 } : {}),
       };
     }
     const v = verdicts.get(i.host);
-    const w = why.get(i.host);
     const c = context.get(i.host);
     return {
       kind: i.kind,
@@ -276,7 +200,6 @@ export async function scanTabIocs(
       host: i.host,
       band: v ? v.band : "UNKNOWN",
       label: v ? v.label : null,
-      ...(w ? { why: w } : {}),
       ...(c ? { context: c } : {}),
     };
   });
