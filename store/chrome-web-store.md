@@ -210,7 +210,7 @@ pre-emptive story on the docs page instead.
   communications, location, or user activity. The on-device destination log
   never leaves the device. Page content IS read by one feature, the on-demand page
 scan added in 2.6.0, and only when the reader clicks Scan; what leaves is the
-indicators found, never the text. The exact wording
+hostnames among the indicators found, never the text. The exact wording
   for the form is in `cws-submission-fields.md`, which is the source of
   truth for the answers typed into the console.
 - **Remote code:** none (MV3, all code in the package).
