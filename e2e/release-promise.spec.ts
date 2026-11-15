@@ -272,3 +272,55 @@ test("should never write state for a private-window tab", async () => {
     await own.close();
   }
 });
+
+test("should re-check a tab opened before a worker stop when the person signs in", async () => {
+  const host = "signin-after-stop-guard-e2e.com";
+  net.setVerdict(host, CLEAN);
+  const { page, tabId } = await visit(
+    ext,
+    `https://${host}/private-path-segment?token=query-secret#frag-secret`,
+  );
+  await waitForIcon(ext, tabId, ["benign"]);
+  await settled(tabId, host);
+  const savedState = async (): Promise<{ signedIn?: boolean } | undefined> =>
+    (await sessionStore())[stateKey(tabId)] as { signedIn?: boolean } | undefined;
+  expect((await savedState())?.signedIn).toBe(false);
+
+  // Nothing of the address sits in session storage, with a positive control
+  // that the hostname (which is allowed there) is.
+  const noAddress = async (): Promise<void> => {
+    const dump = JSON.stringify(await sessionStore());
+    expect(dump).toContain(host);
+    for (const secret of [`https://${host}`, "private-path-segment", "query-secret", "frag-secret"]) {
+      expect(dump).not.toContain(secret);
+    }
+  };
+  await noAddress();
+
+  await stopWorker(ext);
+  net.clearLog();
+  // Hold the answer so the cleared window is observable.
+  net.assessDelayMs.set(host, 2000);
+  const via = await extensionPage(ext);
+  await via.evaluate(() => chrome.runtime.sendMessage({ kind: "saveKey", key: "e2e-sign-in-after-stop" }));
+  await rebindWorker(ext);
+  expect(await workerIsFresh(ext)).toBe(true);
+
+  try {
+    // The earlier tier's saved answer is gone...
+    await waitFor("the saved state to be cleared", async () => !(stateKey(tabId) in (await sessionStore())));
+    // ...the tab the fresh worker never saw commit is re-checked...
+    await waitFor("a re-check of the open tab", async () =>
+      net.requestsTo(GRAPH_READ_HOST).some((r) => r.body.includes("whisper.assess") && r.body.includes(host)),
+    );
+    // ...and its new state is the signed-in answer.
+    await waitFor("the signed-in state", async () => (await savedState())?.signedIn === true, 10_000);
+    await noAddress();
+  } finally {
+    // Back to the keyless tier for the tests after this one.
+    await via.evaluate(() => chrome.runtime.sendMessage({ kind: "signOut" }));
+    net.assessDelayMs.clear();
+    await waitFor("the keyless state", async () => (await savedState())?.signedIn === false, 10_000);
+    await page.close();
+  }
+});
