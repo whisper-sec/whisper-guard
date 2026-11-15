@@ -18,6 +18,7 @@ import { ext } from "../shared/api";
 import type { TabState } from "../shared/types";
 
 const key = (tabId: number): string => `tabState:${tabId}`;
+const STATE_PREFIX = "tabState:";
 
 // tabId -> is it a private-window tab. A tab never changes window kind.
 const privateTab = new Map<number, boolean>();
@@ -68,6 +69,20 @@ export async function readTabState(tabId: number): Promise<TabState | null> {
 export async function clearTabState(tabId: number): Promise<void> {
   try {
     await ext.storage.session.remove(key(tabId));
+  } catch {
+    // nothing to clear
+  }
+}
+
+/**
+ * Drop every saved tab state (an account change: each was an answer from the
+ * earlier tier). Only `tabState:` keys: the verdict mirror follows its own rules.
+ */
+export async function clearAllTabStates(): Promise<void> {
+  try {
+    const all = await ext.storage.session.get(null);
+    const keys = Object.keys(all).filter((k) => k.startsWith(STATE_PREFIX));
+    if (keys.length > 0) await ext.storage.session.remove(keys);
   } catch {
     // nothing to clear
   }

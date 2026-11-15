@@ -26,7 +26,7 @@ import { detect } from "../detector/detector";
 import { getIndex } from "../detector/corpus";
 import { assessHost } from "./assess";
 import { cacheClear, cacheGet, cacheGetExact, cachePut } from "./cache";
-import { clearTabState, forgetTabState, readTabState, saveTabState } from "./tab-store";
+import { clearAllTabStates, clearTabState, forgetTabState, readTabState, saveTabState } from "./tab-store";
 import {
   cancelDeviceFlow,
   deviceFlowState,
@@ -103,8 +103,9 @@ const navGen = new Map<number, number>();
 const consentArmedUrl = new Map<number, string>();
 const consentCountedUrl = new Map<number, string>();
 // Last committed URL per tab, learned from webNavigation (the extension has
-// no "tabs" permission, so tabs.query cannot see URLs; this map is what
-// lets sign-in/sign-out repaint already-open tabs).
+// no "tabs" permission, so tabs.query cannot see URLs). It lives in memory only
+// and is never written to storage. It lets sign-in/sign-out repaint the tabs
+// this worker has seen; tabs it has not seen are looked up from the browser.
 const lastUrl = new Map<number, string>();
 /**
  * Tabs whose main frame committed and whose evaluation has not written a state
@@ -423,6 +424,10 @@ ext.contextMenus.onClicked.addListener((info) => onMenuClicked(info));
 // Sign-in / sign-out repaints every open http(s) tab right away: the keyed
 // tier lights up the moment the console approves, no re-navigation needed.
 onAuthChanged(() => {
+  recheckOpenTabs().catch(() => undefined);
+});
+
+async function recheckOpenTabs(): Promise<void> {
   // Drop every cached answer first. A keyless verdict and a keyed one are
   // answers from different tiers of the graph, and re-evaluating without
   // clearing simply re-read the same cached rows: signing in lit up the
@@ -431,10 +436,44 @@ onAuthChanged(() => {
   cacheClear();
   resetChainCache();
   resetQuotaCache();
+  // Before any await, so the generation bump supersedes an earlier-tier
+  // evaluation or restore still in flight. The memory state goes too: the popup
+  // shows the Checking stand-in, not the earlier tier's answer.
   for (const [tabId, url] of lastUrl) {
-    if (/^https?:/i.test(url)) scheduleEvaluate(tabId, url);
+    if (!/^https?:/i.test(url)) continue;
+    tabs.delete(tabId);
+    scheduleEvaluate(tabId, url);
   }
-});
+  // Every saved state is an earlier-tier answer. A new save that this clear
+  // erases is harmless: a wake rebuilds it, and it never brings back an
+  // earlier-tier answer.
+  await clearAllTabStates();
+  // Tabs this worker never saw commit (it was stopped meanwhile): the browser
+  // knows their address. The ids come from tabs.query (no URLs without the
+  // "tabs" permission), the address from the tab's main frame.
+  let ids: number[] = [];
+  try {
+    ids = (await ext.tabs.query({})).flatMap((t) => (t.id === undefined ? [] : [t.id]));
+  } catch {
+    return;
+  }
+  await Promise.all(
+    ids
+      .filter((id) => !lastUrl.has(id))
+      .map(async (tabId) => {
+        try {
+          const url = (await ext.webNavigation.getFrame({ tabId, frameId: 0 }))?.url;
+          // A commit that landed during the await already has the tab.
+          if (!url || !/^https?:/i.test(url) || lastUrl.has(tabId)) return;
+          lastUrl.set(tabId, url);
+          tabs.delete(tabId);
+          scheduleEvaluate(tabId, url);
+        } catch {
+          // a tab that closed or cannot be read: nothing to re-check
+        }
+      }),
+  );
+}
 
 ext.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CORPUS_ALARM) updateCorpusNow().catch(() => undefined);
