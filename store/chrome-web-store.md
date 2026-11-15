@@ -175,14 +175,16 @@ pre-emptive story on the docs page instead.
   - `activeTab`: to act on the current tab when the user clicks the toolbar
     action.
   - Host permissions (`graph.whisper.online`, `console.whisper.security`,
-    `get.whisper.online`, `rdap.whisper.online`): the graph, carrying both the
-    safety check + destination enrichment (hostname only) and the signed-in
-    control plane (the user's own fleet, always keyed, never a browsing
-    hostname); then the sign-in flow (two unauthenticated RFC 8628 endpoints
-    only), corpus updates, and public identity verification of the user's own
-    endpoints (IP literals only). No other host is ever contacted. The
-    extension also OPENS edr.whisper.security in a tab when the user asks
-    for the console; it is never fetched from, so it needs no host permission.
+    `get.whisper.online`, `rdap.whisper.online`, `nic.whisper.online`): the
+    graph, carrying both the safety check + destination enrichment (hostname
+    only) and the signed-in control plane (the user's own fleet, always keyed,
+    never a browsing hostname); then the sign-in flow (two unauthenticated RFC
+    8628 endpoints only), corpus updates, public identity verification of the
+    user's own endpoints (IP literals only), and the public network statistics
+    document (a plain GET of one public JSON file). No other host is ever
+    contacted. The extension also OPENS edr.whisper.security in a tab when the
+    user asks for the console; it is never fetched from, so it needs no host
+    permission.
   - `proxy` (REQUIRED), `webRequest`, `webRequestAuthProvider`, `privacy`
     (OPTIONAL): power "Protect this browser", which routes this browser through
     Whisper egress so it becomes an endpoint on the user's account. `proxy`
