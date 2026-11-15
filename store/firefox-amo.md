@@ -28,8 +28,8 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 - `websiteContent`: the on-demand page scan reads the current page's visible
   text when the reader clicks Scan, extracts indicators from it, and sends only
-  those indicators (hostnames, file hashes, CVE ids). The page text itself never
-  leaves the browser.
+  the hostnames among them. IP addresses, file hashes and CVE ids are shown as
+  Not assessed and never sent. The page text itself never leaves the browser.
 
   It is declared because reading the page IS collecting website content, even
   though the text does not leave. This is the same answer we give Google, whose
@@ -147,7 +147,8 @@ The full text behind the paste-ready notes above.
   shadow root. The only things it ever hands the background are a bare
   hostname and a win category. The on-demand page scan (2.6.0) reads the visible
   text of the current page when the reader clicks Scan, and transmits only the
-  indicators it finds. Nothing else reads or transmits page text, paths,
+  hostnames among the indicators it finds. Nothing else reads or transmits page
+  text, paths,
   queries, or form values.
 - `proxy` is an OPTIONAL permission, requested only on a user click when the
   user turns on "Protect this browser" (routes this browser through Whisper

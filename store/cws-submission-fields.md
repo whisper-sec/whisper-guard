@@ -115,9 +115,10 @@ transmission as "collection".
 
 Website content is ticked because the on-demand page scan reads the current
 page's visible text WHEN THE READER CLICKS SCAN, extracts indicators from it,
-and sends only those indicators (hostnames, file hashes and CVE ids). The page
-text itself never leaves the browser, but reading it is collection under
-Google's definition and the honest answer is yes.
+and sends only the hostnames among them. IP addresses, file hashes and CVE ids
+are shown as Not assessed and never sent. The page text itself never leaves the
+browser, but reading it is collection under Google's definition and the honest
+answer is yes.
 
 It has been ticked since 2.6.0. Before 2.6.0 it was unticked and that was true
 of what shipped: the scanner was merged but unreachable, so no build could run
