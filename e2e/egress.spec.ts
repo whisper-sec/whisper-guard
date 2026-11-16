@@ -29,18 +29,34 @@ import { launchExtension, makeEgressDist, openDashboard, setKey, type Extension 
 
 let net: E2ENetwork;
 let ext: Extension;
+// A fixed private IPv4 literal the browser rewrites to the local stand-in
+// origin. It is never this machine's own private address, which step (2a)
+// reaches unmapped.
+let privateLiteral = "192.168.1.1";
 
 test.beforeAll(async () => {
   net = new E2ENetwork();
   // The only spec that opens a LAN listener: the direct-arrival proof needs one.
   await net.start({ privateOrigin: true });
+  if (net.directPrivateHost === privateLiteral) privateLiteral = "192.168.2.1";
   net.setVerdict("example-egress-e2e.com", { band: "NONE", coverage: "known-clean", label: "clean" });
   ext = await launchExtension({
     proxyPort: net.proxyPort,
     dist: makeEgressDist(),
-    // A fixture tailnet node (a Tailscale address, unreachable from CI) and a
-    // fixture public Funnel host (a public-looking answer: loopback stands in).
-    hostResolverRules: "MAP box.e2e-tailnet.ts.net 100.64.0.7, MAP funnel.e2e-public.ts.net 127.0.0.1",
+    // A fixture tailnet node and a fixture public Funnel host (a public-looking
+    // answer: loopback stands in). The first matching rule wins. The routing
+    // script's lookup of the tailnet name is not on the stand-in origin's
+    // port, so it sees a Tailscale address, while the page's own connection
+    // (on that port) is rewritten to loopback: the product rule decides, and
+    // the direct connection stays on this machine. The private IPv4 and IPv6
+    // ULA literals are rewritten to loopback the same way.
+    hostResolverRules: [
+      `MAP box.e2e-tailnet.ts.net:${net.directPort} 127.0.0.1`,
+      "MAP box.e2e-tailnet.ts.net 100.64.0.7",
+      "MAP funnel.e2e-public.ts.net 127.0.0.1",
+      `MAP ${privateLiteral} 127.0.0.1`,
+      "MAP fd00::1 127.0.0.1",
+    ].join(", "),
   });
 });
 
@@ -75,11 +91,12 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
   net.clearEgressLog();
   const page = await ext.context.newPage();
   await page.goto("https://example-egress-e2e.com/", { waitUntil: "domcontentloaded" }).catch(() => undefined);
-  await page.waitForTimeout(600);
-  expect(
-    net.egressConnects("example-egress-e2e.com"),
-    "site traffic routed via the Whisper egress endpoint",
-  ).toBeGreaterThan(0);
+  await expect
+    .poll(() => net.egressConnects("example-egress-e2e.com"), {
+      timeout: 10_000,
+      message: "site traffic routed via the Whisper egress endpoint",
+    })
+    .toBeGreaterThan(0);
   await page.close();
 
   // The same button turns it off and restores a direct route.
@@ -89,15 +106,18 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
   net.clearLog(); // so the control below counts THIS navigation, not the routed one above
   const page2 = await ext.context.newPage();
   await page2.goto("https://example-egress-e2e.com/", { waitUntil: "domcontentloaded" }).catch(() => undefined);
-  await page2.waitForTimeout(400);
   // CONTROL: goto's rejection is swallowed on the line above, so a page that
   // never loaded produces zero egress CONNECTs just as convincingly as one
-  // that loaded directly. Prove the traffic HAPPENED before reading that it
-  // did not go through the endpoint.
-  expect(
-    net.requestsTo("example-egress-e2e.com").length,
-    "the page must actually have loaded, or a zero egress count proves nothing",
-  ).toBeGreaterThan(0);
+  // that loaded directly. Wait for the traffic to HAPPEN (the capture proxy
+  // saw it) and for the load to finish before reading that it did not go
+  // through the endpoint.
+  await expect
+    .poll(() => net.requestsTo("example-egress-e2e.com").length, {
+      timeout: 10_000,
+      message: "the page must actually have loaded, or a zero egress count proves nothing",
+    })
+    .toBeGreaterThan(0);
+  await page2.waitForLoadState("load");
   expect(net.egressConnects("example-egress-e2e.com")).toBe(0);
   await page2.close();
   await dash.close();
@@ -133,13 +153,17 @@ test("browser-as-endpoint: tailnet names and private literals go direct, public 
   net.clearEgressLog();
   net.directHosts.length = 0;
 
-  // (1) A tailnet node (resolves to a Tailscale address): never touches the
-  // egress. The address is unreachable from CI, so only the absence is
-  // asserted; the Funnel host below is the positive control that makes a
-  // zero meaningful.
+  // (1) A tailnet node (resolves to a Tailscale address as far as the routing
+  // script can tell): goes DIRECT. The page's connection is rewritten to the
+  // local stand-in origin, so the step asserts ARRIVAL there, not merely
+  // absence at the egress, and no packet leaves the machine.
   const tailnetHost = "box.e2e-tailnet.ts.net";
   const page = await ext.context.newPage();
-  await page.goto(`http://${tailnetHost}:${net.directPort}/`, { timeout: 3_000 }).catch(() => undefined);
+  await page.goto(`http://${tailnetHost}:${net.directPort}/`, { timeout: 5_000 });
+  await expect(page).toHaveTitle("direct-origin");
+  expect(net.directHosts, "the tailnet name ARRIVED at its origin: it went direct").toContain(
+    `${tailnetHost}:${net.directPort}`,
+  );
   expect(net.egressAttempts.filter((a) => a.host === tailnetHost)).toHaveLength(0);
 
   // (1b) A public Funnel host on the same suffix (resolves outside the
@@ -151,18 +175,19 @@ test("browser-as-endpoint: tailnet names and private literals go direct, public 
     `${funnelHost}:${net.directPort}`,
   );
 
-  // (2) A private literal that nothing answers on the routed side: assert that
-  // it never reached the egress or the capture proxy. Where this machine has a
-  // private address of its own (the private origin below), that address is the
-  // literal, so no packet leaves for a device this test does not own (nothing
-  // listens on its port 80, so the connection is refused on the spot);
-  // otherwise 192.168.1.1. On a given machine this step therefore covers only
-  // the own address's private range; direct-destinations.spec pins every range
-  // edge. An absence, so the public navigation in (3) is the
-  // positive control that makes a zero meaningful, and (2a) proves the arrival.
-  const privateLiteral = net.directPrivateHost ?? "192.168.1.1";
+  // (2) A private IPv4 literal goes DIRECT. The literal is a fixed one that the
+  // browser rewrites to the local stand-in origin, so the step asserts arrival
+  // there and never depends on this machine's network. It must also never
+  // reach the egress or the capture proxy. direct-destinations.spec pins every
+  // range edge; (2a) below proves arrival at an origin on this machine's own
+  // private address.
   net.clearLog();
-  await page.goto(`http://${privateLiteral}/`, { timeout: 2_000 }).catch(() => undefined);
+  net.directHosts.length = 0;
+  await page.goto(`http://${privateLiteral}:${net.directPort}/`, { timeout: 5_000 });
+  await expect(page).toHaveTitle("direct-origin");
+  expect(net.directHosts, "the private literal ARRIVED at its origin: it went direct").toContain(
+    `${privateLiteral}:${net.directPort}`,
+  );
   expect(net.egressAttempts.filter((a) => a.host === privateLiteral)).toHaveLength(0);
   expect(net.requestsTo(privateLiteral)).toHaveLength(0);
 
@@ -181,8 +206,8 @@ test("browser-as-endpoint: tailnet names and private literals go direct, public 
   };
   if (net.directPrivateHost) {
     const privateOrigin = `${net.directPrivateHost}:${net.directPrivatePort}`;
-    // A page of its own: the refused navigation in (2) can commit its error page late,
-    // and that would interrupt this one's goto.
+    // A page of its own, so a late commit on the reused page cannot interrupt
+    // this one's goto.
     const arrival = await ext.context.newPage();
     net.clearEgressLog();
     net.directHosts.length = 0;
@@ -223,14 +248,17 @@ test("browser-as-endpoint: tailnet names and private literals go direct, public 
   }
 
   // (2b) An IPv6 ULA literal exercises the PAC's IPv6 direct ranges. The
-  // capture records the host as "[fd00::1]" (brackets kept) on both paths that
-  // matter: the egress logs a routed GET (or CONNECT) for it, and a request
-  // that falls back to the capture proxy is logged there. Either one fails
-  // this step; any request that reaches neither proxy passes it, so this step
-  // does not prove a direct connection (direct-destinations.spec pins fd00::1
-  // as DIRECT).
+  // browser rewrites it to the local stand-in origin, so the step asserts
+  // arrival there (a direct connection), and that the capture records no
+  // routed GET or CONNECT for "[fd00::1]" (brackets kept) at the egress or
+  // the capture proxy.
   net.clearLog();
-  await page.goto("http://[fd00::1]/", { timeout: 2_000 }).catch(() => undefined);
+  net.directHosts.length = 0;
+  await page.goto(`http://[fd00::1]:${net.directPort}/`, { timeout: 5_000 });
+  await expect(page).toHaveTitle("direct-origin");
+  expect(net.directHosts, "the IPv6 literal ARRIVED at its origin: it went direct").toContain(
+    `[fd00::1]:${net.directPort}`,
+  );
   expect(net.egressAttempts.filter((a) => a.host === "[fd00::1]")).toHaveLength(0);
   expect(net.requestsTo("[fd00::1]")).toHaveLength(0);
 
