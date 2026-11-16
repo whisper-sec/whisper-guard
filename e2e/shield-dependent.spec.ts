@@ -4,8 +4,9 @@
 // The credential-field guard and the in-page banner cannot run until Active
 // Shield is on (the setting AND the all-sites grant). Neither the first-run
 // page nor Settings may draw them on before then, and the stored preference
-// must survive. The grant arrives install-time via makeShieldDist; the
-// default dist holds no grant.
+// must survive. The cookie decline runs without Active Shield, but only on a
+// tab where Guard is opened, so both pages say where it can run. The grant
+// arrives install-time via makeShieldDist; the default dist holds no grant.
 
 import { test, expect, type Page } from "@playwright/test";
 import { launchExtension, makeShieldDist, setSettings, type Extension } from "./helpers/extension";
@@ -63,6 +64,37 @@ test.describe("no all-sites grant", () => {
     expect(s["amberBanner"]).toBe(true);
     expect(s["fieldGuard"]).toBe(true);
     await page.close();
+  });
+
+  test("cookie decline: on a fresh profile both pages say it runs only on a tab where Guard is opened", async () => {
+    // Nothing is stored yet: the defaults are what a new install shows.
+    const first = await open(ext, "firstrun.html");
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
+    await expect(row(first, "cookieDecline")).toContainText(/only on a tab where you open Guard/i);
+    await expect(row(first, "cookieDecline")).toContainText("Clicks reject, never accept, entirely on this device.");
+    await expect(row(first, "cookieDecline").locator("svg title")).toHaveText("only on a tab where you open Guard");
+    await first.close();
+    const opts = await open(ext, "options.html");
+    await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
+    await expect(opts.locator("#opt-cookiedecline")).toBeEnabled();
+    await expect(opts.locator("#opt-cookiedecline")).toHaveAttribute("aria-describedby", "cookiedecline-reach");
+    await expect(opts.locator("#cookiedecline-reach")).toBeVisible();
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText(/only on a tab where you open Guard/i);
+    await opts.close();
+  });
+
+  test("cookie decline: switched off it reads off on both pages", async () => {
+    await setSettings(ext, { cookieDecline: false });
+    const first = await open(ext, "firstrun.html");
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "off");
+    await first.close();
+    const opts = await open(ext, "options.html");
+    await expect(opts.locator("#opt-cookiedecline")).not.toBeChecked();
+    await expect(opts.locator("#cookiedecline-reach")).toBeAttached();
+    await expect(opts.locator("#cookiedecline-reach")).toBeHidden();
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText("");
+    await opts.close();
+    await setSettings(ext, { cookieDecline: true });
   });
 });
 
@@ -128,5 +160,59 @@ test.describe("all-sites grant held", () => {
     await expect(opts.locator("#opt-fieldguard")).toBeEnabled();
     await expect(opts.locator("#banner-needs")).toBeHidden();
     await opts.close();
+  });
+
+  test("cookie decline: grant held with Active Shield off reads as only on a tab where Guard is opened", async () => {
+    await setSettings(ext, { shield: false, cookieDecline: true });
+    const first = await open(ext, "firstrun.html");
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
+    await expect(row(first, "cookieDecline")).toContainText(/only on a tab where you open Guard/i);
+    await first.close();
+    const opts = await open(ext, "options.html");
+    await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
+    await expect(opts.locator("#opt-cookiedecline")).toBeEnabled();
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText(/only on a tab where you open Guard/i);
+    await opts.close();
+  });
+
+  test("cookie decline: with Active Shield on and granted both pages read as running on every page", async () => {
+    await setSettings(ext, { shield: true, cookieDecline: true });
+    const first = await open(ext, "firstrun.html");
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "on");
+    await expect(row(first, "cookieDecline")).toContainText("Runs on every page.");
+    await expect(row(first, "cookieDecline")).toContainText("Clicks reject, never accept, entirely on this device.");
+    await expect(row(first, "cookieDecline")).not.toContainText(/only on a tab/i);
+    await first.close();
+    const opts = await open(ext, "options.html");
+    await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText("Runs on every page.");
+    await opts.close();
+  });
+
+  test("cookie decline: with the setting off it reads off even when Active Shield is on", async () => {
+    await setSettings(ext, { shield: true, cookieDecline: false });
+    const first = await open(ext, "firstrun.html");
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "off");
+    await first.close();
+    await setSettings(ext, { cookieDecline: true });
+  });
+
+  test("settings: the cookie decline note updates without a reload when Active Shield is switched on", async () => {
+    await setSettings(ext, { shield: false, cookieDecline: true });
+    const opts = await open(ext, "options.html");
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText(/only on a tab where you open Guard/i);
+    await opts.locator("#opt-shield").check();
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText("Runs on every page.");
+    await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
+    await opts.close();
+  });
+
+  test("first run: the cookie decline row flips to every page when Active Shield is switched on", async () => {
+    await setSettings(ext, { shield: false, cookieDecline: true });
+    const first = await open(ext, "firstrun.html");
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
+    await setSettings(ext, { shield: true });
+    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "on");
+    await first.close();
   });
 });

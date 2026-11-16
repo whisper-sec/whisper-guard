@@ -99,11 +99,12 @@
         <span class="w-note needs-shield" id="fieldguard-needs" hidden>needs Active Shield</span></span>
       </label>
       <label class="toggle">
-        <input type="checkbox" id="opt-cookiedecline">
+        <input type="checkbox" id="opt-cookiedecline" aria-describedby="cookiedecline-reach">
         <span>Decline cookie pop-ups for me. Where Guard runs on the page, it clicks the
         banner's own "Reject all" / "necessary only" button, never "accept", and if it
         is not sure, it leaves the page alone. Entirely on this device; nothing about
-        the page leaves the browser.</span>
+        the page leaves the browser.
+        <span class="w-note" id="cookiedecline-reach" hidden></span></span>
       </label>
     </section>
 

@@ -136,7 +136,12 @@ function stateMark(on: boolean, title?: string): SVGSVGElement {
   return svg;
 }
 
-type RowState = "on" | "off" | "needs-shield";
+type RowState = "on" | "off" | "needs-shield" | "tab-only";
+
+const MARK_TITLE: Partial<Record<RowState, string>> = {
+  "needs-shield": "needs Active Shield",
+  "tab-only": "only on a tab where you open Guard",
+};
 
 function activeRow(state: boolean | RowState, name: string, detail: string, key?: string): HTMLElement {
   const st: RowState = state === true ? "on" : state === false ? "off" : state;
@@ -144,7 +149,7 @@ function activeRow(state: boolean | RowState, name: string, detail: string, key?
   if (key) row.dataset["key"] = key;
   row.dataset["state"] = st;
   const mark = el("span", "active-mark");
-  mark.appendChild(stateMark(st === "on", st === "needs-shield" ? "needs Active Shield" : undefined));
+  mark.appendChild(stateMark(st === "on", MARK_TITLE[st]));
   row.append(mark, el("span", "active-name", name), el("span", "active-detail", detail));
   return row;
 }
@@ -175,6 +180,15 @@ async function loadActive(): Promise<void> {
   // The brand figure is the corpus the detector loaded, counted. When it
   // could not be counted the sentence simply does not carry a number.
   const brands = res.corpusBrands > 0 ? `${res.corpusBrands.toLocaleString("en")} heavily phished brands` : "the bundled brand list";
+  // Where the cookie decline can run. Without Active Shield that is only a tab
+  // the reader opened Guard on, so the row is never drawn as fully on.
+  const cookieState: RowState = !s.cookieDecline ? "off" : active ? "on" : "tab-only";
+  const cookieReach =
+    cookieState === "on"
+      ? "Runs on every page. "
+      : cookieState === "tab-only"
+        ? "Runs only on a tab where you open Guard. Active Shield runs it on every page. "
+        : "";
   list.replaceChildren(
     activeRow(
       s.cloudCheck,
@@ -191,9 +205,10 @@ async function loadActive(): Promise<void> {
       "fieldGuard",
     ),
     activeRow(
-      s.cookieDecline,
+      cookieState,
       "Cookie-banner auto-decline",
-      "Clicks reject, never accept, entirely on this device.",
+      `${cookieReach}Clicks reject, never accept, entirely on this device.`,
+      "cookieDecline",
     ),
     activeRow(
       gated(s.amberBanner),
