@@ -4,7 +4,8 @@
 // Nothing a check learns is written for a private-window tab: not the
 // destination log, not the verdict cache (memory or its session copy), not the
 // session risk list. The tab still gets its toolbar mark and its verdict, and a
-// normal-window tab writes all three as before.
+// normal-window tab writes all three as before. A held click that the check
+// clears is reopened in the window kind and window it came from.
 //
 // Guard sees a private tab only once it is allowed in private windows, so this
 // file runs its own browser on a profile where that is switched on, with the
@@ -266,5 +267,162 @@ test("should not cache the link scan or the indicator scan of a private-window t
     await again.page.close();
   } finally {
     await closePrivate(p.windowId);
+  }
+});
+
+interface Opened {
+  tabId: number;
+  windowId: number;
+  index: number;
+  incognito: boolean;
+  url: string;
+}
+
+interface Snapshot {
+  tabs: Opened[];
+  windows: { id: number; incognito: boolean }[];
+}
+
+/** Every tab and window now open, for comparing before and after a reopen. */
+async function snapshot(): Promise<Snapshot> {
+  return own.sw.evaluate(async () => {
+    const tabs = await chrome.tabs.query({});
+    const windows = await chrome.windows.getAll();
+    return {
+      tabs: tabs.map((t) => ({
+        tabId: t.id ?? -1,
+        windowId: t.windowId,
+        index: t.index,
+        incognito: t.incognito,
+        url: t.url ?? t.pendingUrl ?? "",
+      })),
+      windows: windows.map((w) => ({ id: w.id ?? -1, incognito: w.incognito })),
+    };
+  });
+}
+
+/** The held click's resume, sent from inside a tab so that tab is the sender. */
+async function resume(tabId: number, url: string, disposition: string): Promise<void> {
+  const out = await own.sw.evaluate(
+    async ([id, u, d]: [number, string, string]) => {
+      const r = await chrome.scripting.executeScript({
+        target: { tabId: id },
+        func: (dest: string, disp: string) =>
+          chrome.runtime.sendMessage({ kind: "preemptOpen", url: dest, disposition: disp }),
+        args: [u, d],
+      });
+      return r[0]?.result as { ok?: boolean } | undefined;
+    },
+    [tabId, url, disposition] as [number, string, string],
+  );
+  expect(out?.ok).toBe(true);
+}
+
+/** The tab the reopen created: the one whose address names `host`. */
+async function reopened(host: string): Promise<Opened> {
+  let found: Opened | undefined;
+  await expect
+    .poll(
+      async () => {
+        const s = await snapshot();
+        found = s.tabs.find((t) => t.url.includes(host));
+        return found !== undefined;
+      },
+      { message: `a tab opened for ${host}`, timeout: 10_000 },
+    )
+    .toBe(true);
+  return found as Opened;
+}
+
+async function focusNormalWindow(url: string): Promise<number> {
+  return own.sw.evaluate(async (u: string) => {
+    const w = await chrome.windows.create({ incognito: false, focused: true, url: u });
+    return w.id ?? -1;
+  }, url);
+}
+
+async function closeWindow(windowId: number): Promise<void> {
+  await own.sw.evaluate(async (id: number) => chrome.windows.remove(id), windowId).catch(() => undefined);
+}
+
+test("should reopen a held Shift click from a private-window tab in a private window", async () => {
+  const source = "reopen-shift-source-guard-e2e.com";
+  const dest = "reopen-shift-dest-guard-e2e.com";
+  net.setVerdict(source, CLEAN);
+  net.setVerdict(dest, CLEAN);
+
+  const p = await openPrivate(`https://${source}/`);
+  let created: Opened | undefined;
+  try {
+    await waitForIcon(own, p.tabId, ["benign"]);
+    await resume(p.tabId, `https://${dest}/`, "window");
+    created = await reopened(dest);
+    expect(created.incognito).toBe(true);
+    // A new window, not a tab in the one the click came from.
+    expect(created.windowId).not.toBe(p.windowId);
+    const s = await snapshot();
+    expect(s.windows.find((w) => w.id === created?.windowId)?.incognito).toBe(true);
+  } finally {
+    if (created !== undefined) await closeWindow(created.windowId);
+    await closePrivate(p.windowId);
+  }
+});
+
+for (const disposition of ["background-tab", "foreground-tab"]) {
+  test(`should reopen a held ${disposition} click in the clicking private tab's window, whichever window has focus`, async () => {
+    const tag = disposition === "background-tab" ? "bg" : "fg";
+    const source = `reopen-${tag}-source-guard-e2e.com`;
+    const dest = `reopen-${tag}-dest-guard-e2e.com`;
+    net.setVerdict(source, CLEAN);
+    net.setVerdict(dest, CLEAN);
+
+    const p = await openPrivate(`https://${source}/`);
+    let focused = -1;
+    try {
+      await waitForIcon(own, p.tabId, ["benign"]);
+      focused = await focusNormalWindow("about:blank");
+      await resume(p.tabId, `https://${dest}/`, disposition);
+      const created = await reopened(dest);
+      expect(created.windowId).toBe(p.windowId);
+      expect(created.incognito).toBe(true);
+      const opener = (await snapshot()).tabs.find((t) => t.tabId === p.tabId);
+      expect(created.index).toBe((opener?.index ?? -2) + 1);
+    } finally {
+      await closeWindow(focused);
+      await closePrivate(p.windowId);
+    }
+  });
+}
+
+test("should reopen a held click from a normal-window tab as before", async () => {
+  const source = "reopen-normal-source-guard-e2e.com";
+  const winDest = "reopen-normal-window-guard-e2e.com";
+  const tabDest = "reopen-normal-tab-guard-e2e.com";
+  for (const h of [source, winDest, tabDest]) net.setVerdict(h, CLEAN);
+
+  const normal = await visit(own, `https://${source}/`);
+  let tab: Opened | undefined;
+  let created: Opened | undefined;
+  try {
+    await waitForIcon(own, normal.tabId, ["benign"]);
+    const before = await snapshot();
+    const opener = before.tabs.find((t) => t.tabId === normal.tabId);
+
+    await resume(normal.tabId, `https://${tabDest}/`, "background-tab");
+    tab = await reopened(tabDest);
+    expect(tab.incognito).toBe(false);
+    expect(tab.windowId).toBe(opener?.windowId);
+    expect(tab.index).toBe((opener?.index ?? -2) + 1);
+
+    await resume(normal.tabId, `https://${winDest}/`, "window");
+    created = await reopened(winDest);
+    expect(created.incognito).toBe(false);
+    expect(created.windowId).not.toBe(opener?.windowId);
+  } finally {
+    if (created !== undefined) await closeWindow(created.windowId);
+    if (tab !== undefined) {
+      await own.sw.evaluate(async (id: number) => chrome.tabs.remove(id), tab.tabId).catch(() => undefined);
+    }
+    await normal.page.close();
   }
 });
