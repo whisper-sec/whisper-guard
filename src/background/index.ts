@@ -1046,21 +1046,38 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       if (!/^https?:\/\//i.test(msg.url)) {
         return { ok: false, error: "only http(s) destinations can be resumed" };
       }
+      const opener = sender?.tab;
       if (msg.disposition === "window") {
-        await ext.windows.create({ url: msg.url });
+        // A private-window tab reopens in a private window; a normal one is unchanged.
+        await ext.windows.create(opener?.incognito === true ? { url: msg.url, incognito: true } : { url: msg.url });
         return { ok: true };
       }
       const active = msg.disposition === "foreground-tab";
-      const opener = sender?.tab;
-      try {
-        await ext.tabs.create(
-          opener?.id !== undefined
-            ? { url: msg.url, active, openerTabId: opener.id, index: opener.index + 1 }
-            : { url: msg.url, active },
-        );
-      } catch {
-        // The opener tab vanished mid-flight: still honor the intent.
+      if (opener?.id === undefined) {
         await ext.tabs.create({ url: msg.url, active });
+        return { ok: true };
+      }
+      try {
+        // In the clicking tab's own window, next to it, whichever window has focus now.
+        await ext.tabs.create({
+          url: msg.url,
+          active,
+          windowId: opener.windowId,
+          openerTabId: opener.id,
+          index: opener.index + 1,
+        });
+      } catch {
+        // The opener tab vanished mid-flight: keep the same window kind. Use its
+        // window if still open, else another open window of that kind, else a new one.
+        const incognito = opener.incognito;
+        const windows = await ext.windows.getAll({ windowTypes: ["normal"] });
+        const home =
+          windows.find((w) => w.id === opener.windowId) ?? windows.find((w) => w.incognito === incognito);
+        if (home?.id !== undefined) {
+          await ext.tabs.create({ url: msg.url, active, windowId: home.id });
+        } else {
+          await ext.windows.create(incognito ? { url: msg.url, incognito: true } : { url: msg.url });
+        }
       }
       return { ok: true };
     }
