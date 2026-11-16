@@ -505,6 +505,11 @@ ext.alarms.onAlarm.addListener((alarm) => {
 // "This browser" view and the tighter fleet-poll cadence.
 ext.runtime.onConnect.addListener((port) => {
   if (port.name !== "dashboard") return;
+  // The port belongs to the dashboard page: it is kept only from that page.
+  if (!(port.sender?.url ?? "").startsWith(ext.runtime.getURL("dashboard.html"))) {
+    port.disconnect();
+    return;
+  }
   dashboardOpened();
   const unsubscribeFleet = onFleetPolled(() => {
     try {
@@ -702,7 +707,32 @@ function nokeyResponse(e: unknown): BgResponse | null {
   return null;
 }
 
+/** The kinds the on-page layer sends; every other kind comes from a Guard page. */
+const ON_PAGE_KINDS: ReadonlySet<BgRequest["kind"]> = new Set<BgRequest["kind"]>([
+  "consentDeclined",
+  "preemptOpen",
+  "preemptCheck",
+  "preemptAllow",
+]);
+
+/**
+ * The router handles a kind only from the senders that send it. A Guard page
+ * (its address is under the extension's own origin) may send any kind, except
+ * that `allowHost` is taken only from the top-level page of a tab. Any other
+ * sender may send the on-page layer's four kinds.
+ */
+function senderMaySend(kind: unknown, sender?: chrome.runtime.MessageSender): boolean {
+  if (typeof kind !== "string") return false;
+  const fromGuardPage = (sender?.url ?? "").startsWith(ext.runtime.getURL(""));
+  if (!fromGuardPage) return ON_PAGE_KINDS.has(kind as BgRequest["kind"]);
+  if (kind === "allowHost" && sender?.tab !== undefined && sender.frameId !== 0) return false;
+  return true;
+}
+
 async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Promise<BgResponse> {
+  if (!senderMaySend((msg as { kind?: unknown } | null)?.kind, sender)) {
+    return { ok: false, error: "Whisper Guard does not handle this request from here." };
+  }
   switch (msg.kind) {
     case "getTabState": {
       // A COPY. Writing signedIn through to the stored object made the
