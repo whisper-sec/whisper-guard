@@ -80,8 +80,13 @@ if (brandDomain) {
 // broken and goes around it. Without a host there is nothing to continue TO,
 // so the control says so and offers the way out that does work.
 const continueBtn = $("btn-continue");
+const framed = window.top !== window.self;
 if (host === "") {
   continueBtn.textContent = "There is no destination to continue to";
+  (continueBtn as HTMLButtonElement).disabled = true;
+} else if (framed) {
+  // Shown inside a frame, the page is only a notice: it sends nothing.
+  continueBtn.textContent = "Continuing is not available inside a frame";
   (continueBtn as HTMLButtonElement).disabled = true;
 } else {
   continueBtn.addEventListener("click", async () => {
@@ -288,4 +293,4 @@ async function loadEvidence(): Promise<void> {
   }
 }
 
-void loadEvidence();
+if (!framed) void loadEvidence();
