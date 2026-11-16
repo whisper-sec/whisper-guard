@@ -333,7 +333,12 @@ export async function injectGuard(
       target: { tabId },
       files: ["content.js"],
     });
-    await ext.tabs.sendMessage(tabId, { kind: "whisper-guard-config", ...payload });
+    // frameId 0, explicitly. With no frameId the message goes to every frame
+    // that already runs content.js, and the consent pass puts it in all of
+    // them. A page checked again (after signing in, say) would then let a
+    // same-host sub-frame draw its own banner and arm its own field guard.
+    // The warning belongs to the page the person is looking at.
+    await ext.tabs.sendMessage(tabId, { kind: "whisper-guard-config", ...payload }, { frameId: 0 });
   } catch {
     // Page not injectable (browser UI page, race with navigation): fine.
   }
