@@ -20,7 +20,7 @@ import { send, type CheckHostResult } from "../shared/messages";
 import type { GraphScale, Settings } from "../shared/types";
 import { compact, countUp, sparkline } from "../shared/spark";
 import { ext } from "../shared/api";
-import { shieldActive, shieldGranted } from "../shared/shield-state";
+import { newestRead, shieldActive, shieldGranted } from "../shared/shield-state";
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
@@ -154,8 +154,11 @@ function activeRow(state: boolean | RowState, name: string, detail: string, key?
   return row;
 }
 
+const nextActiveRead = newestRead();
+
 /** What is actually on, read from this browser's own settings. */
 async function loadActive(): Promise<void> {
+  const isLatest = nextActiveRead();
   const res = await send<{
     ok: true;
     settings: Settings;
@@ -163,9 +166,10 @@ async function loadActive(): Promise<void> {
     corpusVersion: number;
     corpusUpdated: string;
     corpusBrands: number;
-  }>({ kind: "getSettings" });
+  }>({ kind: "getSettings" }).catch(() => null);
   const list = $("active-list");
-  if (!res.ok) {
+  if (!res?.ok) {
+    if (!isLatest()) return;
     list.replaceChildren(
       el("p", "w-note", "The extension's own settings could not be read just now, so this page is not claiming what is on."),
     );
@@ -173,6 +177,8 @@ async function loadActive(): Promise<void> {
   }
   const s = res.settings;
   const granted = await shieldGranted();
+  // A newer read has started since this one did: let it draw.
+  if (!isLatest()) return;
   const active = shieldActive(s, granted);
   // A protection that cannot run yet is never drawn on. The stored
   // preference is untouched; it reads on again once Active Shield is.
