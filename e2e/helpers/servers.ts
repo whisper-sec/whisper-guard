@@ -218,6 +218,31 @@ export class E2ENetwork {
    * another's fast one (graphDelayMs delays everything). Clear it in afterEach.
    */
   readonly assessDelayMs = new Map<string, number>();
+  private listHold: Promise<void> | null = null;
+  /**
+   * Hold the answer to the NEXT control-plane roster read until the returned
+   * function is called. Later reads are answered at once. It lets a spec change
+   * the account while a read is in flight and see what that read does when it lands.
+   * The returned `held` resolves once such a read has arrived and is waiting.
+   */
+  holdNextList(): { release: () => void; held: Promise<void> } {
+    let release!: () => void;
+    let arrived!: () => void;
+    const held = new Promise<void>((r) => (arrived = r));
+    this.listHold = new Promise<void>((r) => (release = r)).then(() => undefined);
+    this.onListHeld = arrived;
+    this.releaseListHold = release;
+    return { release, held };
+  }
+  /** Let go of a roster read still held, so a failed test cannot hold the next one's. */
+  releaseHolds(): void {
+    this.releaseListHold?.();
+    this.releaseListHold = null;
+    this.listHold = null;
+    this.onListHeld = null;
+  }
+  private releaseListHold: (() => void) | null = null;
+  private onListHeld: (() => void) | null = null;
   /** When (epoch ms) each delayed assess answer was sent, by host. */
   readonly lateAnswered = new Map<string, number>();
   private verdicts = new Map<string, Verdict>();
@@ -641,6 +666,15 @@ export class E2ENetwork {
 
     // The control plane rides the SAME endpoint: a bare CALL whisper.agents.
     if (q.includes("whisper.agents")) {
+      if (this.listHold && q.includes("op:'list'")) {
+        const hold = this.listHold;
+        this.listHold = null;
+        // The roster this read saw when it arrived, however long it is held.
+        const seen = [...this.endpoints];
+        this.onListHeld?.();
+        await hold;
+        return this.serveAgents(q, res, seen);
+      }
       return this.serveAgents(q, res);
     }
 
@@ -830,7 +864,7 @@ export class E2ENetwork {
 
   // ---------------------------------------------- mock control plane (agents)
 
-  private serveAgents(query: string, res: http.ServerResponse): void {
+  private serveAgents(query: string, res: http.ServerResponse, roster?: MockEndpoint[]): void {
     const opMatch = /op:'([a-z]+)'/.exec(query);
     const op = opMatch?.[1] ?? "";
     let result: { columns: string[]; rows: unknown[] } = { columns: [], rows: [] };
@@ -838,7 +872,7 @@ export class E2ENetwork {
     if (op === "list") {
       result = {
         columns: ["kind", "item"],
-        rows: this.endpoints.map((e) => [
+        rows: (roster ?? this.endpoints).map((e) => [
           "agents",
           {
             agent: e.agent,

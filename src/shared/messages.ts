@@ -54,7 +54,8 @@ export type BgRequest =
   | { kind: "updateCorpusNow" }
   | { kind: "getProtection"; host: string; withVariants?: boolean }
   | { kind: "getBrowserReport"; limit?: number }
-  | { kind: "getFleetReport" }
+  // cached: show the worker's latest poll snapshot instead of reading again.
+  | { kind: "getFleetReport"; cached?: boolean }
   | { kind: "getEndpointDetail"; agent: string }
   | { kind: "getDevicePolicy"; agent: string }
   | { kind: "setDevicePolicy"; agent: string; policy: DevicePolicy }

@@ -54,12 +54,15 @@ import { enrichDestinations } from "./enrich";
 import { clearPolicyFacts, policyFacts } from "./policy-facts";
 import { COHOST_QUERY } from "../shared/config";
 import { graphQuery } from "./graph-client";
-import { endpointCounters, endpointLogs, fleetActivity, listEndpoints } from "./fleet";
+import { endpointCounters, endpointLogs, listEndpoints } from "./fleet";
 import {
   dashboardClosed,
   dashboardOpened,
   FLEET_POLL_ALARM,
+  forgetFleetSnapshot,
   getFleetFeed,
+  onFleetPolled,
+  sharedFleetActivity,
   ingestFleetRows,
   onPollAlarm,
   resetFeed,
@@ -433,6 +436,8 @@ async function recheckOpenTabs(): Promise<void> {
   // clearing simply re-read the same cached rows: signing in lit up the
   // chrome and changed none of the verdicts until each TTL expired, up to
   // twenty-four hours later. The chain and the quota are tier-shaped too.
+  // A fleet read from the previous account (or key) must never be served.
+  forgetFleetSnapshot();
   cacheClear();
   resetChainCache();
   resetQuotaCache();
@@ -485,6 +490,13 @@ ext.alarms.onAlarm.addListener((alarm) => {
 ext.runtime.onConnect.addListener((port) => {
   if (port.name !== "dashboard") return;
   dashboardOpened();
+  const unsubscribeFleet = onFleetPolled(() => {
+    try {
+      port.postMessage({ kind: "fleet" });
+    } catch {
+      // port already gone
+    }
+  });
   const unsubscribe = onNavRecorded(() => {
     try {
       port.postMessage({ kind: "nav" });
@@ -494,6 +506,7 @@ ext.runtime.onConnect.addListener((port) => {
   });
   port.onDisconnect.addListener(() => {
     unsubscribe();
+    unsubscribeFleet();
     dashboardClosed();
   });
 });
@@ -748,10 +761,15 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
     }
     case "getFleetReport": {
       try {
-        const activity = await fleetActivity();
+        // The worker's poll is the one control-plane read. A page told that
+        // a poll just landed (cached) shows that snapshot; any other ask joins
+        // a read in flight, else reads once, so it is never stale.
+        const activity = await sharedFleetActivity(msg.cached ? Infinity : 0);
         // Merge into the ring for polling continuity, but render the feed
         // from the rows we just fetched so the first paint is never empty.
-        ingestFleetRows(activity.recent);
+        // A cached snapshot was merged by the poll that produced it; merging it
+        // again would clear the poll's failure mark and hide an outage.
+        if (!msg.cached) ingestFleetRows(activity.recent);
         const hosts = await enrichDestinations(activity.destinations);
         const feed = await getFleetFeed();
         const rows = activity.recent.length > 0 ? activity.recent : feed.rows;
@@ -802,6 +820,7 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
     case "revokeEndpoint":
       try {
         const revoked = await revokeEndpoint(msg.agent);
+        forgetFleetSnapshot();
         // If the browser just revoked ITSELF, drop the stored identity and
         // disengage routing so nothing keeps claiming the retired /128.
         // Both selector forms are checked: the id the caller named and the
@@ -851,7 +870,7 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       // ENROLL alone: reserve + verify the browser's identity. Control
       // plane only; works whenever signed in, no proxy permission involved.
       try {
-        return { ok: true, enrollment: await enrollBrowser() };
+        return { ok: true, enrollment: await enrollBrowser().finally(forgetFleetSnapshot) };
       } catch (e) {
         if (e instanceof GraphError && e.reason === "nokey") {
           return {

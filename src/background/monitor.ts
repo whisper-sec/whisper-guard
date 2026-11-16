@@ -13,13 +13,15 @@
 //                 a worker that starts with no dashboard clears a leftover one.
 //                 The dashboard reconnects its port after a worker restart.
 //                 Ring + seen-keys persist in session storage.
+//                 This poll is the ONE control-plane read: the dashboard is
+//                 told when it lands and reads the snapshot, never its own.
 //
 // The feed label degrades live -> polling -> offline and never pretends.
 
 import { FEED_RING_MAX, POLL_ALARM_MINUTES, POLL_OPEN_MS } from "../shared/config";
 import type { ActivityRow, FeedStatus } from "../shared/types";
 import { hasKey } from "./graph-client";
-import { fleetActivity } from "./fleet";
+import { fleetActivity, type FleetActivity } from "./fleet";
 
 export const FLEET_POLL_ALARM = "whisper-guard-fleet-poll";
 
@@ -33,7 +35,75 @@ interface FeedState {
 let state: FeedState | null = null;
 let openPorts = 0;
 let openTimer: ReturnType<typeof setInterval> | null = null;
-let polling = false;
+
+// The latest control-plane read and the one in flight, shared by the poll and
+// by a dashboard that needs data before the next tick.
+let latest: { at: number; activity: FleetActivity } | null = null;
+let inflight: Promise<FleetActivity> | null = null;
+const pollListeners = new Set<() => void>();
+
+/** A poll right after the dashboard's own first read reuses that read. */
+const OPEN_REUSE_MS = 3000;
+
+// Bumped on every invalidation (roster change, account change, sign-out, last
+// dashboard closing). A read that started under an older generation is stale
+// when it lands: it never becomes the snapshot and its caller reads again.
+let generation = 0;
+
+function invalidateFleet(): void {
+  generation += 1;
+  latest = null;
+  inflight = null;
+}
+
+function readFleet(): Promise<FleetActivity> {
+  if (inflight) return inflight;
+  const gen = generation;
+  const read: Promise<FleetActivity> = fleetActivity()
+    .then((activity) => {
+      // A snapshot is trusted only while a dashboard stays connected; one
+      // that lands after the last tab closed would be stale on the next open.
+      if (gen === generation) latest = openPorts > 0 ? { at: Date.now(), activity } : null;
+      return activity;
+    })
+    .finally(() => {
+      if (inflight === read) inflight = null;
+    });
+  inflight = read;
+  return read;
+}
+
+/**
+ * The fleet picture without a duplicate read: join a read already in flight,
+ * else reuse a snapshot no older than maxAgeMs, else read once. A read that
+ * was overtaken by an invalidation while it ran is not returned: the ask is
+ * made again, so a revoked endpoint or a signed-out account never comes back.
+ * After three overtaken reads it reads once more, directly, and returns that.
+ * With no key nothing is served from memory: the read itself reports it.
+ */
+export async function sharedFleetActivity(maxAgeMs = 0): Promise<FleetActivity> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!(await hasKey())) return fleetActivity();
+    const gen = generation;
+    let activity: FleetActivity;
+    if (inflight) activity = await inflight;
+    else if (latest && Date.now() - latest.at <= maxAgeMs) return latest.activity;
+    else activity = await readFleet();
+    if (gen === generation) return activity;
+  }
+  return fleetActivity();
+}
+
+/** The roster or the account changed: drop the snapshot and any read in flight. */
+export function forgetFleetSnapshot(): void {
+  invalidateFleet();
+}
+
+/** Be told each time a poll lands a fresh fleet snapshot. Returns the unsubscribe. */
+export function onFleetPolled(cb: () => void): () => void {
+  pollListeners.add(cb);
+  return () => pollListeners.delete(cb);
+}
 
 async function load(): Promise<FeedState> {
   if (state) return state;
@@ -82,21 +152,28 @@ export function ingestFleetRows(rows: ActivityRow[]): void {
   void merge(rows);
 }
 
+function notifyFleetPolled(): void {
+  for (const cb of [...pollListeners]) cb();
+}
+
 /** One poll: merge fresh fleet activity into the ring, dedup by row key. */
-export async function pollFleetOnce(): Promise<void> {
-  if (polling) return;
-  if (!(await hasKey())) return;
-  polling = true;
+export async function pollFleetOnce(reuseMs = 0): Promise<void> {
+  if (!(await hasKey())) {
+    // Signed out: tell the page so it shows the locked state, not old data.
+    notifyFleetPolled();
+    return;
+  }
   try {
-    const activity = await fleetActivity();
+    const activity = await sharedFleetActivity(reuseMs);
     await merge(activity.recent);
   } catch {
     const s = await load();
     s.lastError = true;
     persist();
-  } finally {
-    polling = false;
   }
+  // Success or failure, the page re-reads the snapshot and the feed status.
+  // Only this poll pushes, and the page's read never does, so it cannot loop.
+  notifyFleetPolled();
 }
 
 /** The current feed + its honest liveness. */
@@ -140,7 +217,7 @@ export function dashboardOpened(): void {
       void pollFleetOnce();
     }, POLL_OPEN_MS);
   }
-  void pollFleetOnce();
+  void pollFleetOnce(OPEN_REUSE_MS);
 }
 
 export function dashboardClosed(): void {
@@ -149,17 +226,22 @@ export function dashboardClosed(): void {
     clearInterval(openTimer);
     openTimer = null;
   }
-  if (openPorts === 0) void syncPollAlarm();
+  if (openPorts === 0) {
+    invalidateFleet();
+    void syncPollAlarm();
+  }
 }
 
 /** Alarm tick (fires even after the worker was evicted). */
 export function onPollAlarm(): void {
-  void pollFleetOnce();
+  // A snapshot younger than one open period already covers this tick.
+  void pollFleetOnce(POLL_OPEN_MS);
 }
 
 /** Sign-out: stop polling and drop the ring (it belongs to the account). */
 export async function resetFeed(): Promise<void> {
   state = { ring: [], seen: [], updatedAt: null, lastError: false };
+  invalidateFleet();
   persist();
   try {
     await chrome.alarms.clear(FLEET_POLL_ALARM);

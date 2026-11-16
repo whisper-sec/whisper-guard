@@ -678,9 +678,10 @@ function rosterCard(e: FleetEndpoint): HTMLElement {
   return card;
 }
 
-async function refreshFleet(): Promise<void> {
+async function refreshFleet(cached = false): Promise<void> {
   const res = await send<{ ok: true; fleet: FleetReport } | { ok: false; error: string; nokey?: boolean }>({
     kind: "getFleetReport",
+    cached,
   });
   const lock = $("fleet-lock");
   const body = $("fleet-body");
@@ -740,7 +741,7 @@ async function refreshFleet(): Promise<void> {
   // A poll only moves the mark when the poll brought something NEW.
   //
   // Pushing on every completed poll was a heartbeat wearing an event's
-  // clothes: the fleet is polled every fifteen seconds whether or not
+  // clothes: the fleet is polled every twelve seconds whether or not
   // anything happened, so the track would have ticked forever beside a
   // fleet doing nothing, which is precisely what this mark promises never
   // to do. That the control plane answered is already stated, in words,
@@ -1888,6 +1889,12 @@ function init(): void {
       return;
     }
     port.onMessage.addListener((msg: { kind?: string }) => {
+      // The worker's poll landed a fresh fleet snapshot: show it. The page
+      // never reads the control plane on its own timer.
+      if (msg.kind === "fleet") {
+        if (view === "fleet" && !document.hidden) void refreshFleet(true);
+        return;
+      }
       if (msg.kind !== "nav") return;
       // The mark goes up for every committed navigation, whichever view is
       // open: the event happened, and a reader on the fleet tab watching the
@@ -1908,11 +1915,14 @@ function init(): void {
 
   fleetTimer = setInterval(() => {
     if (document.hidden) return;
-    if (view === "fleet") void refreshFleet();
-    else if (view === "endpoint" && currentAgent) void refreshEndpoint(currentAgent);
+    if (view === "endpoint" && currentAgent) void refreshEndpoint(currentAgent);
   }, 15_000);
   void fleetTimer;
   void endpointHosts;
+  // Pushes are skipped while the tab is hidden, so catch up on return.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && view === "fleet") void refreshFleet(true);
+  });
 
   // A <canvas> keeps whatever ink it was drawn with, so a colour-scheme
   // flip has to redraw it: without this the donut, gauge and constellation
