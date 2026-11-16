@@ -32,6 +32,18 @@ export async function recordRisk(host: string, reason: string): Promise<boolean>
   return true;
 }
 
+/*
+ * One list change at a time. Each writer below reads a list, edits it and
+ * writes it back, so two that overlapped would keep only one of the edits.
+ * They run in the order they were asked for instead.
+ */
+let lastChange: Promise<void> = Promise.resolve();
+function inOrder(change: () => Promise<void>): Promise<void> {
+  const run = lastChange.then(change);
+  lastChange = run.catch(() => undefined);
+  return run;
+}
+
 /** Hosts the user chose to trust for this session only ("continue anyway"). */
 export async function sessionAllowed(host: string): Promise<boolean> {
   try {
@@ -42,16 +54,18 @@ export async function sessionAllowed(host: string): Promise<boolean> {
   }
 }
 
-export async function allowForSession(host: string): Promise<void> {
+export function allowForSession(host: string): Promise<void> {
   const h = host.toLowerCase();
-  try {
-    const stored = (await chrome.storage.session.get("allowed"))["allowed"];
-    const list = Array.isArray(stored) ? (stored as string[]) : [];
-    if (!list.includes(h)) list.push(h);
-    await chrome.storage.session.set({ allowed: list });
-  } catch {
-    // best-effort
-  }
+  return inOrder(async () => {
+    try {
+      const stored = (await chrome.storage.session.get("allowed"))["allowed"];
+      const list = Array.isArray(stored) ? (stored as string[]) : [];
+      if (!list.includes(h)) list.push(h);
+      await chrome.storage.session.set({ allowed: list });
+    } catch {
+      // best-effort
+    }
+  });
 }
 
 /*
@@ -78,25 +92,29 @@ export async function sessionBlockedHosts(): Promise<string[]> {
   }
 }
 
-export async function markBlocked(host: string): Promise<void> {
+export function markBlocked(host: string): Promise<void> {
   const h = host.toLowerCase();
-  try {
-    const list = await sessionBlockedHosts();
-    if (!list.includes(h)) {
-      list.push(h);
-      await chrome.storage.session.set({ blocked: list });
+  return inOrder(async () => {
+    try {
+      const list = await sessionBlockedHosts();
+      if (!list.includes(h)) {
+        list.push(h);
+        await chrome.storage.session.set({ blocked: list });
+      }
+    } catch {
+      // best-effort: the DNR rule is still installed.
     }
-  } catch {
-    // best-effort: the DNR rule is still installed; the list is only the UI mirror.
-  }
+  });
 }
 
-export async function unmarkBlocked(host: string): Promise<void> {
+export function unmarkBlocked(host: string): Promise<void> {
   const h = host.toLowerCase();
-  try {
-    const list = (await sessionBlockedHosts()).filter((x) => x !== h);
-    await chrome.storage.session.set({ blocked: list });
-  } catch {
-    // best-effort
-  }
+  return inOrder(async () => {
+    try {
+      const list = (await sessionBlockedHosts()).filter((x) => x !== h);
+      await chrome.storage.session.set({ blocked: list });
+    } catch {
+      // best-effort
+    }
+  });
 }

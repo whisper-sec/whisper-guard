@@ -3,6 +3,9 @@
 
    The full-page interstitial for an evidenced threat.
 
+   For a block Guard made (the "stopped" state; the other states are at the
+   end of this file and are neutral on purpose):
+
    It is a red room, and it stays a red room in daylight. The ground, the
    card and the rules are all MIXED from the theme's own crit hue into the
    theme's own surfaces, so the page follows the reader's colour scheme
@@ -94,6 +97,12 @@ p { color: var(--w-text); }
   margin-top: 8px;
 }
 .linkish:hover { color: var(--w-text); }
+/* Disabled, it is a sentence and not a way through: no underline, no pointer. */
+.linkish:disabled {
+  color: color-mix(in srgb, var(--w-text) 80%, transparent);
+  text-decoration: none;
+  cursor: default;
+}
 
 .privacy { font-size: 11px; color: var(--w-muted); margin-top: 26px; }
 
@@ -195,3 +204,33 @@ p { color: var(--w-text); }
   line-height: 1.5;
 }
 .ev-note { margin-top: 12px; }
+
+
+/* ---------------------------------------------------------- the states
+
+   The page paints its stop only once the background has confirmed one.
+   Until then nothing is drawn (the space is kept, so nothing jumps), and in
+   every state but "stopped" the page uses the theme's neutral ink and
+   surfaces, never the alarm tone. */
+
+h1 { min-height: 3.2em; }
+
+main[data-state="pending"] .stop,
+main[data-state="pending"] h1,
+main[data-state="pending"] #detail,
+main[data-state="pending"] #btn-continue,
+main[data-state="pending"] #privacy { visibility: hidden; }
+
+body:has(main:not([data-state="stopped"])) { background: var(--w-bg); }
+main:not([data-state="stopped"]) .stop { color: var(--w-muted); }
+/* "Could not be confirmed" is its own state, in the tone the page already
+   uses for a read that did not come back. */
+main[data-state="unconfirmed"] .stop { color: var(--w-v-low); }
+main:not([data-state="stopped"]) .btn,
+main:not([data-state="stopped"]) .btn.primary {
+  background: var(--w-card);
+  color: var(--w-text);
+  border-color: var(--w-line-strong);
+}
+main:not([data-state="stopped"]) .btn:hover,
+main:not([data-state="stopped"]) .btn.primary:hover { border-color: var(--w-text); filter: none; }

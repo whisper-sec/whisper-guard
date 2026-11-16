@@ -37,6 +37,7 @@ import type { PreemptDecision, PreemptDisposition } from "./preempt";
 export type BgRequest =
   | { kind: "getTabState"; tabId: number }
   | { kind: "getSession" }
+  | { kind: "getBlock"; host: string }
   | { kind: "getSettings" }
   | { kind: "setSettings"; patch: Partial<Settings> }
   | { kind: "signInStart" }
@@ -202,6 +203,9 @@ export type BgResponse =
   | { ok: true; quota: GraphQuota | null }
   | { ok: true; wins: WinsToday }
   | { ok: true; hosts: string[] } // the session block ledger (listBlocked)
+  // Whether Guard stopped this host this session, and the brand its own
+  // on-device check found for it (null when none, and when not blocked).
+  | { ok: true; block: { blocked: boolean; brand: string | null; brandDomain: string | null } }
   | { ok: true }
   | { ok: false; error: string; nokey?: boolean; nohost?: boolean };
 

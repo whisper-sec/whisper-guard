@@ -23,6 +23,7 @@ import {
   makeShieldDist,
   openDashboard,
   openPopup,
+  markHostBlocked,
   setKey,
   settlePopup,
   setSettings,
@@ -387,6 +388,7 @@ test("pre-click check window, keyless and keyed", async () => {
 });
 
 test("full-page warning", async () => {
+  await markHostBlocked(ext, LOOKALIKE);
   const page = await ext.context.newPage();
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.goto(

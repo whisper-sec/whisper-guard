@@ -3,8 +3,8 @@
 //
 // The full-page warning (Active Shield, evidenced-malicious only). Reached
 // two ways: a DNR session rule (cached-bad, pre-render) or tabs.update on
-// verdict (novel-bad). Back-to-safety always works, Escape works, and the
-// page never traps: continue-anyway is one click, honest and available.
+// verdict (novel-bad). Back always works, Escape works, and the page never
+// traps: for a block Guard made, continue-anyway is one honest click.
 //
 // THE ARGUMENT IS NOW DRAWN.
 //
@@ -25,16 +25,16 @@
 // if the graph is unreachable, and "we could not read this" never renders
 // as "there is nothing here".
 
-import { send } from "../shared/messages";
+import { send, type BgResponse } from "../shared/messages";
 import { renderChain } from "../shared/chain-view";
 import { countMarks, ratioBar } from "../shared/viz";
 import { chainSpine, type SpineRung } from "../shared/viz";
 import type { Protection, SiteChain } from "../shared/types";
 
 const params = new URLSearchParams(window.location.search);
-const host = (params.get("host") ?? "").toLowerCase();
-const brand = params.get("brand");
-const brandDomain = params.get("brandDomain");
+const named = (params.get("host") ?? "").toLowerCase();
+/** Only a value shaped like a hostname is treated as one, and shown. */
+const host = /^[a-z0-9._:[\]-]{1,253}$/.test(named) ? named : "";
 
 /** The age below which the product itself calls a name brand new. Drawn as
  *  a marker on the age scale so the reader sees the threshold, not just the
@@ -43,58 +43,110 @@ const NEW_DOMAIN_DAYS = 32;
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
-$("detail").textContent = host
-  ? brandDomain
-    ? `${host} is flagged as a known threat impersonating ${brand ?? brandDomain}. It was blocked before any credentials could be entered.`
-    : `${host} is flagged as a known threat in the Whisper security graph. It was blocked before any credentials could be entered.`
-  : "This page was flagged as a known threat.";
+// The page states a block, and offers to continue past one, only when the
+// background says Guard stopped this host. The address names the host and
+// nothing else: the brand shown comes from the background's answer.
+type PageState = "stopped" | "no-block" | "unconfirmed" | "framed" | "no-host";
 
-// Never an empty privacy line. When the page arrived without a host the
-// honest sentence is that nothing was checked, not silence: silence on a
-// privacy line is indistinguishable from a promise that was not kept.
-$("privacy").textContent = host
-  ? `Privacy: only "${host}" was checked. Your browsing stays yours.`
-  : "Privacy: nothing was sent. This page carries no host to check.";
+const SAYS_NOTHING_SENT = "Privacy: nothing was sent from this page.";
+
+const NEUTRAL: Record<Exclude<PageState, "stopped">, { heading: string; detail: string; cont: string; privacy: string }> = {
+  "no-block": {
+    heading: "No block is in effect for this address.",
+    detail: `Whisper Guard is not blocking ${host}, so there is nothing here to continue past. This says nothing about whether the address is safe.`,
+    cont: "There is no block to continue past",
+    privacy: SAYS_NOTHING_SENT,
+  },
+  unconfirmed: {
+    heading: "Whisper Guard could not confirm a block for this address.",
+    detail: `The extension did not answer, so this page cannot say whether ${host} is blocked. Reload the page to ask again.`,
+    cont: "Continuing is not available until the block is confirmed",
+    privacy: SAYS_NOTHING_SENT,
+  },
+  framed: {
+    heading: "Whisper Guard does not show its warning inside a frame.",
+    detail: "Open the address in its own tab to see whether Guard blocks it.",
+    cont: "Continuing is not available inside a frame",
+    privacy: SAYS_NOTHING_SENT,
+  },
+  "no-host": {
+    heading: "No block is in effect.",
+    detail: "This page was opened without an address, so there is nothing to block or continue to.",
+    cont: "There is no destination to continue to",
+    privacy: "Privacy: nothing was sent. This page carries no host to check.",
+  },
+};
+
+const mainEl = document.querySelector("main") as HTMLElement;
+const continueBtn = $("btn-continue") as HTMLButtonElement;
+const backBtn = $("btn-back");
+const realBtn = $("btn-real") as HTMLAnchorElement;
+const framed = window.top !== window.self;
+
+function setHeading(lines: string[]): void {
+  const h = $("heading");
+  h.replaceChildren(...lines.flatMap((l, i) => (i === 0 ? [l] : [document.createElement("br"), l])));
+}
+
+/** Show a state with nothing of the block in it. No evidence, no way past. */
+function showNeutral(state: Exclude<PageState, "stopped">): void {
+  const t = NEUTRAL[state];
+  $("glyph").textContent = "\u24D8";
+  setHeading([t.heading]);
+  $("detail").textContent = t.detail;
+  $("privacy").textContent = t.privacy;
+  continueBtn.textContent = t.cont;
+  continueBtn.disabled = true;
+  backBtn.textContent = "\u2190 Go back";
+  realBtn.hidden = true;
+  $("evidence").hidden = true;
+  mainEl.dataset["state"] = state;
+}
+
+/** The stop, as before. `brand` and `brandDomain` are the background's own. */
+function showStopped(brand: string | null, brandDomain: string | null): void {
+  $("glyph").textContent = "\u2B22";
+  setHeading(["Whisper stopped a dangerous page", "before you could enter your password."]);
+  $("detail").textContent = brandDomain
+    ? `${host} is flagged as a known threat impersonating ${brand ?? brandDomain}. It was blocked before any credentials could be entered.`
+    : `${host} is flagged as a known threat in the Whisper security graph. It was blocked before any credentials could be entered.`;
+  $("privacy").textContent = `Privacy: only "${host}" was checked. Your browsing stays yours.`;
+  backBtn.textContent = "\u2190 Back to safety";
+  if (brandDomain) {
+    realBtn.hidden = false;
+    realBtn.textContent = `Go to the real ${brandDomain}`;
+    realBtn.href = `https://${brandDomain}/`;
+  }
+  continueBtn.textContent = "I understand the risk, continue anyway";
+  continueBtn.disabled = false;
+  mainEl.dataset["state"] = "stopped";
+}
 
 function backToSafety(): void {
   if (window.history.length > 1) window.history.back();
   else window.location.href = "about:blank";
 }
 
-$("btn-back").addEventListener("click", backToSafety);
+backBtn.addEventListener("click", backToSafety);
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") backToSafety();
 });
 
-if (brandDomain) {
-  const real = $("btn-real") as HTMLAnchorElement;
-  real.hidden = false;
-  real.textContent = `Go to the real ${brandDomain}`;
-  real.href = `https://${brandDomain}/`;
-}
-
-// "Continue anyway" without a host used to be a control that did nothing at
-// all when pressed: no navigation, no message, no feedback. A button that
-// silently ignores a click on a page whose whole purpose is to stop someone
-// is worse than an absent one, because the reader concludes the product is
-// broken and goes around it. Without a host there is nothing to continue TO,
-// so the control says so and offers the way out that does work.
-const continueBtn = $("btn-continue");
-const framed = window.top !== window.self;
-if (host === "") {
-  continueBtn.textContent = "There is no destination to continue to";
-  (continueBtn as HTMLButtonElement).disabled = true;
-} else if (framed) {
-  // Shown inside a frame, the page is only a notice: it sends nothing.
-  continueBtn.textContent = "Continuing is not available inside a frame";
-  (continueBtn as HTMLButtonElement).disabled = true;
-} else {
-  continueBtn.addEventListener("click", async () => {
-    continueBtn.textContent = "Continuing...";
-    await send({ kind: "allowHost", host, session: true }).catch(() => undefined);
+// "Continue anyway" is one honest click, and only while the background says
+// the block is Guard's. Anything but an ok answer means there is no block to
+// continue past, and the page says so instead of navigating.
+continueBtn.addEventListener("click", async () => {
+  if (mainEl.dataset["state"] !== "stopped") return;
+  continueBtn.disabled = true;
+  continueBtn.textContent = "Continuing...";
+  const answer = await send({ kind: "allowHost", host, session: true }).catch(() => undefined);
+  if (answer?.ok === true) {
     window.location.href = `https://${host}/`;
-  });
-}
+  } else {
+    // No answer is not a "no": the page says which of the two it got.
+    showNeutral(answer === undefined ? "unconfirmed" : "no-block");
+  }
+});
 
 // ------------------------------------------------------------ drawn metrics
 
@@ -233,8 +285,6 @@ function drawSpine(chain: SiteChain): void {
 // ------------------------------------------------------------ the load
 
 async function loadEvidence(): Promise<void> {
-  if (host === "") return;
-
   // Both reads at once. The chain is the case and the protection carries
   // the citations; neither is worth serialising behind the other on a page
   // that is already interrupting somebody.
@@ -249,6 +299,8 @@ async function loadEvidence(): Promise<void> {
     }).catch(() => ({ ok: false as const, error: "unreachable" })),
   ]);
 
+  // The page may have left the stopped state while the reads were out.
+  if (mainEl.dataset["state"] !== "stopped") return;
   const box = $("evidence");
   box.hidden = false;
 
@@ -293,4 +345,15 @@ async function loadEvidence(): Promise<void> {
   }
 }
 
-if (!framed) void loadEvidence();
+async function start(): Promise<void> {
+  if (host === "") return showNeutral("no-host");
+  // Shown inside a frame, the page is only a notice: it asks nothing and sends nothing.
+  if (framed) return showNeutral("framed");
+  const res = await send<BgResponse>({ kind: "getBlock", host }).catch(() => undefined);
+  if (!res || res.ok !== true || !("block" in res)) return showNeutral("unconfirmed");
+  if (!res.block.blocked) return showNeutral("no-block");
+  showStopped(res.block.brand, res.block.brandDomain);
+  await loadEvidence();
+}
+
+void start();

@@ -257,9 +257,10 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
     if (!current()) return;
     if (!allowed) {
       if (rung === "blocking") {
-        await addBlockRule(hostname, state.detector);
+        // The tab moves to the warning page only for a block that was recorded.
+        const recorded = await addBlockRule(hostname, state.detector);
         if (!current()) return;
-        await redirectToWarning(tabId, hostname, state.detector, current);
+        if (recorded) await redirectToWarning(tabId, hostname, state.detector, current);
       } else if (rung === "conversational" && (settings.amberBanner || settings.fieldGuard)) {
         await injectGuard(tabId, {
           host: hostname,
@@ -729,6 +730,11 @@ function senderMaySend(kind: unknown, sender?: chrome.runtime.MessageSender): bo
   return true;
 }
 
+/** The warning page asks about, and acts on, only a host Guard stopped. */
+function fromWarningPage(sender?: chrome.runtime.MessageSender): boolean {
+  return (sender?.url ?? "").startsWith(ext.runtime.getURL("warning.html"));
+}
+
 async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Promise<BgResponse> {
   if (!senderMaySend((msg as { kind?: unknown } | null)?.kind, sender)) {
     return { ok: false, error: "Whisper Guard does not handle this request from here." };
@@ -1111,7 +1117,28 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       }
       return { ok: true };
     }
+    case "getBlock": {
+      const host = String(msg.host ?? "").toLowerCase();
+      const blocked = host !== "" && (await sessionBlockedHosts()).includes(host);
+      let hit: DetectorHit | null = null;
+      if (blocked) {
+        const settings = await getSettings();
+        hit = await detect(host, settings.nearMiss, settings.allowlist);
+      }
+      return { ok: true, block: { blocked, brand: hit?.brand ?? null, brandDomain: hit?.brandDomain ?? null } };
+    }
     case "allowHost": {
+      if (fromWarningPage(sender)) {
+        // From the warning page: only for a host Guard is blocking, or one the
+        // session already allows (the panel cleared it meanwhile), where a
+        // session allow changes nothing.
+        const host = String(msg.host ?? "").toLowerCase();
+        const blocking = (await sessionBlockedHosts()).includes(host);
+        const alreadyAllowed = msg.session === true && (await sessionAllowed(host));
+        if (!blocking && !alreadyAllowed) {
+          return { ok: false, error: "Whisper Guard is not blocking this host, so there is nothing to allow." };
+        }
+      }
       await allowForSession(msg.host);
       await removeBlockRule(msg.host);
       if (!msg.session) {

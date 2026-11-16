@@ -19,6 +19,7 @@ import {
   makeShieldDist,
   openDashboard,
   setKey,
+  markHostBlocked,
   setSettings,
   visit,
   waitForIcon,
@@ -101,6 +102,7 @@ async function browse(hosts: string[]): Promise<void> {
 // ===========================================================================
 
 test("the warning page draws the join, and every mark comes from a measurement", async () => {
+  await markHostBlocked(ext, EVIL);
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/warning.html?host=${EVIL}`);
 
@@ -148,6 +150,7 @@ test("CONTROL: an unreadable walk is drawn as unreadable, never as an empty one"
   const UNREACHABLE = `unreachable-${EVIL}`;
   net.graphMode = "down";
   try {
+    await markHostBlocked(ext, UNREACHABLE);
     const page = await ext.context.newPage();
     await page.goto(`chrome-extension://${ext.id}/warning.html?host=${UNREACHABLE}`);
     await expect(page.locator("#ev-completeness")).toContainText("unreadable", { timeout: 20_000 });

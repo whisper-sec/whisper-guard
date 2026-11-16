@@ -24,6 +24,7 @@ import {
   extensionPage,
   launchExtension,
   makeShieldDist,
+  markHostBlocked,
   openDashboard,
   setKey,
   setSettings,
@@ -240,6 +241,7 @@ test("should leave the warning page inert when it is shown inside a frame", asyn
   net.setVerdict(control, MALICIOUS);
   net.setVerdict(FRAME_HOST, MALICIOUS);
   const { page, frame } = await framedWarning("frame-outer-guard-e2e.com", FRAME_HOST);
+  await markHostBlocked(ext, control);
   const top = await ext.context.newPage();
   try {
     await expect(frame.locator("#btn-continue")).toBeDisabled();
@@ -254,7 +256,9 @@ test("should leave the warning page inert when it is shown inside a frame", asyn
     expect(readsNaming(FRAME_HOST)).toBe(0);
     expect(await sessionAllowList()).not.toContain(FRAME_HOST);
 
-    // The router declines allowHost from the framed page itself.
+    // The router declines allowHost from the framed page itself, also for a
+    // host Guard is blocking.
+    await markHostBlocked(ext, FRAME_HOST);
     const answer = (await frame.evaluate(
       (h) => chrome.runtime.sendMessage({ kind: "allowHost", host: h, session: false }),
       FRAME_HOST,
@@ -272,6 +276,7 @@ test("should leave the warning page inert when it is shown inside a frame", asyn
 test("should still allow the host from the warning page shown as a tab's own page", async () => {
   const host = "frame-top-allow-guard-e2e.com";
   net.setVerdict(host, MALICIOUS);
+  await markHostBlocked(ext, host);
   const top = await ext.context.newPage();
   try {
     await top.goto(`chrome-extension://${ext.id}/warning.html?host=${host}`);
