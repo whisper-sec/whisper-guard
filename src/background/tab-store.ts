@@ -10,7 +10,7 @@
 // verdict, the icon). Never a URL. storage.session is in memory, cleared when
 // the browser restarts, and closed to page-injected layers by default.
 //
-// Private-window tabs are never written: the answer comes from
+// Nothing is written for a private-window tab: the answer comes from
 // tabs.get(...).incognito, which needs no "tabs" permission, and a lookup that
 // fails does not write (fail closed).
 
@@ -34,6 +34,14 @@ async function isPrivate(tabId: number): Promise<boolean | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * True only for a tab known to be in a normal window. A private-window tab, or
+ * a tab whose window kind cannot be read, writes nothing on this device.
+ */
+export async function mayKeepForTab(tabId: number): Promise<boolean> {
+  return (await isPrivate(tabId)) === false;
 }
 
 /**

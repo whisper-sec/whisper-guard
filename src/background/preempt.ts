@@ -31,7 +31,8 @@ import { recordWin } from "./wins";
 // wins record (wins.ts) stays category + count and never learns a hostname.
 const countedPreemptHosts = new Set<string>();
 
-export async function preemptCheck(rawHost: string): Promise<PreemptDecision> {
+/** `mayCache` is false for a click from a private-window tab: the answer is not kept. */
+export async function preemptCheck(rawHost: string, mayCache: boolean): Promise<PreemptDecision> {
   const host = rawHost.replace(/\.$/, "").toLowerCase();
   if (host === "" || isPrivateHost(host)) return { action: "allow" };
   if (await sessionAllowed(host)) return { action: "allow" };
@@ -43,7 +44,7 @@ export async function preemptCheck(rawHost: string): Promise<PreemptDecision> {
     if (!(await getSettings()).cloudCheck) return { action: "allow" };
     try {
       verdict = await assessHostKeyless(host, PREEMPT_ASSESS_TIMEOUT_MS);
-      await cachePut(verdict);
+      if (mayCache) await cachePut(verdict);
     } catch {
       return { action: "allow" };
     }

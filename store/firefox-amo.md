@@ -48,8 +48,12 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
   `edr.whisper.security` in a tab (the console's new name; opened, never
   fetched). Each tab's verdict (a hostname, the verdict and the toolbar mark,
   never a URL) is kept in `storage.session` so it survives the background
-  script being suspended; nothing is kept for a private-window tab. A check
-  answer that arrives after the tab has moved on is discarded.
+  script being suspended. For a private-window tab that state, the
+  destination log and the session risk list are not written, and the page
+  check and the two scans do not cache their answers. A block on a known
+  threat, a "continue anyway" the user chooses there, and what the warning
+  page or the panel reads for the site it shows can last until the browser
+  closes. A check answer that arrives after the tab has moved on is discarded.
 - `dns`: declared, not optional on Firefox. Used only for `*.ts.net` names; one
   connects directly only if it resolves to a Tailscale address.
 - `proxy`: optional, requested on a click when the user turns on "Protect
@@ -82,9 +86,13 @@ The full text behind the paste-ready notes above.
   paint, store, block or inject anything. Each tab's settled state (a
   hostname, the verdict and the mark, never a URL) is mirrored to
   `storage.session` so the popup still has it after the background script is
-  suspended; it is never written for a private-window tab, or when the window
-  kind cannot be read. The dashboard's 30 second refresh alarm now exists only
-  while a dashboard is open.
+  suspended. For a private-window tab, or when the window kind cannot be read,
+  that state, the destination log and the session risk list are not written,
+  and the page check, the link scan and the indicator scan do not cache their
+  answers; a block on a known threat, a "continue anyway" the user chooses
+  there, and what the warning page or the panel reads for the site it shows
+  can last until the browser closes. The dashboard's 30 second refresh alarm
+  now exists only while a dashboard is open.
 - **What changed in 2.7.0.** With the opt-in routing on, tailnet,
   private-network and intranet destinations connect directly. Firefox now
   declares `dns`, which is required because Firefox does not allow it as

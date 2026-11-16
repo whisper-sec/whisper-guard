@@ -26,7 +26,14 @@ import { detect } from "../detector/detector";
 import { getIndex } from "../detector/corpus";
 import { assessHost } from "./assess";
 import { cacheClear, cacheGet, cacheGetExact, cachePut } from "./cache";
-import { clearAllTabStates, clearTabState, forgetTabState, readTabState, saveTabState } from "./tab-store";
+import {
+  clearAllTabStates,
+  clearTabState,
+  forgetTabState,
+  mayKeepForTab,
+  readTabState,
+  saveTabState,
+} from "./tab-store";
 import {
   cancelDeviceFlow,
   deviceFlowState,
@@ -179,8 +186,12 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
 
   const settings = await getSettings();
 
+  // Nothing is written for a private-window tab, or one whose window kind
+  // cannot be read: not the destination log, the verdict cache or the risk list.
+  const keep = await mayKeepForTab(tabId);
+
   // The on-device destination log behind the "This browser" report.
-  void recordNav(hostname);
+  if (keep) void recordNav(hostname);
 
   // 1) The on-device detector, before anything that touches the network.
   state.detector = await detect(hostname, settings.nearMiss, settings.allowlist);
@@ -199,7 +210,7 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
       await paintIcon(tabId, "checking");
       try {
         verdict = await assessHost(hostname);
-        await cachePut(verdict);
+        if (keep) await cachePut(verdict);
       } catch (e) {
         state.graphError =
           e instanceof GraphError && e.reason === "auth"
@@ -232,7 +243,8 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
           ? `looks like ${state.detector.brandDomain}`
           : (verdict?.label ?? "flagged by the graph");
     if (!current()) return;
-    const first = await recordRisk(hostname, reason);
+    // Without a record there is no "first": the pulse still shows once per check.
+    const first = keep ? await recordRisk(hostname, reason) : true;
     if (!current()) return;
     if (first) await pulseBadge(tabId, state.icon === "malicious" ? "#DC2626" : "#F59E0B");
   }
@@ -932,7 +944,7 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       return { ok: true, verification };
     }
     case "preemptCheck":
-      return { ok: true, preempt: await preemptCheck(msg.host) };
+      return { ok: true, preempt: await preemptCheck(msg.host, sender?.tab?.incognito === false) };
     case "preemptArm": {
       // Popup-open arming: opening the popup is a real extension
       // invocation, so activeTab makes THIS tab scriptable even without
