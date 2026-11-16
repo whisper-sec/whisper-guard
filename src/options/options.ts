@@ -33,6 +33,15 @@ async function renderShieldDeps(settings: Settings): Promise<void> {
     check(id).disabled = !active;
     $(noteId).hidden = active;
   }
+  // The cookie decline toggle stays usable and keeps the stored preference;
+  // the note only says where it can run.
+  const reach = $("cookiedecline-reach");
+  reach.hidden = !settings.cookieDecline;
+  reach.textContent = !settings.cookieDecline
+    ? ""
+    : active
+      ? "Runs on every page."
+      : "Runs only on a tab where you open Guard. Active Shield runs it on every page.";
 }
 
 async function readSettings(): Promise<Settings | null> {
