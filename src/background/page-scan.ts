@@ -28,6 +28,7 @@ import type { GraphBand } from "../shared/types";
 import { assessHosts } from "./assess";
 import { graphQuery } from "./graph-client";
 import { cacheGet, cachePut } from "./cache";
+import { mayKeepForTab } from "./tab-store";
 
 /**
  * The facts only a graph holds, attached to one indicator. Both of these are
@@ -126,6 +127,8 @@ export async function scanTabIocs(
     ),
   ];
 
+  // Nothing is written for a private-window tab.
+  const keep = await mayKeepForTab(tabId);
   const verdicts = new Map<string, { band: GraphBand; label: string | null }>();
   const misses: string[] = [];
   for (const host of hosts) {
@@ -139,7 +142,7 @@ export async function scanTabIocs(
     for (const host of batch) {
       const v = got.get(host);
       if (v) {
-        await cachePut(v);
+        if (keep) await cachePut(v);
         verdicts.set(host, { band: v.band, label: v.label });
       }
     }

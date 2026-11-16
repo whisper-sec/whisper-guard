@@ -26,6 +26,7 @@ import { registrableDomain } from "../shared/psl";
 import type { GraphBand, LinkScanResult, LinkVerdictRow } from "../shared/types";
 import { assessHosts } from "./assess";
 import { cacheGet, cachePut } from "./cache";
+import { mayKeepForTab } from "./tab-store";
 
 /**
  * Runs INSIDE the page (serialized by chrome.scripting): collect the
@@ -92,7 +93,9 @@ export async function scanTabLinks(tabId: number): Promise<LinkScanResult> {
   const truncated = unique.length > LINK_SCAN_HOST_CAP;
   const wanted = unique.slice(0, LINK_SCAN_HOST_CAP).map(([host]) => host);
 
-  // Cache first; one batched assess per chunk of misses.
+  // Cache first; one batched assess per chunk of misses. Nothing is written
+  // for a private-window tab.
+  const keep = await mayKeepForTab(tabId);
   const verdicts = new Map<string, { band: GraphBand; label: string | null }>();
   const misses: string[] = [];
   for (const host of wanted) {
@@ -106,7 +109,7 @@ export async function scanTabLinks(tabId: number): Promise<LinkScanResult> {
     for (const host of batch) {
       const v = got.get(host);
       if (v) {
-        await cachePut(v);
+        if (keep) await cachePut(v);
         verdicts.set(host, { band: v.band, label: v.label });
       } else {
         // No row for a host we asked about: honest UNKNOWN, never invented.
