@@ -363,6 +363,10 @@ ext.webNavigation.onCommitted.addListener((details) => {
     }
     return;
   }
+  // The cookie-decline pass runs only in the frames of the page it was started
+  // for: the record belongs to the page that was armed, and a new page gets
+  // its own when it is armed.
+  consentArmedUrl.delete(details.tabId);
   // The browser resets the tab's action icon and title on every committed
   // cross-document navigation, so the painter's memory of it is stale now.
   forgetTab(details.tabId);
@@ -937,16 +941,20 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       // blocking-rung page is not armed: the warning layer owns it.
       const st = tabs.get(msg.tabId);
       if (st?.eligible && st.hostname && st.icon !== "malicious") {
-        await armPreempt(msg.tabId, st.hostname);
-        await armConsent(msg.tabId);
         // RECORD THE PAGE. The consent pass runs in every frame, so the win
         // tally de-duplicates a decline once per PAGE using this map. Arming
         // from the popup without writing to it meant every decline on a
         // popup-armed page took the "no page known" path and skipped the
         // de-duplication entirely - the exact per-frame inflation the map
         // exists to prevent, on the one arming route that has no other.
+        //
+        // Written before the arming awaits: the record names the page the
+        // panel was opened on, and a navigation that commits while the arming
+        // is in flight clears it, so it never names the page that came after.
         const url = lastUrl.get(msg.tabId);
         if (url !== undefined) consentArmedUrl.set(msg.tabId, url);
+        await armPreempt(msg.tabId, st.hostname);
+        await armConsent(msg.tabId);
       }
       return { ok: true };
     }

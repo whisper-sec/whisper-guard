@@ -34,6 +34,8 @@ import { E2ENetwork } from "./helpers/servers";
 import {
   launchExtension,
   makeShieldDist,
+  navigateInTab,
+  openPopup,
   setKey,
   setSettings,
   visit,
@@ -52,6 +54,8 @@ const TOP_S = "site-i-frames-guard-e2e.com"; // frames a wall on its own origin
 const TOP_2 = "site-j-frames-guard-e2e.com"; // frames TWO walls
 const TOP_D = "site-k-frames-guard-e2e.com"; // frames a decoy that must be left alone
 const TOP_L = "site-l-frames-guard-e2e.com"; // injects its wall frame AFTER load
+const TOP_M = "site-m-frames-guard-e2e.com"; // first page of the tab, armed from the panel
+const TOP_N = "site-n-frames-guard-e2e.com"; // second page of the same tab, framing a wall
 const FRAME_PATH = "/w-frame";
 /**
  * How long site l waits before injecting its wall frame.
@@ -197,12 +201,18 @@ async function resetWins(): Promise<void> {
   });
 }
 
-/** Which frames of a tab have the consent pass armed, and which the click guard. */
-async function frameArming(tabId: number): Promise<{ consent: number[]; preempt: number[] }> {
+/**
+ * Which frames of a tab have the consent pass armed, and which the click guard.
+ * `live` lists every frame where the content script answered at all, armed or not.
+ */
+async function frameArming(
+  tabId: number,
+): Promise<{ consent: number[]; preempt: number[]; live: number[] }> {
   return ext.sw.evaluate(async (id: number) => {
     const frames = (await chrome.webNavigation.getAllFrames({ tabId: id })) ?? [];
     const consent: number[] = [];
     const preempt: number[] = [];
+    const live: number[] = [];
     for (const f of frames) {
       let r: { armed?: boolean; consent?: boolean } | undefined;
       try {
@@ -214,17 +224,18 @@ async function frameArming(tabId: number): Promise<{ consent: number[]; preempt:
       } catch {
         continue; // no content script in that frame
       }
+      live.push(f.frameId);
       if (r?.consent === true) consent.push(f.frameId);
       if (r?.armed === true) preempt.push(f.frameId);
     }
-    return { consent, preempt };
+    return { consent, preempt, live };
   }, tabId);
 }
 
 test.beforeAll(async () => {
   net = new E2ENetwork();
   await net.start();
-  for (const host of [TOP_X, CMP_X, TOP_S, TOP_2, TOP_D, TOP_L]) {
+  for (const host of [TOP_X, CMP_X, TOP_S, TOP_2, TOP_D, TOP_L, TOP_M, TOP_N]) {
     net.setVerdict(host, { band: "NONE", coverage: "known-clean", label: "clean" });
   }
   net.setPage(CMP_X, wallDoc("vendor wall"));
@@ -238,6 +249,8 @@ test.beforeAll(async () => {
   net.setPagePath(TOP_D, FRAME_PATH, decoyDoc());
   net.setPage(TOP_D, framingDoc("site k", [`https://${TOP_D}${FRAME_PATH}`]));
   net.setPage(TOP_L, lateFrameDoc());
+  net.setPage(TOP_M, framingDoc("site m", [`https://${CMP_X}/`]));
+  net.setPage(TOP_N, framingDoc("site n", [`https://${CMP_X}/`]));
 
   ext = await launchExtension({ proxyPort: net.proxyPort, dist: makeShieldDist() });
   await setKey(ext, null); // keyless throughout: auto-decline is a keyless feature
@@ -426,4 +439,59 @@ test("a wall in a frame injected AFTER load is declined too", async () => {
   // The bound holds for a late frame as much as an early one.
   expect((await frameArming(tabId)).preempt).toEqual([0]);
   await page.close();
+});
+
+test("the pass runs only in the frames of the page it was started for", async () => {
+  // With Active Shield off the navigation check arms nothing, so a page is
+  // armed only by opening the panel on its tab.
+  await setSettings(ext, { shield: false });
+  try {
+    const { page, tabId } = await visit(ext, `https://${TOP_M}/`);
+    await waitForIcon(ext, tabId, ["benign"]);
+    await expect.poll(() => page.frames().length, { timeout: 10_000 }).toBe(2);
+    const popup = await openPopup(ext, tabId);
+
+    // CONTROL: the page the panel was opened on is armed, in its sub-frame too.
+    await expect
+      .poll(async () => (await frameArming(tabId)).consent.length, { timeout: 15_000 })
+      .toBe(2);
+    await expect.poll(() => frameClicks(page, 1), { timeout: 15_000 }).toEqual([
+      "onetrust-reject-all-handler",
+    ]);
+    await popup.close();
+
+    // The same tab moves to a second page, which nothing has armed.
+    await navigateInTab(page, `https://${TOP_N}/`);
+    await expect.poll(() => page.frames().length, { timeout: 10_000 }).toBe(2);
+    await page.frames()[1]!.waitForLoadState("load");
+    await waitForIcon(ext, tabId, ["benign"]);
+
+    // Anchor: a script injection into the sub-frame, awaited. Injection lands
+    // at document idle, so this returns only after any content script
+    // requested for the frame earlier has run.
+    await ext.sw.evaluate(async (id: number) => {
+      const frames = (await chrome.webNavigation.getAllFrames({ tabId: id })) ?? [];
+      const sub = frames.find((f) => f.frameId !== 0);
+      if (!sub) throw new Error("no sub-frame");
+      await chrome.scripting.executeScript({
+        target: { tabId: id, frameIds: [sub.frameId] },
+        func: () => undefined,
+      });
+    }, tabId);
+
+    // No frame of the second page has the content script at all: the stronger
+    // statement, and one that does not wait on a later settings message.
+    const second = await frameArming(tabId);
+    expect(second.live).toEqual([]);
+    expect(second.consent).toEqual([]);
+    // The wall is there, its recorder is running, and nothing pressed it.
+    const wall = page.frames()[1]!;
+    await expect(wall.locator("#onetrust-banner-sdk")).toBeVisible();
+    expect(
+      await wall.evaluate(() => (window as unknown as { __clicks?: string[] }).__clicks),
+    ).toEqual([]);
+    await page.close();
+  } finally {
+    await setSettings(ext, { shield: true });
+  }
 });
