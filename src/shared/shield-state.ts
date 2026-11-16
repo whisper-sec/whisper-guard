@@ -25,3 +25,17 @@ export async function shieldGranted(): Promise<boolean> {
 export function shieldActive(s: Pick<Settings, "shield">, granted: boolean): boolean {
   return s.shield && granted;
 }
+
+/**
+ * Numbers each re-render of a page's Active Shield state. A read takes its
+ * number when it STARTS and asks `isLatest()` after its last await, right
+ * before it touches the page: two reads that overlap finish in any order, and
+ * only the newest may draw, so a slow older read cannot put a stale state back.
+ */
+export function newestRead(): () => () => boolean {
+  let latest = 0;
+  return () => {
+    const mine = ++latest;
+    return () => mine === latest;
+  };
+}

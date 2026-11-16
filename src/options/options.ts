@@ -10,10 +10,30 @@ import { send } from "../shared/messages";
 import { CONSOLE_URL } from "../shared/config";
 import type { Settings } from "../shared/types";
 import { ext } from "../shared/api";
-import { shieldActive, shieldGranted } from "../shared/shield-state";
+import { newestRead, shieldActive, shieldGranted } from "../shared/shield-state";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const check = (id: string): HTMLInputElement => $(id) as unknown as HTMLInputElement;
+
+const nextShieldRead = newestRead();
+
+const COOKIE_REACH_TAB_ONLY = "Runs only on a tab where you open Guard. Active Shield runs it on every page.";
+
+/** The Active Shield block with no grant: nothing on, both sub-toggles disabled. */
+function drawShieldOff(): void {
+  check("opt-shield").checked = false;
+  for (const [id, noteId] of [
+    ["opt-banner", "banner-needs"],
+    ["opt-fieldguard", "fieldguard-needs"],
+  ] as const) {
+    check(id).checked = false;
+    check(id).disabled = true;
+    $(noteId).hidden = false;
+  }
+  // The cookie decline note, when shown, no longer says it runs everywhere.
+  const reach = $("cookiedecline-reach");
+  if (!reach.hidden) reach.textContent = COOKIE_REACH_TAB_ONLY;
+}
 
 /**
  * The Active Shield block. The two sub-toggles cannot do anything until
@@ -21,8 +41,17 @@ const check = (id: string): HTMLInputElement => $(id) as unknown as HTMLInputEle
  * unchecked and disabled with a note. The stored preference is never touched
  * here: render only, no writes.
  */
-async function renderShieldDeps(settings: Settings): Promise<void> {
+async function renderShieldDeps(settings: Settings | null, isLatest: () => boolean): Promise<void> {
   const granted = await shieldGranted();
+  // A newer read has started since this one did: let it draw.
+  if (!isLatest()) return;
+  if (!settings) {
+    // The settings could not be read: the grant alone decides. Without it
+    // nothing is drawn on. With it the preferences are unknown, so the
+    // page is left as it is rather than guessed.
+    if (!granted) drawShieldOff();
+    return;
+  }
   const active = shieldActive(settings, granted);
   check("opt-shield").checked = active;
   for (const [id, noteId, pref] of [
@@ -41,28 +70,33 @@ async function renderShieldDeps(settings: Settings): Promise<void> {
     ? ""
     : active
       ? "Runs on every page."
-      : "Runs only on a tab where you open Guard. Active Shield runs it on every page.";
+      : COOKIE_REACH_TAB_ONLY;
 }
 
 async function readSettings(): Promise<Settings | null> {
-  const res = await send<{ ok: true; settings: Settings }>({ kind: "getSettings" });
-  return res.ok ? res.settings : null;
+  // A read that rejects (the worker stopped mid-request) is a failed read.
+  const res = await send<{ ok: true; settings: Settings }>({ kind: "getSettings" }).catch(() => null);
+  return res?.ok ? res.settings : null;
 }
 
 async function refresh(): Promise<void> {
+  const isLatest = nextShieldRead();
   const res = await send<{
     ok: true;
     settings: Settings;
     signedIn: boolean;
     corpusVersion: number;
     corpusUpdated: string;
-  }>({ kind: "getSettings" });
-  if (!res.ok) return;
+  }>({ kind: "getSettings" }).catch(() => null);
+  if (!res?.ok) {
+    await renderShieldDeps(null, isLatest);
+    return;
+  }
 
   $("account-signedout").hidden = res.signedIn;
   $("account-signedin").hidden = !res.signedIn;
 
-  await renderShieldDeps(res.settings);
+  await renderShieldDeps(res.settings, isLatest);
   check("opt-cookiedecline").checked = res.settings.cookieDecline;
   check("opt-nearmiss").checked = res.settings.nearMiss;
   check("opt-corpusupdate").checked = res.settings.corpusAutoUpdate;
@@ -81,8 +115,8 @@ async function refresh(): Promise<void> {
 }
 
 async function rerenderShield(): Promise<void> {
-  const s = await readSettings();
-  if (s) await renderShieldDeps(s);
+  const isLatest = nextShieldRead();
+  await renderShieldDeps(await readSettings(), isLatest);
 }
 
 function wire(): void {
