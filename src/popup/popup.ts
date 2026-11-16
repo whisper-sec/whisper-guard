@@ -462,6 +462,7 @@ function iocRow(r: PageScanResult["rows"][number]): HTMLElement {
   const name = document.createElement("span");
   name.className = "link-host";
   name.textContent = r.value;
+  name.title = r.value;
   row.append(chip, name);
   return row;
 }
@@ -551,7 +552,8 @@ async function runLinkScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Pr
 function renderIocScan(scan: PageScanResult): void {
   const summary = $("iocscan-summary");
   summary.hidden = false;
-  const risky = scan.rows.filter((r: PageScanResult["rows"][number]) => r.band === "CRITICAL" || r.band === "HIGH" || r.band === "MEDIUM");
+  const isFlagged = (r: PageScanResult["rows"][number]): boolean => r.band === "CRITICAL" || r.band === "HIGH" || r.band === "MEDIUM";
+  const risky = scan.rows.filter(isFlagged);
   const notAssessed = scan.rows.filter((r: PageScanResult["rows"][number]) => r.band === null).length;
   const bits: string[] = [];
   if (risky.length > 0) bits.push(`${risky.length} flagged`);
@@ -565,10 +567,14 @@ function renderIocScan(scan: PageScanResult): void {
 
   const list = $("iocscan-list");
   list.hidden = scan.rows.length === 0;
-  const rows = risky.length > 0 && scan.rows.length > 24 ? risky : scan.rows;
-  list.replaceChildren(
-    ...rows.slice(0, 80).map(iocRow),
-  );
+  const shown = risky.length > 0 && scan.rows.length > 24 ? risky : scan.rows;
+  // Flagged first, then assessed, then never assessed; found order within each.
+  const rank = (r: PageScanResult["rows"][number]): number => (isFlagged(r) ? 0 : r.band === null ? 2 : 1);
+  const rows = shown
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i)
+    .map((x) => x.r);
+  list.replaceChildren(...rows.slice(0, 80).map(iocRow));
 
   const note = $("iocscan-note");
   note.hidden = false;

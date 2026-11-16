@@ -149,6 +149,77 @@ test("should draw unassessed indicators as Not assessed, never the ok chip", asy
   await page.close();
 });
 
+test("should list flagged rows first, then assessed, then Not assessed", async () => {
+  const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  const popup = await openPopup(ext, tabId);
+  await popup.locator("#btn-iocscan").click();
+  await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
+  await expect(popup.locator("#iocscan-list .link-row")).toHaveCount(5);
+
+  const chips = await popup.locator("#iocscan-list .link-row .w-chip").allTextContents();
+  const rank = (t: string): number => (t === "Not assessed" ? 2 : t === "MALICIOUS" || t === "HIGH" || t === "MEDIUM" ? 0 : 1);
+  const ranks = chips.map(rank);
+  expect(ranks, `chip order was ${chips.join(", ")}`).toEqual([...ranks].sort((a, b) => a - b));
+
+  const rows = popup.locator("#iocscan-list .link-row");
+  await expect(rows.nth(0).locator(".w-chip")).toHaveText("MALICIOUS");
+  await expect(rows.nth(0)).toContainText("evil-scan.com");
+  await expect(rows.nth(1)).toContainText("quiet-scan.com");
+
+  await popup.close();
+  await page.close();
+});
+
+test("should draw Not assessed without an outline and keep UNKNOWN dashed", async () => {
+  const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  const popup = await openPopup(ext, tabId);
+  await popup.locator("#btn-iocscan").click();
+  await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
+
+  const notAssessed = popup.locator("#iocscan-list .w-chip", { hasText: "Not assessed" }).first();
+  await expect(notAssessed).toHaveClass(/unassessed/);
+  const plain = await notAssessed.evaluate((el) => getComputedStyle(el).borderTopColor);
+  expect(plain, "a Not assessed chip draws no outline").toMatch(/^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$|^transparent$/);
+
+  const unknown = popup.locator("#iocscan-list .w-chip", { hasText: "UNKNOWN" });
+  await expect(unknown).toHaveClass(/unknown/);
+  const look = await unknown.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { style: s.borderTopStyle, color: s.borderTopColor };
+  });
+  expect(look.style).toBe("dashed");
+  expect(look.color).not.toMatch(/^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$|^transparent$/);
+
+  await popup.close();
+  await page.close();
+});
+
+test("should show the full value of every scan row on hover", async () => {
+  const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
+  await waitForIcon(ext, tabId, ["benign"]);
+  const popup = await openPopup(ext, tabId);
+  await popup.locator("#btn-iocscan").click();
+  await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
+
+  const cells = popup.locator("#iocscan-list .link-row .link-host");
+  const count = await cells.count();
+  expect(count).toBe(5);
+  for (let i = 0; i < count; i++) {
+    const text = await cells.nth(i).textContent();
+    await expect(cells.nth(i)).toHaveAttribute("title", text ?? "");
+  }
+
+  const hashCell = popup.locator("#iocscan-list .link-row .link-host", { hasText: HASH });
+  await expect(hashCell).toHaveAttribute("title", HASH);
+  const cut = await hashCell.evaluate((el) => el.scrollWidth > el.clientWidth);
+  expect(cut, "the hash is cut off in the row").toBe(true);
+
+  await popup.close();
+  await page.close();
+});
+
 test("should make no explain call when scanning or when a row is clicked", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
   await waitForIcon(ext, tabId, ["benign"]);
