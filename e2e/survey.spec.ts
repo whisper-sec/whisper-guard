@@ -28,6 +28,7 @@ import {
   makeShieldDist,
   openDashboard,
   openPopup,
+  markHostBlocked,
   setKey,
   visit,
   waitForIcon,
@@ -341,6 +342,7 @@ test("survey: the dashboard, all three views", async () => {
 });
 
 test("survey: the standalone pages", async () => {
+  await markHostBlocked(ext, EVIL);
   await surveyPage(`chrome-extension://${ext.id}/options.html`, "options", "options.png");
   await surveyPage(`chrome-extension://${ext.id}/firstrun.html`, "first run", "firstrun.png");
   await surveyPage(

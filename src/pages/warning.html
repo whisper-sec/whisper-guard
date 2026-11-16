@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="warning.css">
 </head>
 <body>
-  <main>
+  <main data-state="pending">
     <div class="w-lockup">
       <img src="knot.png" alt="Whisper" class="w-knot">
       <span class="w-wordmark">Whisper</span>
@@ -17,9 +17,13 @@
     </div>
 
     <!-- The interruption. Unchanged in force: this is the one moment the
-         product exists for, and nothing below it may soften the stop. -->
-    <div class="stop">&#11042;</div>
-    <h1>Whisper stopped a dangerous page<br>before you could enter your password.</h1>
+         product exists for, and nothing below it may soften the stop. The
+         glyph, heading and sentences are filled in by the script once the
+         background has said whether it stopped this host; until then they
+         are empty and hidden, so the page states nothing it has not
+         confirmed. -->
+    <div class="stop" id="glyph"></div>
+    <h1 id="heading"></h1>
     <p id="detail"></p>
 
     <!-- THE EVIDENCE. This page used to make its whole case in a four-row
@@ -47,10 +51,10 @@
     </section>
 
     <div class="actions">
-      <button id="btn-back" class="btn primary">&larr; Back to safety</button>
+      <button id="btn-back" class="btn primary">&larr; Go back</button>
       <a id="btn-real" class="btn" href="#" hidden></a>
     </div>
-    <button id="btn-continue" class="linkish">I understand the risk, continue anyway</button>
+    <button id="btn-continue" class="linkish" disabled></button>
     <p class="privacy" id="privacy"></p>
   </main>
   <script src="warning.js"></script>

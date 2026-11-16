@@ -29,7 +29,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
-import { launchExtension, openDashboard, openPopup, setKey, visit, waitForIcon, type Extension } from "./helpers/extension";
+import { launchExtension, markHostBlocked, openDashboard, openPopup, setKey, visit, waitForIcon, type Extension } from "./helpers/extension";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, "../src");
@@ -37,6 +37,20 @@ const DIST = resolve(HERE, "../dist/chromium");
 
 /** Every page the extension can put on screen. */
 const PAGES = ["popup.html", "dashboard.html", "options.html", "firstrun.html", "check-link.html", "warning.html"];
+
+/**
+ * The warning page has two tones, and both are measured: stopped (the alarm
+ * tone) and no block in effect (the neutral one).
+ */
+const WARNING_HOST = "theme-warning-guard-e2e.com";
+const NO_BLOCK_HOST = "theme-no-block-guard-e2e.com";
+const WARNING_STATES: Record<string, string> = {
+  [`warning.html?host=${WARNING_HOST}`]: "stopped",
+  [`warning.html?host=${NO_BLOCK_HOST}`]: "no-block",
+};
+
+/** What the rendered checks open: every page, the warning page once per tone. */
+const ADDRESSES = [...PAGES.filter((p) => p !== "warning.html"), ...Object.keys(WARNING_STATES)];
 
 // ------------------------------------------------------------ structure
 
@@ -81,6 +95,7 @@ test.beforeAll(async () => {
   net = new E2ENetwork();
   await net.start();
   ext = await launchExtension({ proxyPort: net.proxyPort });
+  await markHostBlocked(ext, WARNING_HOST);
 });
 test.afterAll(async () => {
   await ext?.close();
@@ -195,9 +210,11 @@ async function measure(tab: import("@playwright/test").Page): Promise<TextSample
 }
 
 test("the palette really flips, and every rendered glyph clears AA in both schemes", async () => {
-  for (const page of PAGES) {
+  for (const page of ADDRESSES) {
     const tab = await ext.context.newPage();
     await tab.goto(`chrome-extension://${ext.id}/${page}`);
+    const state = WARNING_STATES[page];
+    if (state !== undefined) await expect(tab.locator("main")).toHaveAttribute("data-state", state);
     await tab.waitForTimeout(400);
 
     const grounds: Record<string, string> = {};

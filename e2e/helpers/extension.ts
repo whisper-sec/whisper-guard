@@ -348,6 +348,20 @@ export async function setSettings(ext: Extension, patch: Record<string, unknown>
   }, patch);
 }
 
+/**
+ * Put a host in the stopped state for a spec that renders the warning page
+ * directly. It writes the same session block ledger entry a real stop records
+ * (the warning page asks the background whether the host is in it), so the
+ * page shows its blocked state without the spec having to stop a tab first.
+ */
+export async function markHostBlocked(ext: Extension, host: string): Promise<void> {
+  await ext.sw.evaluate(async (h: string) => {
+    const cur = (await chrome.storage.session.get("blocked"))["blocked"];
+    const list = Array.isArray(cur) ? (cur as string[]) : [];
+    if (!list.includes(h)) await chrome.storage.session.set({ blocked: [...list, h] });
+  }, host);
+}
+
 /** Open the popup pinned to a tab (the ?tab= debugging/testing affordance). */
 export async function openPopup(ext: Extension, tabId: number): Promise<Page> {
   const page = await ext.context.newPage();

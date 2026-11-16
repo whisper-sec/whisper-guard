@@ -245,6 +245,7 @@ const CHAIN = {
   ],
 };
 const REPLIES = {
+  getBlock: { ok: true, block: { blocked: true, brand: null, brandDomain: null } },
   getChain: { ok: true, chain: CHAIN },
   getProtection: { ok: true, protection: {
     host: WHOST, band: "CRITICAL", blocking: true, label: "credential-phishing suspect",

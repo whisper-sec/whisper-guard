@@ -22,6 +22,7 @@ import {
   makeProxyHolderExt,
   openDashboard,
   openPopup,
+  markHostBlocked,
   setKey,
   setSettings,
   visit,
@@ -157,6 +158,7 @@ test.describe("panel, pages", () => {
 
   test("pages: warning, check-link, firstrun, settings", async () => {
     await setKey(ext, MOCK_KEY);
+    await markHostBlocked(ext, LOOKALIKE);
     const warn = await ext.context.newPage();
     await warn.goto(`chrome-extension://${ext.id}/warning.html?host=${LOOKALIKE}&brand=PayPal&brandDomain=paypal.com`);
     await warn.waitForTimeout(800);

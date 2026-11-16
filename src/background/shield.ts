@@ -52,10 +52,19 @@ function warningUrl(host: string, brand?: DetectorHit | null): string {
   return chrome.runtime.getURL(`warning.html?${p.toString()}`);
 }
 
-/** Pre-render block for a KNOWN-bad host: a DNR session redirect rule. */
-export async function addBlockRule(host: string, hit: DetectorHit | null): Promise<void> {
-  if (!(await shieldGranted())) return;
-  if (await sessionAllowed(host)) return;
+/**
+ * Pre-render block for a KNOWN-bad host: a DNR session redirect rule.
+ * Answers whether the block was recorded; without the grant, or for a host
+ * the session allows, nothing is.
+ */
+export async function addBlockRule(host: string, hit: DetectorHit | null): Promise<boolean> {
+  if (!(await shieldGranted())) return false;
+  if (await sessionAllowed(host)) return false;
+  // Record the block first, so the warning page's question about this host can
+  // never arrive ahead of the record. The ledger also lets the popup list it
+  // and offer a clear: the DNR rule id is a non-reversible hash, so this is the
+  // only way back to the hostname.
+  await markBlocked(host);
   try {
     await ext.declarativeNetRequest.updateSessionRules({
       removeRuleIds: [ruleIdFor(host)],
@@ -77,10 +86,7 @@ export async function addBlockRule(host: string, hit: DetectorHit | null): Promi
   } catch {
     // DNR unavailable (engine parity): the tabs.update path still covers it.
   }
-  // mirror the block into the session ledger so the popup can list it and
-  // offer a clear - the DNR rule id is a non-reversible hash, so this is the only
-  // way back to the hostname.
-  await markBlocked(host);
+  return true;
 }
 
 export async function removeBlockRule(host: string): Promise<void> {
