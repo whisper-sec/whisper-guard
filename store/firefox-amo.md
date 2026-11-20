@@ -43,17 +43,22 @@ Upload `dist/whisper-guard-firefox-<version>.zip` (built by
 
 ## Review notes (paste into "Notes for reviewers")
 
-- **What changed since 2.7.0.** Bug fixes only. The permission lists, the
-  endpoints and the data categories are unchanged. The console link now opens
-  `edr.whisper.security` in a tab (the console's new name; opened, never
-  fetched). Each tab's verdict (a hostname, the verdict and the toolbar mark,
-  never a URL) is kept in `storage.session` so it survives the background
-  script being suspended. For a private-window tab that state, the
-  destination log and the session risk list are not written, and the page
-  check and the two scans do not cache their answers. A block on a known
-  threat, a "continue anyway" the user chooses there, and what the warning
-  page or the panel reads for the site it shows can last until the browser
-  closes. A check answer that arrives after the tab has moved on is discarded.
+- **What changed since 2.7.1.** Bug fixes only. The permission lists, the
+  endpoints and the data categories are unchanged; both manifests differ from
+  2.7.1 in the version alone. The page scan sends less: only the hostnames it
+  finds. The IP addresses, file hashes and CVE ids it finds read "Not
+  assessed" and are no longer sent. For a private-window tab the tab's state,
+  the destination log and the session risk list are not written, and the page
+  check, the click hold and the two scans do not cache their answers. A block
+  on a known threat, a "continue anyway" the user chooses there, and what the
+  warning page or the panel reads for the site it shows can last until the
+  browser closes. A page of the add-on itself may send the background any
+  message kind; any other sender may send only the four kinds the on-page
+  layer sends. The warning page works only as the top-level page of its tab,
+  and states a block and offers Continue only when the background answers
+  that it is blocking that host. A sign-in, a pasted key or a sign-out
+  re-checks the tabs already open: the same hostname-only request to the same
+  endpoint.
 - `dns`: declared, not optional on Firefox. Used only for `*.ts.net` names; one
   connects directly only if it resolves to a Tailscale address.
 - `proxy`: optional, requested on a click when the user turns on "Protect
@@ -75,8 +80,49 @@ Full notes: https://github.com/whisper-sec/whisper-guard/blob/main/store/firefox
 
 The full text behind the paste-ready notes above.
 
-- **What changed since 2.7.0.** Five fixes, no new permission, endpoint or
-  data category; both manifests differ from 2.7.0 in the version alone.
+- **What changed since 2.7.1.** Fixes only, no new permission, endpoint or
+  data category; both manifests differ from 2.7.1 in the version alone.
+  Page scan: it sends less. The scan makes no explain call any more, so only
+  the hostnames it finds are sent. In 2.7.1 the file hashes, CVE ids and IP
+  addresses it found were sent as well, for an explanation the list never
+  showed; they now read "Not assessed" and stay in the browser. Flagged rows
+  are listed first.
+  Private windows: 2.7.1 stopped writing a private-window tab's settled
+  state, and 2.7.2 applies that rule to the destination log, the session risk
+  list and the answer cache. For a private-window tab, or when the window
+  kind cannot be read, that state, the destination log and the session risk
+  list are not written, and the page check, the click hold, the link scan and
+  the indicator scan do not cache their answers; a block on a known threat, a
+  "continue anyway" the user chooses there, and what the warning page or the
+  panel reads for the site it shows can last until the browser closes. A held
+  middle, Ctrl, Cmd
+  or Shift click that the check clears is still reopened by the background
+  with `tabs.create` or `windows.create`; it now opens in the kind of window
+  the click came from, and a tab opens in the clicking tab's own window
+  (`windows.getAll` finds a window of that kind when the clicking tab has
+  gone).
+  Messages: the background handles each message kind only from the senders
+  that send it. A page under the add-on's own base URL may send any kind, and
+  any other sender may send only the four kinds the on-page layer sends. The
+  `dashboard` port is kept only from the dashboard page. The warning page
+  acts only as the top-level page of its tab; it asks the background whether
+  it is blocking the host it names, and states a block, reads its evidence
+  and offers Continue only when the answer is yes. On-page layer: the banner
+  and password-field caution settings are sent to the tab's top frame only,
+  and the cookie-decline pass runs only in the frames of the page it was
+  started for and ends when the tab navigates. Account changes: a sign-in, a
+  pasted key or a sign-out re-checks the http(s) tabs already open, with the
+  same hostname-only request to the same endpoint, under the same live-check
+  setting and private-host rules as any other check. A tab the background
+  has not seen is found with `tabs.query` and its address is read from its
+  main frame with `webNavigation.getFrame`; that address is held in memory
+  only and nothing but its hostname is sent. With the Fleet view open, the
+  control plane is read once per refresh period instead of twice, and a
+  failed read is shown as offline. Wording: first run and Settings show a
+  protection that needs Active Shield as not on, and say where the cookie
+  auto-decline can run.
+- **What changed in 2.7.1.** Five fixes, no new permission, endpoint or
+  data category; both manifests differed from 2.7.0 in the version alone.
   "Open in console" and "Open the console" now open `edr.whisper.security`,
   the console's new name, instead of its old name, which only redirects
   there; it is opened in a tab and never fetched, so it needs no host
@@ -86,13 +132,9 @@ The full text behind the paste-ready notes above.
   paint, store, block or inject anything. Each tab's settled state (a
   hostname, the verdict and the mark, never a URL) is mirrored to
   `storage.session` so the popup still has it after the background script is
-  suspended. For a private-window tab, or when the window kind cannot be read,
-  that state, the destination log and the session risk list are not written,
-  and the page check, the link scan and the indicator scan do not cache their
-  answers; a block on a known threat, a "continue anyway" the user chooses
-  there, and what the warning page or the panel reads for the site it shows
-  can last until the browser closes. The dashboard's 30 second refresh alarm
-  now exists only while a dashboard is open.
+  suspended; it is never written for a private-window tab, or when the window
+  kind cannot be read. The dashboard's 30 second refresh alarm now exists only
+  while a dashboard is open.
 - **What changed in 2.7.0.** With the opt-in routing on, tailnet,
   private-network and intranet destinations connect directly. Firefox now
   declares `dns`, which is required because Firefox does not allow it as
