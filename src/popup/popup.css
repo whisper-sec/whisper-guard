@@ -82,7 +82,7 @@ header {
   color: var(--w-text);
 }
 /* Ink-dim, not --w-faint: these are words a reader reads. --w-faint is the
-   theme's decoration ink (3.12:1 on the panel ground) and carrying a caption
+   theme's decoration ink (about 3:1 on the panel ground) and carrying a caption
    in it is how a label ends up invisible in a published figure that nobody
    looked at closely. */
 .scale-unit {

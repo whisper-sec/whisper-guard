@@ -17,7 +17,7 @@
 
 import { send, type BrowserReport, type DestinationDrill, type EndpointDetail, type FleetReport } from "../shared/messages";
 import { addressNode, mountProtectControl, type ProtectControl } from "../shared/protect-control";
-import { CANVAS_MONO, categoryColor, chartInk, onThemeChange } from "../shared/theme";
+import { CANVAS_MONO, categoryColor, chartInk, onThemeChange, redrawWhenMonoLoads } from "../shared/theme";
 import type { ActivityRow, EgressStatus, FleetEndpoint, GraphScale, SiteChain } from "../shared/types";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { compact, countUp, sparkline } from "../shared/spark";
@@ -807,6 +807,8 @@ function drawConstellation(canvas: HTMLCanvasElement, d: EndpointDetail): void {
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   ctx.font = `10px ${CANVAS_MONO}`;
+  // Registered before any return below, so the empty state is redrawn too.
+  redrawWhenMonoLoads(canvas, () => drawConstellation(canvas, d));
   const ink = chartInk();
 
   const top = d.topHosts.slice(0, 9);

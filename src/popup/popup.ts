@@ -43,7 +43,7 @@ import { compact, countUp, sparkline } from "../shared/spark";
 import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
-import { CANVAS_MONO, onThemeChange, themeColor } from "../shared/theme";
+import { CANVAS_MONO, onThemeChange, redrawWhenMonoLoads, themeColor } from "../shared/theme";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -135,13 +135,14 @@ function drawNeighborhood(canvas: HTMLCanvasElement, center: string, candidates:
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   ctx.font = `10px ${CANVAS_MONO}`;
+  redrawWhenMonoLoads(canvas, () => drawNeighborhood(canvas, center, candidates));
   const cx = W / 2;
   const cy = H / 2;
 
-  const line = themeColor("--w-line-strong", "#2c2c3c");
-  const muted = themeColor("--w-muted", "#9a9aae");
-  const text = themeColor("--w-text", "#ececf1");
-  const accent = themeColor("--w-accent", "#6ea8ff");
+  const line = themeColor("--w-line-strong", "#34343f");
+  const muted = themeColor("--w-muted", "#8888a0");
+  const text = themeColor("--w-text", "#eeeef0");
+  const accent = themeColor("--w-accent", "#b49cf5");
   // --w-v-crit is the FILLED plate colour (white text sits on it), and as
   // a dot on the panel ground it measures under the 3:1 non-text floor.
   // The outer ring below is what says CRITICAL; both draw in the hue that

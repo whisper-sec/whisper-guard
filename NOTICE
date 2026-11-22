@@ -6,3 +6,26 @@ This product bundles a snapshot of the Public Suffix List
 https://publicsuffix.org/, distributed under the Mozilla Public License 2.0
 (https://mozilla.org/MPL/2.0/). The snapshot is data only and is refreshed
 with scripts/fetch-psl.mjs.
+
+This product bundles two font families, both distributed under the SIL Open
+Font License, Version 1.1 (https://openfontlicense.org). The font files are
+woff2 builds taken unmodified from the fonts' @fontsource packages, in the
+Latin and Latin Extended subsets, and no font is fetched at run time.
+
+Lato 400, 700 and 900
+  Copyright (c) 2010-2011 by tyPoland Lukasz Dziedzic (team@latofonts.com)
+  with Reserved Font Name "Lato".
+  Source: the @fontsource/lato npm package, version 5.3.0
+  (https://fontsource.org/fonts/lato).
+  Files: assets/fonts/lato-*.woff2 in the repository, fonts/lato-*.woff2 in
+  each built package. Licence text: assets/fonts/OFL-Lato.txt and
+  fonts/OFL-Lato.txt.
+
+JetBrains Mono 400 and 700
+  Copyright 2020 The JetBrains Mono Project Authors
+  (https://github.com/JetBrains/JetBrainsMono).
+  Source: the @fontsource/jetbrains-mono npm package, version 5.3.0
+  (https://fontsource.org/fonts/jetbrains-mono).
+  Files: assets/fonts/jetbrains-mono-*.woff2 in the repository,
+  fonts/jetbrains-mono-*.woff2 in each built package. Licence text:
+  assets/fonts/OFL-JetBrainsMono.txt and fonts/OFL-JetBrainsMono.txt.
