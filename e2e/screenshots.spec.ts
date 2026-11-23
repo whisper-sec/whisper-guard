@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOOLBAR_BADGE } from "../src/shared/toolbar-badge";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
@@ -30,6 +31,7 @@ import {
   visit,
   waitForIcon,
   type Extension,
+  type IconState,
 } from "./helpers/extension";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -251,20 +253,36 @@ async function popupShot(tabId: number, file: string, prep?: (p: import("@playwr
 }
 
 test("toolbar icon states strip", async () => {
-  const states = [
-    ["benign", "BENIGN: green ring, check", "no known threat (not a warranty)"],
-    ["suspicious", "SUSPICIOUS: amber ring, triangle", "be careful; look-alikes land here"],
-    ["malicious", "MALICIOUS: filled red plate, octagon", "evidenced threat; STOP"],
-    ["unknown", "UNKNOWN: dashed slate ring", "the honest common state"],
-    ["checking", "CHECKING: breathing ring", "verdict in flight (<300ms typical)"],
-    ["signedout", "SIGNED OUT: dim mark, lock", "on-device protection still active"],
+  // The badge is not part of a tile file and no test can capture a real
+  // toolbar, so each cell draws the badge as a chip BESIDE the small tiles,
+  // from the product's own table; it does not claim where a browser puts it.
+  const cells: [IconState, string, string][] = [
+    ["benign", "BENIGN: green tile and ring, \u2713 badge", "no known threat (not a warranty)"],
+    ["suspicious", "SUSPICIOUS: amber tile and ring, ! badge", "be careful; look-alikes land here"],
+    ["malicious", "MALICIOUS: red tile, white mark, STOP badge", "evidenced threat; STOP"],
+    ["unknown", "UNKNOWN: dark tile, dashed outline, ? badge", "the honest common state"],
+    ["checking", "CHECKING: violet tile and ring, \u2026 badge", "verdict in flight (<300ms typical)"],
+    ["neutral", "NOT CHECKED: muted tile, no badge", "pages with no public hostname: browser pages, files, local addresses"],
+    ["signedout", "SIGNED OUT: dim mark, lock, no badge", "on-device protection still active"],
   ];
-  const rows = states
+  const swatch = (s: IconState, ground: string): string => {
+    const badge = TOOLBAR_BADGE[s];
+    const chip = badge
+      ? `<span class="chip" style="background:${badge.ground};color:${badge.ink}">${badge.text}</span>`
+      : `<span class="nobadge">no badge</span>`;
+    return `<div class="swatch" style="background:${ground}">
+        <img src="file://${ICONS}/${s}-16.png" width="16" height="16" alt="${s} 16px">
+        <img src="file://${ICONS}/${s}-32.png" width="32" height="32" alt="${s} 32px">
+        ${chip}
+      </div>`;
+  };
+  const rows = cells
     .map(
       ([s, label, sub]) => `
     <div class="cell">
       <img src="file://${ICONS}/${s}-128.png" width="96" height="96" alt="${s}">
-      <img src="file://${ICONS}/${s}-16.png" width="16" height="16" class="tiny" alt="${s} 16px">
+      ${swatch(s, "#e9e6f2")}
+      ${swatch(s, "#35363a")}
       <div class="label">${label}</div>
       <div class="sub">${sub}</div>
     </div>`,
@@ -274,16 +292,23 @@ test("toolbar icon states strip", async () => {
     body{background:#010103;color:#e8e8f2;font:14px system-ui;margin:0;padding:28px}
     h1{font-size:18px;margin:0 0 20px;font-weight:300}
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;max-width:900px}
-    .cell{background:#0d0d1a;border:1px solid #1e1e33;border-radius:12px;padding:18px;text-align:center;position:relative}
-    .tiny{position:absolute;top:12px;right:12px}
+    .cell{background:#0d0d1a;border:1px solid #1e1e33;border-radius:12px;padding:18px;text-align:center}
+    .swatch{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;padding:8px;border-radius:8px}
+    .chip{font:700 11px system-ui;padding:2px 6px;border-radius:9px;min-width:12px}
+    .nobadge{font:11px system-ui;color:#777790}
     .label{font-weight:600;margin-top:10px}
     .sub{color:#9a9ab0;font-size:12px;margin-top:4px}
-  </style><h1>Whisper Guard: toolbar states (128px, with the 16px form top-right)</h1><div class="grid">${rows}</div>`;
+  </style><h1>Whisper Guard: toolbar states (128px tile; the 16px and 32px tiles on a light and a dark ground; the badge the browser draws on the tile)</h1><div class="grid">${rows}</div>`;
   const tmp = join(mkdtempSync(join(tmpdir(), "whisper-guard-shots-")), "toolbar.html");
   writeFileSync(tmp, html);
   const page = await ext.context.newPage();
   await page.setViewportSize({ width: 980, height: 620 });
   await page.goto(`file://${tmp}`);
+  // Seven cells, every image loaded: a missing tile file must fail here.
+  await expect(page.locator(".cell")).toHaveCount(7);
+  const loaded = await page.$$eval("img", (imgs) => imgs.map((i) => i.naturalWidth > 0));
+  expect(loaded).toHaveLength(7 * 5);
+  expect(loaded.every(Boolean)).toBe(true);
   await page.screenshot({ path: join(SHOTS, "toolbar-states.png"), fullPage: true });
   await page.close();
 });

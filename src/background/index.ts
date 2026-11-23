@@ -44,7 +44,7 @@ import {
   startDeviceFlow,
 } from "./device-flow";
 import { GraphError, hasKey } from "./graph-client";
-import { bandToIcon, forgetTab, paintIcon, pulseBadge } from "./icon-state";
+import { bandToIcon, forgetTab, paintIcon } from "./icon-state";
 import { installContextMenu, onMenuClicked } from "./context-menu";
 import { CORPUS_ALARM, scheduleCorpusUpdates, updateCorpusNow } from "./corpus-updater";
 import { explainHost, identifyHost, reportHost } from "./cognition";
@@ -233,7 +233,7 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
   await saveTabState(tabId, state, current);
   await paintIcon(tabId, state.icon);
 
-  // 4) Ambient rung and up: session log + one-time badge pulse. Below it,
+  // 4) Ambient rung and up: the session log. Below it,
   // silence: the network/verdict layer already handled the outcome.
   if (atLeast(rung, "ambient")) {
     const reason =
@@ -243,10 +243,8 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
           ? `looks like ${state.detector.brandDomain}`
           : (verdict?.label ?? "flagged by the graph");
     if (!current()) return;
-    // Without a record there is no "first": the pulse still shows once per check.
-    const first = keep ? await recordRisk(hostname, reason) : true;
+    if (keep) await recordRisk(hostname, reason);
     if (!current()) return;
-    if (first) await pulseBadge(tabId, state.icon === "malicious" ? "#DC2626" : "#F59E0B");
   }
 
   // 5) The page layer delivers the two loud rungs, and ONLY under the

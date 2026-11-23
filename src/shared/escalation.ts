@@ -10,7 +10,7 @@
 // The spectrum, quiet to loud:
 //
 //   silent          handled at the network/verdict layer; no UI at all
-//   ambient         the glanceable channel (toolbar icon + one badge pulse)
+//   ambient         the glanceable channel (toolbar tile + its verdict badge)
 //   pre-emptive     hold the user's own in-flight action and show
 //                   the receipts BEFORE anything loads
 //   conversational  a dismissible in-page word (amber banner, the

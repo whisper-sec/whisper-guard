@@ -6,25 +6,26 @@
 // (the canonical brand asset) so the shape is always the brand, never a
 // letterform.
 //
-// Design (whisper-guard#18): the WHOLE ICON signals, not a thin ring.
-//   - The brand is the RESTING state: a HERO-sized Whisper-violet mark on a
-//     dark brand plate (states `neutral`/`base`/`benign`). The mark keeps the
-//     brand violet in every calm state.
-//   - The PLATE BACKGROUND carries the signal: it stays dark for the calm
-//     states and turns AMBER (suspicious) then RED (malicious); the mark flips
-//     to a high-contrast fill ONLY on those alarm plates, where brand violet
-//     would be illegible. "Keep the brand colour except when really needed to
-//     signal."
-//   - Hue is still never load-bearing: every state also carries a corner
-//     BADGE SHAPE (check / triangle / STOP octagon / hollow circle / dot /
-//     lock), the redundant non-colour channel.
+// Design: each state owns its tile, and the whole tile signals.
+//   - Ground per state: green, amber, solid red, dark, violet (board 3g) and a
+//     muted dark for a page Guard does not check (board 5d). A solid ring (green,
+//     amber, violet), a dashed outline (unknown) or none (malicious, not
+//     checked) is the second cue, so hue is never the only channel.
+//   - The mark is drawn flat in one colour: brand violet on the green, amber and
+//     checking tiles, white on the red tile, the violet at reduced strength on
+//     unknown, grey at reduced strength on not checked.
+//   - The short text badge (check, !, STOP, ?, ...) is set by the background
+//     script, not drawn here. Only the live-check-off tile (`signedout`) keeps a
+//     corner shape, a lock. `base` is the brand resting plate: the listing icon
+//     and the pages' favicon.
 // Pre-rendered PNGs keep setIcon behaviour identical across engines (no
 // OffscreenCanvas).
 //
-// Pipeline, per state: plate SVG rendered at 512 -> HERO brand mark composited
+// Pipeline, per state: tile SVG rendered at 512 -> HERO brand mark composited
 // (the brand SILHOUETTE painted via its alpha mask, recoloured per state) ->
-// badge overlay -> downsampled to 16/32/48/128. The per-state SVGs in
-// assets/icons/ are self-contained design sources with the mark embedded.
+// lock overlay (signedout only) -> downsampled to 16/32/48/128. The per-state
+// SVGs in assets/icons/ are self-contained design sources with the mark
+// embedded.
 //
 // Requires ImageMagick ("convert"). The PNGs are checked in, so a normal build
 // never needs this script; re-run it only when the icon design or the brand
@@ -45,26 +46,28 @@ const BASE = 512; // working resolution; downsampled per size
 
 const C = {
   line: "#0b1220",
-  // Plates (the signal background). Calm states share a dark brand plate; the
-  // alarm states own a full-bleed amber / red plate; the off states are muted.
+  // The brand resting plate and the live-check-off plate.
   plateDark: "#12101f", // dark with a faint violet cast: the brand resting plate
-  plateSlate: "#2b3446", // unknown: no-opinion slate, clearly not an alarm
-  plateAmber: "#c2760a", // suspicious: a deep, legible amber
-  plateRed: "#c81e1e", // malicious: the strongest signal
   plateGray: "#1c2130", // signed-out: muted, protection still on-device
-  plateRedDark: "#7f1d1d",
-  rim: "#8a5cc7", // theme --w-accent: a faint Whisper-violet rim for polish
-  green: "#10b981",
-  amber: "#f59e0b",
-  slate: "#94a3b8",
-  faint: "#64748b",
-  // The MARK fills. The brand headline colour is a bold, bright Whisper
-  // purple; it stays brand in every calm state and flips only where a coloured
-  // alarm plate would drown it.
-  markViolet: "#8b6bff", // brand (neutral / benign / checking)
-  markVioletMuted: "#7d74ad", // unknown / signed-out: present but quietened
-  markDark: "#1a1205", // suspicious: high-contrast on the amber plate
-  markWhite: "#ffffff", // malicious: on the red plate
+  rim: "#8a5cc7", // a faint Whisper-violet rim on the brand resting plate
+  slate: "#94a3b8", // the lock on the signed-out tile
+  // Tile grounds and outlines of the six redrawn states.
+  groundBenign: "#0c3d2e", // ground of the green tile
+  ringBenign: "#10b981", // ring of the green tile
+  groundSuspicious: "#4a3105", // ground of the amber tile
+  ringSuspicious: "#f59e0b", // ring of the amber tile
+  groundMalicious: "#b8202a", // the solid red tile
+  groundQuiet: "#1a1a2e", // ground of the unknown and not-checked tiles
+  dashUnknown: "#8888a0", // dashed outline of the unknown tile
+  groundChecking: "#1d1240", // ground of the checking tile
+  ringChecking: "#7d5ce0", // ring of the checking tile
+  // The MARK fills, drawn flat. Brand violet where it reads, white on the red
+  // tile, quietened violet and grey where the tile says "no opinion".
+  markViolet: "#8b6bff", // brand mark: green, amber and checking tiles, and base
+  markVioletMuted: "#7d74ad", // signed-out: present but quietened
+  markUnknown: "#6f57cb", // unknown: the brand violet at reduced strength
+  markNeutral: "#55555d", // not checked: grey at reduced strength
+  markWhite: "#ffffff", // malicious: on the red tile
 };
 
 /**
@@ -104,16 +107,21 @@ function recolorMark(color, out) {
 }
 const markViolet = join(WORK, "mark-violet.png");
 const markVioletMuted = join(WORK, "mark-violet-muted.png");
-const markDark = join(WORK, "mark-dark.png");
+const markUnknown = join(WORK, "mark-unknown.png");
+const markNeutral = join(WORK, "mark-neutral.png");
 const markWhite = join(WORK, "mark-white.png");
 recolorMark(C.markViolet, markViolet);
 recolorMark(C.markVioletMuted, markVioletMuted);
-recolorMark(C.markDark, markDark);
+recolorMark(C.markUnknown, markUnknown);
+recolorMark(C.markNeutral, markNeutral);
 recolorMark(C.markWhite, markWhite);
 
-// 2) Plate + badge in the 64-unit design space. The plate is full-bleed (no
-// ring stealing space from the hero mark); a faint violet rim adds brand
-// polish on the calm plates only.
+// 2) Tiles in the 64-unit design space. `plate()` is the inset brand plate
+// (60 x 60, a faint violet rim on the calm one): it serves `base` and
+// `signedout` only. `tile()` is the full-bleed square of the six redrawn
+// states: a solid ring takes the outer 4 units (1 px at 16, 2 px at 32), a
+// dashed outline is drawn over the ground as explicit strokes (the SVG renderer
+// does not draw stroke-dasharray), and neither leaves the plain ground.
 function plate(fill, { rim = false } = {}) {
   const rimEl = rim
     ? `<rect x="4" y="4" width="56" height="56" rx="14" fill="none" stroke="${C.rim}" stroke-width="1.5" opacity="0.45"/>`
@@ -121,46 +129,41 @@ function plate(fill, { rim = false } = {}) {
   return `<rect x="2" y="2" width="60" height="60" rx="16" fill="${fill}"/>${rimEl}`;
 }
 
-function octagonPoints(cx, cy, r) {
-  const pts = [];
-  for (let i = 0; i < 8; i++) {
-    const a = (Math.PI / 4) * i + Math.PI / 8;
-    pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
-  }
-  return pts.join(" ");
+// Four corner arcs and one 16-unit dash centred on each side, 8-unit gaps.
+const DASHES =
+  "M2 16A14 14 0 0 1 16 2 M24 2H40 M48 2A14 14 0 0 1 62 16 M62 24V40 " +
+  "M62 48A14 14 0 0 1 48 62 M40 62H24 M16 62A14 14 0 0 1 2 48 M2 40V24";
+function tile(ground, { ring = null, dashed = null } = {}) {
+  const full = (fill) => `<rect x="0" y="0" width="64" height="64" rx="16" fill="${fill}"/>`;
+  if (ring) return full(ring) + `<rect x="4" y="4" width="56" height="56" rx="12" fill="${ground}"/>`;
+  if (dashed) return full(ground) + `<path d="${DASHES}" fill="none" stroke="${dashed}" stroke-width="4"/>`;
+  return full(ground);
 }
 
-// Corner badges (the non-hue redundant channel). On a coloured alarm plate the
-// badge is white-bodied with a dark rim so it reads on amber / red; on the calm
-// dark plates it keeps its own semantic colour.
+// The corner shape of the live-check-off tile. Every other state is told apart
+// by tile, outline and the text badge the background script sets.
 const BADGES = {
-  benign: `<rect x="38" y="38" width="21" height="21" rx="6" fill="${C.green}" stroke="${C.line}" stroke-width="2"/>
-    <path d="M43 48.5 L47 52.5 L54.5 44.5" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`,
-  suspicious: `<polygon points="48,35 61,59 35,59" fill="#ffffff" stroke="${C.line}" stroke-width="2" stroke-linejoin="round"/>
-    <rect x="46.6" y="43" width="2.8" height="8" rx="1.4" fill="${C.plateAmber}"/><circle cx="48" cy="55" r="1.7" fill="${C.plateAmber}"/>`,
-  malicious: `<polygon points="${octagonPoints(48, 48, 12)}" fill="#ffffff" stroke="${C.plateRedDark}" stroke-width="2"/>`,
-  unknown: `<circle cx="48" cy="48" r="9.5" fill="${C.plateSlate}" stroke="${C.slate}" stroke-width="3.5"/>`,
-  checking: `<circle cx="49" cy="49" r="5.5" fill="#cbd5e1" stroke="${C.line}" stroke-width="1.5"/>`,
   signedout: `<rect x="39" y="40" width="19" height="18" rx="5" fill="#2a3040" stroke="${C.line}" stroke-width="2"/>
     <path d="M42 40 v-2 a6 6 0 0 1 12 0 v2" fill="none" stroke="${C.slate}" stroke-width="2.6" stroke-linecap="round"/>
     <circle cx="48.5" cy="49" r="2.4" fill="${C.slate}"/>`,
 };
 
-// state -> { plate, badge, mark }. The plate carries the signal; the mark keeps
-// the brand violet in every calm state and flips only on the amber / red plate.
+// state -> { plate, badge, mark, lift }. The tile carries the signal. Rows
+// marked `lift` keep the mark 2 units above centre, clear of the lock.
 const STATES = {
-  neutral: { plate: plate(C.plateDark, { rim: true }), badge: "", mark: markViolet }, // brand resting (signed in, no verdict yet)
-  base: { plate: plate(C.plateDark, { rim: true }), badge: "", mark: markViolet }, // extension-listing identity icon = the brand resting
-  benign: { plate: plate(C.plateDark, { rim: true }), badge: BADGES.benign, mark: markViolet }, // safe is calm: brand plate + a quiet green check
-  suspicious: { plate: plate(C.plateAmber), badge: BADGES.suspicious, mark: markDark },
-  malicious: { plate: plate(C.plateRed), badge: BADGES.malicious, mark: markWhite },
-  unknown: { plate: plate(C.plateSlate), badge: BADGES.unknown, mark: markVioletMuted },
-  checking: { plate: plate(C.plateDark), badge: BADGES.checking, mark: markVioletMuted },
-  signedout: { plate: plate(C.plateGray), badge: BADGES.signedout, mark: markVioletMuted }, // on-device protection still on; sign in for the live signal
+  base: { plate: plate(C.plateDark, { rim: true }), badge: "", mark: markViolet, lift: true }, // listing icon and favicon: the brand resting plate
+  signedout: { plate: plate(C.plateGray), badge: BADGES.signedout, mark: markVioletMuted, lift: true }, // on-device protection still on; sign in for the live signal
+  neutral: { plate: tile(C.groundQuiet), badge: "", mark: markNeutral }, // a page Guard does not check
+  benign: { plate: tile(C.groundBenign, { ring: C.ringBenign }), badge: "", mark: markViolet },
+  suspicious: { plate: tile(C.groundSuspicious, { ring: C.ringSuspicious }), badge: "", mark: markViolet },
+  malicious: { plate: tile(C.groundMalicious), badge: "", mark: markWhite },
+  unknown: { plate: tile(C.groundQuiet, { dashed: C.dashUnknown }), badge: "", mark: markUnknown },
+  checking: { plate: tile(C.groundChecking, { ring: C.ringChecking }), badge: "", mark: markViolet },
 };
 
-// HERO mark geometry: 44 of 64 units (was 34), lifted 2 units so the corner
-// badge keeps clear ground at the bottom-right.
+// HERO mark geometry: 44 of 64 units, centred on the redrawn tiles and lifted
+// 2 units on the rows marked `lift`, so the lock keeps clear ground at the
+// bottom-right.
 const MARK_W = Math.round((44 / 64) * BASE);
 const MARK_DY = Math.round((-2 / 64) * BASE);
 
@@ -177,9 +180,10 @@ for (const [state, spec] of Object.entries(STATES)) {
   const composedPath = join(WORK, `${state}-composed.png`);
   const markResized = join(WORK, `${state}-mark.png`);
   convert([spec.mark, "-resize", `${MARK_W}x${MARK_W}`, markResized]);
+  const dy = spec.lift ? MARK_DY : 0;
   const args = [
     "-background", "none", platePath,
-    markResized, "-gravity", "center", "-geometry", `+0${MARK_DY < 0 ? MARK_DY : `+${MARK_DY}`}`, "-composite",
+    markResized, "-gravity", "center", "-geometry", `+0${dy < 0 ? dy : `+${dy}`}`, "-composite",
   ];
   if (spec.badge !== "") {
     const badgePath = join(WORK, `${state}-badge.svg`);
@@ -198,7 +202,7 @@ for (const [state, spec] of Object.entries(STATES)) {
   const markB64 = readFileSync(markResized).toString("base64");
   const markUnits = 44;
   const markUnitsH = (markUnits * markSrcH) / markSrcW;
-  const markSvg = `<image x="${32 - markUnits / 2}" y="${31 - markUnitsH / 2}" width="${markUnits}" href="data:image/png;base64,${markB64}"/>`;
+  const markSvg = `<image x="${32 - markUnits / 2}" y="${(spec.lift ? 31 : 32) - markUnitsH / 2}" width="${markUnits}" href="data:image/png;base64,${markB64}"/>`;
   writeFileSync(join(SVG_DIR, `${state}.svg`), svgAt(spec.plate + markSvg + spec.badge, 128));
 
   console.log(`gen-icons: ${state} -> ${SIZES.map((s) => `${s}px`).join(", ")}`);
