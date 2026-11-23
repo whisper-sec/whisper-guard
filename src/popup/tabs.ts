@@ -24,7 +24,7 @@ const TABS: readonly PopupTab[] = ["site", "page", "browser"];
 // soon as it is displayed. Only elements that have already been drawn are
 // marked, so one that arrives late, or a rung detail the reader opens later,
 // still animates, and a waiting animation (never marked) keeps running.
-const ENTRANCES = ".band-rail, .ch-rung, .ch-detail";
+const ENTRANCES = ".pp-disc, .ch-rung, .ch-detail";
 
 const el = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 

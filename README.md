@@ -315,7 +315,7 @@ public identity verification all work with no key.
 - No telemetry, no analytics, no sync. The credential lives in local extension
   storage only. Internal pages (`chrome://`), localhost, private addresses,
   IP literals, and `.local`/`.internal` names are never checked at all.
-- Every panel view states exactly what was sent for the current site.
+- The This site tab, where the popup always opens, states exactly what was sent for the current site and where it was sent.
 
 Docs: [whisper.online/docs/whisper-guard](https://whisper.online/docs/whisper-guard) ·
 Screenshots: [`shots/`](shots/index.html)

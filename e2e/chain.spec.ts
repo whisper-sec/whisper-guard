@@ -129,7 +129,7 @@ test("the whole path renders, and the far end proves it was a join", async () =>
 
   // And the completeness readout agrees with what is on screen, rather than
   // being a number written next to it.
-  await expect(popup.locator(".ch-count")).toHaveText("7 of 7 joined");
+  await expect(popup.locator("#facts-count")).toHaveText("7/7 facts read");
   await expect(popup.locator("#chain-mount .ch-rung.ch-live")).toHaveCount(7);
 
   await popup.close();
@@ -174,7 +174,8 @@ test("a step that could NOT be read says so, while its neighbours stay live", as
   // And the panel says it out loud, in a sentence a person can act on.
   await expect(popup.locator("#chain-note")).toContainText("could not be read");
   await expect(popup.locator("#chain-note")).toContainText("unknown, not clear");
-  await expect(popup.locator(".ch-count")).toContainText("1 unreadable");
+  await expect(popup.locator("#facts-count")).toHaveText("6/7 facts read");
+  await expect(popup.locator("#chain-mount .ch-rung.ch-lost")).toHaveCount(1);
 
   net.failQueries.clear();
   await popup.close();

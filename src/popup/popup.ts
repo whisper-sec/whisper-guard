@@ -3,10 +3,10 @@
 //
 // The click-panel answers three questions in this order and nothing else:
 //
-//   1. is this site safe?      one glyph, one badge, ONE sentence. The
-//                              sentence never restates the badge, and
-//                              coverage lives with the evidence, not beside
-//                              the verdict where it reads as a score.
+//   1. is this site safe?      one mark, one pill, ONE sentence. The
+//                              sentence never restates the pill. The chips
+//                              under it are plain facts, and the coverage
+//                              chip says in words that it is not a score.
 //   2. am I protected?         ONE control. It reserves this browser's
 //                              routable Whisper identity AND routes through
 //                              it, asking for the permission routing needs
@@ -18,7 +18,7 @@
 //
 // UNKNOWN is the honest common state and reads as "not confirmed either
 // way", never as green. The answers sit under three tabs (tabs.ts): This site
-// holds the verdict, the chain and the evidence, This page the link check and
+// holds the verdict, the evidence and who is behind the name, This page the link check and
 // the indicator scan, This browser the identity and the activity. Every tab is
 // filled when the popup opens, and that holds while a check waits and on a tab
 // Guard has not checked yet: This site then shows a ring with placeholders, or a
@@ -29,6 +29,7 @@ import { send, type BgResponse, type BrowserReport } from "../shared/messages";
 import {
   WIN_CATEGORIES,
   type CandidateVerdict,
+  type ChainRungKind,
   type ExplainResult,
   type GraphBand,
   type LinkScanResult,
@@ -57,14 +58,28 @@ let tabId = -1;
 let state: TabState | null = null;
 let settings: Settings | null = null;
 
-const BAND_UI: Record<GraphBand, { glyphCls: string; chipCls: string; chip: string; glyph: string }> = {
-  CRITICAL: { glyphCls: "malicious", chipCls: "crit", chip: "MALICIOUS - evidenced", glyph: "⬣" },
-  HIGH: { glyphCls: "malicious", chipCls: "high", chip: "HIGH RISK", glyph: "⬣" },
-  MEDIUM: { glyphCls: "suspicious", chipCls: "med", chip: "SUSPICIOUS", glyph: "▲" },
-  LOW: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓" },
-  INFO: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓" },
-  NONE: { glyphCls: "benign", chipCls: "ok", chip: "NO KNOWN THREAT", glyph: "✓" },
-  UNKNOWN: { glyphCls: "unknown", chipCls: "unknown", chip: "UNKNOWN", glyph: "?" },
+/** Per band: the tone of the card, mark and pill, the pill's words, and the
+ *  mark's glyph (null draws the check). */
+const BAND_UI: Record<GraphBand, { tone: string; chip: string; glyph: string | null }> = {
+  CRITICAL: { tone: "crit", chip: "MALICIOUS - evidenced", glyph: "⬣" },
+  HIGH: { tone: "high", chip: "HIGH RISK", glyph: "⬣" },
+  MEDIUM: { tone: "med", chip: "SUSPICIOUS", glyph: "▲" },
+  LOW: { tone: "ok", chip: "NO KNOWN THREAT", glyph: null },
+  INFO: { tone: "ok", chip: "NO KNOWN THREAT", glyph: null },
+  NONE: { tone: "ok", chip: "NO KNOWN THREAT", glyph: null },
+  UNKNOWN: { tone: "unknown", chip: "UNKNOWN", glyph: "?" },
+};
+
+/** The popup's own names for the seven facts. The shared chain keeps its own
+ *  upper-case labels, which the dashboard and the check-link page draw. */
+const FACT_LABEL: Record<ChainRungKind, string> = {
+  name: "Name",
+  vendor: "Runs on",
+  address: "Address",
+  prefix: "Prefix",
+  network: "Network",
+  operator: "Operator",
+  presence: "Present at",
 };
 
 // Labels that are a synonym of the band already on the badge. Rendering one
@@ -331,7 +346,10 @@ function renderWhy(p: Protection): WhyRender {
   const panel = $("why-panel");
   const scoreChip = $("why-score");
   const box = $("why-factors");
-  if (p.whyFactors.length === 0 && p.score === null) return { shown: false, truncated: false };
+  // Only a threat factor or a score above zero earns the card: a clean site
+  // with nothing but a popularity listing has nothing to explain.
+  const earned = p.whyFactors.some((f) => f.kind === "threat") || (p.score !== null && p.score !== 0);
+  if (!earned) return { shown: false, truncated: false };
   panel.hidden = false;
   if (p.score !== null) {
     scoreChip.hidden = false;
@@ -355,25 +373,56 @@ function renderWhy(p: Protection): WhyRender {
   return { shown: true, truncated };
 }
 
+/** A chip is part of the row under the verdict only while it shows; the row
+ *  hides when none does, so there is never an empty gap. */
+function syncChips(): void {
+  const row = $("site-chips");
+  row.hidden = ![...row.children].some((c) => !(c as HTMLElement).hidden);
+}
+
 /**
  * Coverage: how much the graph KNOWS about this name. It is categorical and
- * it is NOT a safety score (a CRITICAL host can be known-clean coverage),
- * which is why it belongs down here with the machine vocabulary instead of
- * next to the verdict, where a reader takes any second badge for a grade.
+ * it is NOT a safety score (a CRITICAL host can be known-clean coverage), so
+ * the chip says so in words. "no-data" is the graph's answer for a name it
+ * does not know: there is no coverage to state, so no chip.
  */
-function renderCoverage(coverage: string | null): boolean {
+function renderCoverage(coverage: string | null): void {
   const el = $("coverage-chip");
-  if (!coverage) return false;
+  if (!coverage || coverage === "no-data") return;
   const val = document.createElement("span");
-  val.className = "cov";
+  val.className = "pp-val";
   val.textContent = coverage;
   el.replaceChildren(
-    document.createTextNode("Coverage "),
+    document.createTextNode("Coverage: "),
     val,
-    document.createTextNode(": what the graph knows about this name, not a safety score."),
+    document.createTextNode(" · not a safety score"),
   );
   el.hidden = false;
-  return true;
+  syncChips();
+}
+
+/** The graph's score for this name, as a plain chip; 0 is a score and shows. */
+function renderScoreChip(score: number | null): void {
+  if (score === null) return;
+  const el = $("score-chip");
+  const num = document.createElement("span");
+  num.className = "pp-num";
+  num.textContent = String(score);
+  el.replaceChildren(document.createTextNode("Graph score "), num);
+  el.hidden = false;
+  syncChips();
+}
+
+/** Whether the reader's own Trusted sites list holds this name, by the same
+ *  rule the on-device detector applies, so the chip and the look-alike
+ *  suppression can never disagree. */
+function isTrusted(host: string, registrable: string | null, list: readonly string[]): boolean {
+  const reg = (registrable ?? host).toLowerCase();
+  const h = host.toLowerCase();
+  return list.some((a) => {
+    const al = a.toLowerCase();
+    return reg === al || h === al || h.endsWith("." + al);
+  });
 }
 
 /**
@@ -408,7 +457,8 @@ async function loadProtection(host: string): Promise<void> {
       return line;
     }),
   );
-  if (prose.length > 0 || why.shown) card.hidden = false;
+  card.hidden = !why.shown;
+  renderScoreChip(p.score);
 }
 
 // ---------------------------------------- this browser: the ONE control
@@ -845,31 +895,108 @@ async function loadScale(): Promise<void> {
 // rather than a feed, and it is the reason the panel is worth opening on a
 // site that turns out to be fine.
 
-async function loadChain(host: string): Promise<void> {
+/** The words shown when the walk itself could not be read at all. */
+const FACTS_UNREAD =
+  "The facts behind this name could not be read just now. Unknown, not clear.";
+
+/** The check mark of a clean verdict, drawn as the disc's glyph. */
+function checkMark(): SVGSVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", "22");
+  svg.setAttribute("height", "22");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M5 12.5l4.5 4.5L19 7.5");
+  svg.appendChild(path);
+  return svg;
+}
+
+/** "registered 12 years ago" as a sentence for the reason line. */
+function sentenceOf(fact: string): string {
+  return fact.charAt(0).toUpperCase() + fact.slice(1) + ".";
+}
+
+async function loadChain(host: string, band: GraphBand | null): Promise<void> {
   const card = $("chain-card");
+  const mount = $("chain-mount");
   card.hidden = false;
-  renderChainPending($("chain-mount"));
+  renderChainPending(mount, 7, "WHO IS BEHIND IT");
   const res = await send<{ ok: true; chain: SiteChain }>({ kind: "getChain", host });
   const note = $("chain-note");
   if (!res.ok) {
     // The transport failed, which is a different fact from "the graph knows
-    // nothing", and the panel has to say which one happened.
-    card.hidden = true;
+    // nothing", and the panel has to say which one happened. The link and the
+    // drawers stay: they do not depend on this read.
+    // Only the rows are replaced: the heading stays, the waiting count goes.
+    const lost = document.createElement("div");
+    lost.className = "pp-note lost";
+    lost.textContent = FACTS_UNREAD;
+    mount.querySelector(".ch-count")?.remove();
+    mount.querySelector(".ch-spine")?.replaceWith(lost);
+    note.hidden = true;
     return;
   }
-  renderChain($("chain-mount"), res.chain);
-  if (res.chain.unavailable > 0) {
+  const chain = res.chain;
+  renderChain(
+    mount,
+    { ...chain, rungs: chain.rungs.map((r) => ({ ...r, label: FACT_LABEL[r.kind] })) },
+    { heading: "WHO IS BEHIND IT", completeness: false },
+  );
+
+  // Read means answered: a row the graph answered with nothing counts, a row
+  // that could not be asked does not.
+  const total = chain.rungs.length;
+  const read = total - chain.unavailable;
+  const count = document.createElement("span");
+  count.id = "facts-count";
+  count.className = chain.unavailable > 0 ? "ch-count ch-count-lost" : "ch-count";
+  const figure = document.createElement("span");
+  figure.className = "pp-count-n";
+  figure.textContent = `${read}/${total}`;
+  count.append(figure, document.createTextNode(" facts read"));
+  mount.querySelector(".ch-head")?.appendChild(count);
+  mount.querySelectorAll<HTMLElement>(".ch-rung").forEach((li, i) => {
+    const kind = chain.rungs[i]?.kind;
+    if (kind) li.dataset.kind = kind;
+  });
+
+  // The age joins the reason line only now that the history read came back.
+  const name = chain.rungs.find((r) => r.kind === "name");
+  if (name && name.state === "live" && name.fact) {
+    const age = $("band-age");
+    age.textContent = sentenceOf(name.fact);
+    age.hidden = false;
+  }
+
+  if (chain.unavailable > 0) {
     note.hidden = false;
     note.textContent =
-      `${res.chain.unavailable} step${res.chain.unavailable === 1 ? "" : "s"} of the walk could not be read just now. ` +
+      `${chain.unavailable} step${chain.unavailable === 1 ? "" : "s"} of the walk could not be read just now. ` +
       "Those are unknown, not clear.";
-  } else if (res.chain.live <= 2) {
+  } else if (chain.live <= 2) {
     note.hidden = false;
     note.textContent =
       "The graph holds almost nothing about this name. That is common for a name registered days ago.";
   } else {
     note.hidden = true;
   }
+
+  // Flagged neighbours on a range the graph classes as a CDN are common and
+  // say nothing about a clean site: said only where all of that holds.
+  const prefix = chain.rungs.find((r) => r.kind === "prefix");
+  const cdn = [chain.vendorCategory, chain.identifyCategory].some((c) => c?.toLowerCase() === "cdn");
+  $("neighbours-note").hidden = !(
+    (band === "LOW" || band === "INFO" || band === "NONE") &&
+    prefix?.state === "live" &&
+    (chain.threatNeighbors ?? 0) > 0 &&
+    cdn
+  );
 }
 
 // -------------------------------------------------------- the keyless tier
@@ -977,7 +1104,7 @@ function renderSite(s: TabState): void {
   if (!s.eligible || !s.hostname) {
     $("ineligible").hidden = false;
     $("host-row").hidden = true;
-    $("privacy-line").textContent = "Privacy: nothing was sent.";
+    setPrivacyLine("Privacy: nothing was sent.");
     // The words of the message this tab shows, so they have one source.
     syncPageNote($("ineligible").textContent?.trim() ?? null);
     return;
@@ -992,63 +1119,44 @@ function renderSite(s: TabState): void {
 
   $("host-row").hidden = false;
   $("hostname").textContent = host;
+  const band: GraphBand | null = s.verdict?.band ?? null;
   if (cloudCheck) {
     wireLinkScan();
     wireIocScan();
     // The chain is the keyless payload and does not wait on a verdict:
     // whether the name is flagged or unremarkable, the path behind it is
     // the thing the panel was opened to see.
-    void loadChain(host);
+    void loadChain(host, band);
+    wireGraphPath(host);
     $("footer-page-line").hidden = false;
     syncPageNote(null);
   } else {
     syncPageNote("The link check and the indicator scan need the live check. Turn it on in settings.");
   }
 
-  const band: GraphBand | null = s.verdict?.band ?? null;
-  const glyph = $("band-glyph");
-  const rail = $("band-rail");
-  const chip = $("band-chip");
-  const note = $("band-note");
+  if (settings && isTrusted(host, s.registrable, settings.allowlist)) {
+    $("allow-chip").hidden = false;
+    syncChips();
+  }
 
   if (band) {
     const ui = BAND_UI[band];
-    glyph.className = `glyph ${ui.glyphCls}`;
-    rail.className = `band-rail ${ui.glyphCls}`;
-    glyph.textContent = ui.glyph;
-    chip.className = `w-chip ${ui.chipCls}`;
-    chip.textContent = ui.chip;
-    note.textContent = verdictSentence(band, s.verdict?.label ?? null);
-    if (renderCoverage(s.verdict?.coverage ?? null)) $("protect-card").hidden = false;
+    paintVerdict(ui.tone, ui.tone, ui.glyph, ui.chip, verdictSentence(band, s.verdict?.label ?? null));
+    renderCoverage(s.verdict?.coverage ?? null);
     void loadProtection(host);
   } else if (cloudCheck && s.graphError) {
     // The check was made and Whisper did not answer. Its own word, glyph and
     // amber, so it is never read as SUSPICIOUS or as a clean "unknown".
-    glyph.className = "glyph error";
-    rail.className = "band-rail error";
-    glyph.textContent = "!";
-    chip.className = "w-chip err";
-    chip.textContent = "COULD NOT CHECK";
-    note.textContent = "Not confirmed either way. On-device checks still ran.";
+    paintVerdict("err", "err", "!", "COULD NOT CHECK", "Not confirmed either way. On-device checks still ran.");
     void loadProtection(host);
   } else if (cloudCheck) {
-    glyph.className = "glyph unknown";
-    rail.className = "band-rail unknown";
-    glyph.textContent = "?";
-    chip.className = "w-chip unknown";
-    chip.textContent = "UNKNOWN";
-    note.textContent = "No verdict yet for this site.";
+    paintVerdict("unknown", "unknown", "?", "UNKNOWN", "No verdict yet for this site.");
     void loadProtection(host);
   } else {
-    glyph.className = "glyph signedout";
-    rail.className = "band-rail";
     // A plain ring: no reading was taken. U+26BF has no glyph in a good many
     // system font stacks and falls back to a tofu box, which reads as a
     // rendering fault rather than a state.
-    glyph.textContent = "○";
-    chip.className = "w-chip unknown";
-    chip.textContent = "LIVE CHECK OFF";
-    note.textContent = "On-device protection only. Turn the live check back on in settings.";
+    paintVerdict("off", "unknown", "○", "LIVE CHECK OFF", "On-device protection only. Turn the live check back on in settings.");
   }
 
   if (s.graphError) {
@@ -1117,11 +1225,53 @@ function renderSite(s: TabState): void {
     });
   }
 
-  $("privacy-line").textContent = cloudCheck
-    ? `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`
-    : s.detector
-      ? `Privacy: nothing left your browser. The look-alike check ran on-device.`
-      : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`;
+  setPrivacyLine(
+    cloudCheck
+      ? liveCheckLine(host)
+      : s.detector
+        ? `Privacy: nothing left your browser. The look-alike check ran on-device.`
+        : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`,
+  );
+}
+
+/** Draw the verdict card: the tone of the card and mark, the pill's own tone
+ *  (the live-check-off state keeps the unknown pill), the glyph (null is the
+ *  check), the pill's words and the one reason. */
+function paintVerdict(tone: string, pill: string, glyph: string | null, chip: string, reason: string): void {
+  $("host-row").className = `pp-card pp-verdict ${tone}`;
+  const disc = $("band-glyph");
+  if (glyph === null) disc.replaceChildren(checkMark());
+  else disc.textContent = glyph;
+  const pillEl = $("band-chip");
+  pillEl.className = `pp-pill ${pill}`;
+  pillEl.textContent = chip;
+  $("band-note").textContent = reason;
+}
+
+/** The one writer of the privacy line: text to show it, null to hide it.
+ *  A direct write to the line's element would erase its lock. */
+function setPrivacyLine(text: string | null): void {
+  $("privacy-text").textContent = text ?? "";
+  $("privacy-line").hidden = text === null || text === "";
+}
+
+/** What went out for a live check: the exact name the worker sent, where it
+ *  went, and what did not. */
+function liveCheckLine(host: string): string {
+  return `Privacy: Only “${host}” was sent, to ${GRAPH_HOST}. Never the page, the path or your history.`;
+}
+
+/** "Show the graph path": the check-link page for this hostname. A real link,
+ *  so it is in the Tab order and answers Enter; opened as the context menu
+ *  opens it, which sends what that page sends for this one name and no more. */
+function wireGraphPath(host: string): void {
+  const page = `check-link.html?host=${encodeURIComponent(host)}`;
+  const link = $<HTMLAnchorElement>("graph-path");
+  link.href = page;
+  link.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL(page) });
+  });
 }
 
 
@@ -1209,9 +1359,7 @@ function drawChecking(host: string): void {
   syncPageNote($("checking-text").textContent?.trim() ?? null);
   // After a press on a tab whose hostname the popup could not read, there is
   // no name to report yet; the verdict view writes the line.
-  if (host) {
-    $("privacy-line").textContent = `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`;
-  }
+  if (host) setPrivacyLine(liveCheckLine(host));
 }
 
 /** The card for a tab with no answer. It sends nothing and says nothing was
@@ -1221,8 +1369,8 @@ function drawNotChecked(): void {
   $("host-row").hidden = true;
   $("not-checked-view").hidden = false;
   ($("btn-check-now") as HTMLButtonElement).disabled = false;
-  // Empty, never a space: the footer hides itself when its line is empty.
-  $("privacy-line").textContent = "";
+  // Hidden, so the footer takes no space while nothing was sent.
+  setPrivacyLine(null);
   // The words of the card, so This page has one source for them.
   syncPageNote($("not-checked-title").textContent?.trim() ?? null);
 }

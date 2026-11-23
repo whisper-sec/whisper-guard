@@ -23,6 +23,7 @@ import {
   launchExtension,
   makeShieldDist,
   openDashboard,
+  openGraphDrawers,
   openPopup,
   markHostBlocked,
   setKey,
@@ -342,11 +343,13 @@ test("popup: keyed evidenced-malicious with explain expanded", async () => {
     await p.locator("#why-panel").scrollIntoViewIfNeeded();
   });
   await popupShot(tabId, "popup-keyed-explain.png", async (p) => {
+    await openGraphDrawers(p);
     await p.locator("#exp-why summary").click();
     await expect(p.locator("#why-body")).toContainText("CRITICAL");
     await p.locator("#why-body").scrollIntoViewIfNeeded();
   });
   await popupShot(tabId, "popup-keyed-neighborhood.png", async (p) => {
+    await openGraphDrawers(p);
     await p.locator("#exp-neighborhood summary").click();
     await expect(p.locator("#neighborhood-note")).toContainText("flagged in the graph", { timeout: 20_000 });
     // The note sits under the drawing, so scrolling to it shows both.

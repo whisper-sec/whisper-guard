@@ -13,6 +13,7 @@ import { test, expect } from "@playwright/test";
 import { CONSOLE_HOST, E2ENetwork, GRAPH_READ_HOST, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
+  openGraphDrawers,
   openPopup,
   selectPopupTab,
   setKey,
@@ -205,16 +206,18 @@ test("keyed: popup shows the evidenced band, categorical coverage chip, explain,
   await expect(popup.locator("#band-chip")).toHaveText("MALICIOUS - evidenced");
   await expect(popup.locator("#coverage-chip")).toContainText("malicious-evidenced");
   await expect(popup.locator("#coverage-chip")).toContainText("not a safety score");
-  await expect(popup.locator("#privacy-line")).toContainText('only "evil-known-guard-e2e.com" was sent');
+  await expect(popup.locator("#privacy-line")).toContainText("Only “evil-known-guard-e2e.com” was sent");
   await expect(popup.locator("#privacy-line")).toContainText(GRAPH_READ_HOST);
 
   // Why this verdict (whisper.explain), lazily loaded on expand.
+  await openGraphDrawers(popup);
   await popup.locator("#exp-why summary").click();
   await expect(popup.locator("#why-body")).toContainText("CRITICAL");
   await expect(popup.locator("#why-body")).toContainText("e2e-feed");
 
   // Session drawer recorded the risky sighting.
   await expect(popup.locator("#session-summary")).toContainText("risky");
+  await openGraphDrawers(popup);
   await popup.locator("#exp-session summary").click();
   await expect(popup.locator("#session-body")).toContainText("evil-known-guard-e2e.com");
   await popup.close();
@@ -226,6 +229,7 @@ test("keyed: identify renders on a clean host, and UNKNOWN is honest, never gree
   const clean = await visit(ext, "https://clean-site-guard-e2e.com/");
   await waitForIcon(ext, clean.tabId, ["benign"]);
   const popup = await openPopup(ext, clean.tabId);
+  await openGraphDrawers(popup);
   await popup.locator("#exp-who summary").click();
   await expect(popup.locator("#who-body")).toContainText("E2E Clean Site");
   await popup.close();
@@ -250,6 +254,7 @@ test("keyed: look-alike neighborhood graph draws confirmed candidates on canvas"
   const { page, tabId } = await visit(ext, "https://paypa1-secure-login.com/");
   await waitForIcon(ext, tabId, ["suspicious"]);
   const popup = await openPopup(ext, tabId);
+  await openGraphDrawers(popup);
   await popup.locator("#exp-neighborhood summary").click();
   await expect(popup.locator("#neighborhood-note")).toContainText("flagged in the graph", { timeout: 15_000 });
   const painted = await popup.evaluate(() => {

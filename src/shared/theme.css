@@ -165,10 +165,15 @@
   --w-accent-line: #7d5ce0;
   /* Thin accent strokes drawn as marks, such as the arc of a spinner. */
   --w-accent-stroke: #9b7cf0;
+  /* A link's hover colour: one step lighter than --w-accent. */
+  --w-accent-hover: #d4c6fb;
   --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 14%, transparent);
 
   /* Verdict scale - RESERVED for safety meaning only. */
   --w-ok: #34d399;
+  /* The green and the amber as FILLS: grounds, borders and dots, never text. */
+  --w-ok-fill: #10b981;
+  --w-v-low-fill: #f59e0b;
   --w-v-none: #8888a0;
   --w-v-info: #b49cf5;
   --w-v-low: #fbbf24;
@@ -226,6 +231,8 @@
     --w-accent-line: #6a4bd6;
     /* Thin accent strokes drawn as marks, such as the arc of a spinner. */
     --w-accent-stroke: #6a4bd6;
+    /* A link's hover colour: one step darker than --w-accent. */
+    --w-accent-hover: #432d96;
     --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 12%, transparent);
 
     /* The status hues, each dark enough to clear 4.5:1 on --w-elev
@@ -236,6 +243,10 @@
        --w-elev / --w-hover: ok 4.73 / 4.60, low 4.73 / 4.61, med 4.76 /
        4.64, high 4.65 / 4.53. */
     --w-ok: #0c7753;
+    /* Fills only. In light this green is 2.5:1 on white, so it is mixed into
+       a tint and never drawn as a mark or as text. */
+    --w-ok-fill: #10b981;
+    --w-v-low-fill: #b7791f;
     --w-v-none: #7a7a90;
     --w-v-info: #5b3fc4;
     --w-v-low: #8b6004;

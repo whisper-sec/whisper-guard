@@ -92,7 +92,7 @@ async function census(page: Page): Promise<{
       return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
     };
 
-    const marks = [...document.querySelectorAll("svg, canvas, [data-mark], .tier-fill, .band-rail, .ch-rail, .spark, .ratio-bar, .ch-ratio")]
+    const marks = [...document.querySelectorAll("svg, canvas, [data-mark], .tier-fill, .band-rail, .pp-disc, .ch-rail, .spark, .ratio-bar, .ch-ratio")]
       .filter(visible).length;
 
     // Numbers living in text with no mark inside the same block.
@@ -106,7 +106,7 @@ async function census(page: Page): Promise<{
       if (!numRe.test(t)) continue;
       if (!/\d/.test(t)) continue;
       const block = el.closest("section, .w-card, .panel, .ch-rung, .tier, li") ?? el;
-      if (block.querySelector("svg, canvas, .tier-fill, .band-rail, .ch-rail, .spark, .ratio-bar, .ch-ratio")) continue;
+      if (block.querySelector("svg, canvas, .tier-fill, .band-rail, .pp-disc, .ch-rail, .spark, .ratio-bar, .ch-ratio")) continue;
       narrated++;
     }
 
@@ -146,7 +146,7 @@ async function census(page: Page): Promise<{
         // element.
         const hasInk =
           (el.textContent ?? "").trim().length > 0 ||
-          el.matches("svg, canvas, img, input, button, .tier-fill, .band-rail, .ch-rail") ||
+          el.matches("svg, canvas, img, input, button, .tier-fill, .band-rail, .pp-disc, .ch-rail") ||
           el.querySelector("svg, canvas, img") !== null;
         if (!hasInk) dead++;
       }

@@ -21,6 +21,7 @@ import {
   makeEgressDist,
   makeProxyHolderExt,
   openDashboard,
+  openGraphDrawers,
   openPopup,
   markHostBlocked,
   selectPopupTab,
@@ -165,6 +166,7 @@ test.describe("panel, pages", () => {
     const { page, tabId } = await visit(ext, `https://${LOOKALIKE}/`);
     await waitForIcon(ext, tabId, ["malicious"]);
     const popup = await openPopup(ext, tabId);
+    await openGraphDrawers(popup);
     await popup.locator("#exp-why summary").click();
     await popup.locator("#exp-neighborhood summary").click();
     await popup.waitForTimeout(1500);
