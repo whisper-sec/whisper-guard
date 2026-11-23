@@ -17,8 +17,11 @@
 //                              a number.
 //
 // UNKNOWN is the honest common state and reads as "not confirmed either
-// way", never as green. Every view carries the per-host privacy line saying
-// exactly what was sent.
+// way", never as green. The answers sit under three tabs (tabs.ts): This site
+// holds the verdict, the chain and the evidence, This page the link check and
+// the indicator scan, This browser the identity and the activity. Every tab is
+// filled when the popup opens. This site's footer carries the per-host
+// privacy line saying exactly what was sent.
 
 import { send, type BrowserReport } from "../shared/messages";
 import {
@@ -39,6 +42,7 @@ import {
 import type { PageScanResult } from "../background/page-scan";
 import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
+import { initTabs } from "./tabs";
 import { compact, countUp, sparkline } from "../shared/spark";
 import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
@@ -826,10 +830,8 @@ async function loadScale(): Promise<void> {
   // The pulse: the resolvers' own trailing window. A shape, not a chart,
   // and it refuses to draw at all when there is nothing to show.
   const spark = sparkline(sc.pulse.slice(-48), {
-    width: 44,
+    width: 34,
     height: 14,
-    fill: 0.16,
-    head: true,
     title: `DNS questions answered per 5 minutes over the last ${sc.windowHours} hours`,
   });
   if (spark) $("scale-pulse").replaceChildren(spark);
@@ -917,6 +919,8 @@ function render(): void {
     $("ineligible").hidden = false;
     $("host-row").hidden = true;
     $("privacy-line").textContent = "Privacy: nothing was sent.";
+    // The words of the message this tab shows, so they have one source.
+    syncPageNote($("ineligible").textContent?.trim() ?? null);
     return;
   }
   const host = s.hostname;
@@ -936,6 +940,10 @@ function render(): void {
     // whether the name is flagged or unremarkable, the path behind it is
     // the thing the panel was opened to see.
     void loadChain(host);
+    $("footer-page-line").hidden = false;
+    syncPageNote(null);
+  } else {
+    syncPageNote("The link check and the indicator scan need the live check. Turn it on in settings.");
   }
 
   const band: GraphBand | null = s.verdict?.band ?? null;
@@ -1099,7 +1107,18 @@ function render(): void {
       : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`;
 }
 
+/** The one writer of the sentence that says why This page has nothing to
+ *  show: text to show it, null to hide it. */
+function syncPageNote(text: string | null): void {
+  const note = $("page-empty");
+  note.textContent = text ?? "";
+  note.hidden = text === null;
+}
+
 async function init(): Promise<void> {
+  // First, before any await: the tabs work while a check is in flight and
+  // when the tab's state cannot be read.
+  initTabs();
   // A <canvas> keeps the ink it was drawn with, so a colour-scheme flip
   // has to redraw the look-alike neighbourhood.
   onThemeChange(() => {
@@ -1145,7 +1164,9 @@ function drawChecking(host: string): void {
   $("band-rail").className = "band-rail unknown";
   $("band-chip").className = "w-chip unknown";
   $("band-chip").textContent = "CHECKING";
-  $("band-note").textContent = "Checking this site...";
+  const checking = "Checking this site...";
+  $("band-note").textContent = checking;
+  syncPageNote(checking);
   $("privacy-line").textContent = `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`;
 }
 

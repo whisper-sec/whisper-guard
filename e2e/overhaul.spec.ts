@@ -28,6 +28,7 @@ import {
   makeShieldDist,
   openDashboard,
   openPopup,
+  selectPopupTab,
   setKey,
   visit,
   waitForIcon,
@@ -200,7 +201,8 @@ async function popupShot(
   // the media state already set makes the page take its own reduced-motion
   // path, which writes every final value immediately.
   await popup.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-  await popup.setViewportSize({ width: 400, height: 720 });
+  // The popup is a fixed 400 x 600 frame; a capture shows one tab of it.
+  await popup.setViewportSize({ width: 400, height: 600 });
   await popup.reload();
   // The chain is two rounds of graph calls deep; wait for the spine to stop
   // being a placeholder rather than for a fixed number of milliseconds.
@@ -220,7 +222,7 @@ async function popupShot(
   }
   if (prep) await prep(popup);
   await assertScheme(popup, scheme, file);
-  await popup.screenshot({ path: join(SHOTS, file), fullPage: true });
+  await popup.screenshot({ path: join(SHOTS, file) });
   await popup.close();
   recordDigest(file);
 }
@@ -273,6 +275,7 @@ test("a rung expanded: the graph's own measurement behind the network", async ()
     await pop.locator("#chain-mount .ch-rung").filter({ hasText: "NETWORK" }).click();
     await pop.locator(".ch-detail .ch-ratio").waitFor({ timeout: 15_000 });
     await pop.waitForTimeout(700);
+    await pop.locator(".ch-detail").scrollIntoViewIfNeeded();
   });
   await page.close();
 });
@@ -291,6 +294,9 @@ test("the keyless tier meter is a measurement, not a pitch", async () => {
   const { page, tabId } = await visit(ext, `https://${GOOD}/`);
   await waitForIcon(ext, tabId, ["benign"]);
   await popupShot(tabId, "tier-healthy-dark.png", "dark", async (pop) => {
+    // The meter is on This browser, which the reload above left.
+    await selectPopupTab(pop, "browser");
+    await pop.locator("#tier-meter").scrollIntoViewIfNeeded();
     // Assert the figure, not just the pixels: a capture proves a meter was
     // drawn, never that it was drawn from a measurement.
     await expect(pop.locator("#tier-count")).toHaveText(/94 of 100/);
@@ -312,6 +318,8 @@ test("the keyless tier meter is a measurement, not a pitch", async () => {
   await spender.close();
 
   await popupShot(tabId, "tier-nearly-spent-dark.png", "dark", async (pop) => {
+    await selectPopupTab(pop, "browser");
+    await pop.locator("#tier-meter").scrollIntoViewIfNeeded();
     await expect(pop.locator("#tier-count")).toHaveText(/4 of 100/);
     await expect(pop.locator("#tier-fill")).toHaveClass(/out|low/);
   });
@@ -339,7 +347,9 @@ test("the panel signed in but not yet enrolled: the state a new account lands in
   // with the /128, its reverse-DNS name and the RDAP proof link, is
   // captured by e2e/protect.spec.ts, which walks the real enrol flow.
   await popupShot(tabId, "panel-signedin-not-enrolled-dark.png", "dark", async (pop) => {
+    await selectPopupTab(pop, "browser");
     await expect(pop.locator("#identity-card")).toBeVisible();
+    await pop.locator("#identity-card").scrollIntoViewIfNeeded();
   });
   await page.close();
   await setKey(ext, null);

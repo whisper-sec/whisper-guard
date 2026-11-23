@@ -39,7 +39,7 @@ test.afterAll(async () => {
 test("link sweep without host access degrades to an honest 'allow this page', not an opaque error", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-noperm.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "page" });
   await expect(popup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
 
   await popup.locator("#btn-linkscan").click();

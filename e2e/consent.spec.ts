@@ -273,7 +273,7 @@ test("generic banner: the strict text rule clicks 'Reject all' and ONLY that; th
   // The tally surfaces in exactly one place: the popup's today card, on the
   // user's own click, under the existing "cookie prompts declined" label,
   // in the plural here, because two prompts were declined.
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
   await expect(popup.locator("#today-breakdown")).toContainText("2 cookie prompts declined");
   await popup.close();
   await page.close();

@@ -136,7 +136,7 @@ test("a real pre-emptive block increments the wins counter; the record is catego
 test("the popup's calm today card: one hero number + the per-category breakdown", async () => {
   const { page, tabId } = await visit(ext, `https://${START.silent}/`);
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
   await expect(popup.locator("#today-hero")).toHaveText("1");
   // Exactly one win today, so the breakdown reads in the singular: the one
   // place the count is shown must not mis-count its own arithmetic.
@@ -215,7 +215,7 @@ test("wins persist across a REAL service-worker restart and stay date-keyed", as
 
   // The popup renders the persisted tally through the real getWins path.
   const { page, tabId } = await visit(ext, `https://${START.silent}/`);
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
   await expect(popup.locator("#today-hero")).toHaveText("2");
   // Two wins, one per category, so BOTH breakdown lines read in the singular.
   await expect(popup.locator("#today-breakdown")).toContainText("1 endpoint identity verified");
@@ -254,7 +254,7 @@ test("keyed: the popup's display-time re-verification never inflates the tally",
   // verification round-trip (the chip lands on VERIFIED only after the
   // verifyIdentity response, whose win recording is awaited first).
   for (let i = 0; i < 3; i++) {
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await expect(popup.locator("#identity-state")).toHaveText("VERIFIED", { timeout: 15_000 });
     await popup.close();
   }
@@ -356,7 +356,7 @@ test("the tally resets by calendar date: yesterday's record reads as zero", asyn
   // exact value rather than merely "not 59", because a negated matcher is
   // satisfied by an element that never rendered.
   const { page, tabId } = await visit(ext, `https://${START.silent}/`);
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
   await expect(popup.locator("#today-hero")).toHaveText("0");
   await expect(popup.locator("#today-breakdown")).not.toContainText("41");
   await popup.close();

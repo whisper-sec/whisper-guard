@@ -118,7 +118,7 @@ test.describe("identity without routing", () => {
     expect(registered, "the previous test must have enrolled, or agreement is untested").toBeTruthy();
 
     const { page, tabId } = await visit(ext, "https://example-same-control.com/");
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await expect(popup.locator("#identity-state")).toHaveText("VERIFIED", { timeout: 25_000 });
     const panel = {
       state: await popup.locator("#identity-state").textContent(),

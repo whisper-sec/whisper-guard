@@ -29,7 +29,17 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
-import { launchExtension, markHostBlocked, openDashboard, openPopup, setKey, visit, waitForIcon, type Extension } from "./helpers/extension";
+import {
+  launchExtension,
+  markHostBlocked,
+  openDashboard,
+  openPopup,
+  selectPopupTab,
+  setKey,
+  visit,
+  waitForIcon,
+  type Extension,
+} from "./helpers/extension";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, "../src");
@@ -109,6 +119,8 @@ interface TextSample {
   ratio: number;
   /** The AA floor this sample has to clear (3.0 for large text). */
   floor: number;
+  /** The id of the popup tab panel the element sits in, or null. */
+  panel: string | null;
 }
 
 /**
@@ -165,7 +177,7 @@ async function measure(tab: import("@playwright/test").Page): Promise<TextSample
       return out;
     };
 
-    const out: { what: string; ratio: number; floor: number }[] = [];
+    const out: { what: string; ratio: number; floor: number; panel: string | null }[] = [];
     for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
       // Only elements with their OWN visible text; a container's colour is
       // measured on whichever child actually paints the glyphs.
@@ -203,10 +215,33 @@ async function measure(tab: import("@playwright/test").Page): Promise<TextSample
         }> "${own.slice(0, 40)}"`,
         ratio,
         floor: large ? 3 : 4.5,
+        panel: el.closest('[role="tabpanel"]')?.id ?? null,
       });
     }
     return out;
   });
+}
+
+/**
+ * The popup shows one tab at a time, and a hidden panel paints nothing the
+ * sweep can see. So the popup is measured again once per other tab, in the
+ * scheme it is in: no sample under the floor, and at least one sample whose
+ * element is inside the panel that was selected (a sweep that measured only
+ * the header and the tab bar would pass on an empty panel). It ends back on
+ * This site, where the next scheme's pass starts.
+ */
+async function sweepOtherPopupTabs(tab: import("@playwright/test").Page, what: string, scheme: string): Promise<void> {
+  for (const name of ["page", "browser"] as const) {
+    await selectPopupTab(tab, name);
+    const samples = await measure(tab);
+    const inside = samples.filter((s) => s.panel === `panel-${name}`);
+    expect(inside.length, `${what} ${scheme}: nothing was measured inside the ${name} panel`).toBeGreaterThan(0);
+    const bad = samples
+      .filter((s) => s.ratio < s.floor)
+      .map((s) => `    ${s.ratio.toFixed(2)}:1 (needs ${s.floor}) ${s.what}`);
+    expect(bad, `${what} ${scheme} (${name} tab): text under the AA floor:\n${bad.join("\n")}`).toEqual([]);
+  }
+  await selectPopupTab(tab, "site");
 }
 
 test("the palette really flips, and every rendered glyph clears AA in both schemes", async () => {
@@ -233,6 +268,7 @@ test("the palette really flips, and every rendered glyph clears AA in both schem
         .filter((s) => s.ratio < s.floor)
         .map((s) => `    ${s.ratio.toFixed(2)}:1 (needs ${s.floor}) ${s.what}`);
       expect(bad, `${page} ${scheme}: text under the AA floor:\n${bad.join("\n")}`).toEqual([]);
+      if (page === "popup.html") await sweepOtherPopupTabs(tab, page, scheme);
     }
 
     // 3. The palette flipped: not the same ground, not the same ink.
@@ -292,6 +328,7 @@ test("a populated panel and dashboard clear AA in both schemes", async () => {
         .filter((s) => s.ratio < s.floor)
         .map((s) => `    ${s.ratio.toFixed(2)}:1 (needs ${s.floor}) ${s.what}`);
       expect(bad, `${what} ${scheme}: text under the AA floor:\n${bad.join("\n")}`).toEqual([]);
+      if (what.startsWith("panel:")) await sweepOtherPopupTabs(page, what, scheme);
     }
     await page.close();
   }
