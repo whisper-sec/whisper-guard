@@ -334,3 +334,47 @@ test.describe("the one control: another extension owns the proxy", () => {
     await page.close();
   });
 });
+
+test.describe("the one control: reserving the address", () => {
+  let net: E2ENetwork;
+  let ext: Extension;
+
+  test.beforeAll(async () => {
+    net = new E2ENetwork();
+    await net.start();
+    seed(net);
+    ext = await launchExtension({ proxyPort: net.proxyPort });
+  });
+  test.afterAll(async () => {
+    await ext?.close();
+    await net?.stop();
+  });
+
+  test("the steps on the second try, and the fallback after three", async () => {
+    await setKey(ext, MOCK_KEY);
+    net.clearEndpoints();
+    await ext.sw.evaluate(() => chrome.storage.local.remove("egress"));
+    const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
+    await waitForIcon(ext, tabId, ["benign"]);
+
+    net.scriptRegister({ outcome: "real", hiddenReads: 2 });
+    const popup = await openPopup(ext, tabId);
+    await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
+    await popup.locator("#btn-protect").click();
+    await popup.locator("#protect-steps li[aria-current='step']").filter({ hasText: "try 2 of 3" }).waitFor();
+    for (const s of SCHEMES) await shot(popup, "control-panel-reserving", s);
+    await popup.locator("#identity-detail").waitFor({ state: "visible", timeout: 20_000 });
+    await popup.close();
+
+    net.clearEndpoints();
+    await ext.sw.evaluate(() => chrome.storage.local.remove("egress"));
+    net.scriptRegister({ outcome: "real", hiddenReads: Infinity });
+    const again = await openPopup(ext, tabId);
+    await again.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
+    await again.locator("#btn-protect").click();
+    await again.locator("#route-line").filter({ hasText: "couldn’t reserve" }).waitFor({ timeout: 30_000 });
+    for (const s of SCHEMES) await shot(again, "control-panel-reserve-failed", s);
+    await again.close();
+    await page.close();
+  });
+});

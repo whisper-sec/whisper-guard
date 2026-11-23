@@ -154,9 +154,23 @@ export interface MockEndpoint {
   state?: string;
   counters?: Record<string, number>;
   logs?: Record<string, unknown>[];
+  /** The account's list leaves this device out for this many more reads. */
+  hiddenReads?: number;
   /** The per-device policy (op:policy with the device selector). */
   policy?: { block: string[]; allow: string[]; default: string; bundles: string[] };
 }
+
+/**
+ * How the stand-in control plane answers one `register` call:
+ *  - mint:      the device is created and the answer carries its agent and address (the default)
+ *  - real:      what the service does: the device is created at once and the answer carries
+ *               its address and the resolver columns but NOT the device's id. The account's
+ *               list shows the device only after `hiddenReads` further reads (0 = at once).
+ *  - transport: the request fails with a server error and no device is created
+ *  - refuse:    the plane refuses explicitly: the account is over its device limit (not retryable)
+ *  - already:   the device exists already: error ALREADY_REGISTERED, not retryable
+ */
+export type RegisterOutcome = "mint" | "transport" | "refuse" | "already" | { outcome: "real"; hiddenReads: number };
 
 /** A host in the ONE form the capture records: lower-case, an IPv6 literal bracketed. */
 export function hostKey(host: string): string {
@@ -236,6 +250,10 @@ export class E2ENetwork {
   }
   /** Let go of a roster read still held, so a failed test cannot hold the next one's. */
   releaseHolds(): void {
+    this.releaseRegisterHold?.();
+    this.releaseRegisterHold = null;
+    this.registerHold = null;
+    this.onRegisterHeld = null;
     this.releaseListHold?.();
     this.releaseListHold = null;
     this.listHold = null;
@@ -416,6 +434,35 @@ export class E2ENetwork {
   clearEndpoints(): void {
     this.endpoints.length = 0;
     this.revokedElsewhere.clear();
+    this.registerScript.length = 0;
+    this.registerCalls = 0;
+  }
+  /** Make every device on the account invisible to the next `reads` list reads (0 shows them at once). */
+  hideEndpointsForReads(reads: number): void {
+    for (const e of this.endpoints) e.hiddenReads = reads;
+  }
+  /** How many `register` calls have reached the plane since the roster was last cleared. */
+  registerCalls = 0;
+  private registerScript: RegisterOutcome[] = [];
+  /** Answer the next `register` calls with these outcomes, in order; later calls mint. */
+  scriptRegister(...outcomes: RegisterOutcome[]): void {
+    this.registerScript.push(...outcomes);
+  }
+  private registerHold: Promise<void> | null = null;
+  private releaseRegisterHold: (() => void) | null = null;
+  private onRegisterHeld: (() => void) | null = null;
+  /**
+   * Hold the answer to the NEXT `register` call until the returned function is
+   * called. `held` resolves once that call has arrived and is waiting.
+   */
+  holdNextRegister(): { release: () => void; held: Promise<void> } {
+    let release!: () => void;
+    let arrived!: () => void;
+    const held = new Promise<void>((r) => (arrived = r));
+    this.registerHold = new Promise<void>((r) => (release = r)).then(() => undefined);
+    this.onRegisterHeld = arrived;
+    this.releaseRegisterHold = release;
+    return { release, held };
   }
   clearLog(): void {
     this.log.length = 0;
@@ -675,6 +722,15 @@ export class E2ENetwork {
         await hold;
         return this.serveAgents(q, res, seen);
       }
+      if (q.includes("op:'register'")) {
+        this.registerCalls++;
+        if (this.registerHold) {
+          const hold = this.registerHold;
+          this.registerHold = null;
+          this.onRegisterHeld?.();
+          await hold;
+        }
+      }
       return this.serveAgents(q, res);
     }
 
@@ -872,7 +928,16 @@ export class E2ENetwork {
     if (op === "list") {
       result = {
         columns: ["kind", "item"],
-        rows: (roster ?? this.endpoints).map((e) => [
+        rows: (roster ?? this.endpoints)
+          .filter((e) => {
+            // A device the list has not caught up with yet: one read fewer to wait.
+            if ((e.hiddenReads ?? 0) > 0) {
+              e.hiddenReads = (e.hiddenReads ?? 0) - 1;
+              return false;
+            }
+            return true;
+          })
+          .map((e) => [
           "agents",
           {
             agent: e.agent,
@@ -919,12 +984,41 @@ export class E2ENetwork {
       // `npm run e2e` left four PNGs modified for no reason anyone could see,
       // so the repo could never be clean after its own test suite and real
       // capture churn was indistinguishable from noise.
+      const outcome = this.registerScript.shift() ?? "mint";
+      const refusal = (status: number, code: string, message: string, retryable: boolean): void => {
+        const envelope = {
+          columns: ["op", "ok", "status", "result", "error", "retry_after"],
+          rows: [{ op, ok: false, status, result: null, retry_after: null, error: { code, message, retryable } }],
+        };
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(envelope));
+      };
+      if (outcome === "transport") {
+        res.writeHead(500, { "content-type": "application/json" }).end('{"title":"deliberate register outage"}');
+        return;
+      }
+      if (outcome === "refuse") {
+        refusal(403, "AGENT_LIMIT", "this account is over its device limit", false);
+        return;
+      }
+      if (outcome === "already") {
+        refusal(409, "ALREADY_REGISTERED", "this device is already registered", false);
+        return;
+      }
       const n = ++this.registerSeq;
       const agent = `agent-e2e${n.toString(16).padStart(10, "0")}`;
       const address = `2a04:2a01:e2e:${n.toString(16).padStart(4, "0")}::1`;
       const e: MockEndpoint = { agent, address, label: labelMatch?.[1] ?? "device", device: true, state: "active", logs: [] };
-      this.endpoints.push(e);
-      result = { columns: ["agent", "address", "label"], rows: [[agent, address, e.label]] };
+      if (typeof outcome === "object") {
+        e.hiddenReads = outcome.hiddenReads;
+        this.endpoints.push(e);
+        result = {
+          columns: ["token", "doh_url", "dot_host", "resolver_ip", "address", "label", "member"],
+          rows: [["tok-e2e", "https://doh.example/dns-query", "dot.example", "2001:db8::53", address, e.label, "member-e2e"]],
+        };
+      } else {
+        this.endpoints.push(e);
+        result = { columns: ["agent", "address", "label"], rows: [[agent, address, e.label]] };
+      }
     } else if (op === "policy") {
       // The per-device policy, faithful to the engine: a body arg replaces
       // the WHOLE rule set; no body reads back what is in force. Output is

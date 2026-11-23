@@ -7,10 +7,16 @@
 //             agent + /128, verifiable via reverse-DNS and RDAP). Pure
 //             control plane: works whenever the user is signed in, needs
 //             NO browser permission, and never touches the proxy setting.
-//             register-once: op:register {label, device:true} exactly once;
-//             the identity persists and is reused forever. If the account
-//             already holds a device with our exact label it is ADOPTED,
-//             never duplicated (registration writes durable state).
+//             register-once: op:register {label, device:true} goes out at
+//             most once per reservation; the identity persists and is reused
+//             forever. If the account already holds a device with our exact
+//             label it is ADOPTED, never duplicated (registration writes
+//             durable state). A new device can take a few seconds to show on
+//             the account's list, and the registration answer does not carry
+//             its id, so after the one registration the reservation is tried
+//             up to RESERVE_TRIES times, one at a time, each only re-reading
+//             the account. The try it is on is part of the status the
+//             surfaces read.
 //   PROTECT   route this browser's traffic through that identity via the
 //             authenticated Whisper HTTPS-CONNECT egress (op:connect).
 //             This half needs the optional proxy permission and a proxy
@@ -43,6 +49,13 @@ import { GraphError } from "./graph-client";
 import { rdapIpUrl, verifyIdentity } from "./rdap";
 
 const DEVICE_LABEL = "This browser (Whisper Guard)";
+
+/** How many times the reservation is tried before it gives up. */
+export const RESERVE_TRIES = 3;
+/** The wait before the second try, then before the third. */
+export const RESERVE_WAITS_MS: readonly number[] = [2_000, 4_000];
+/** The longest one try may take. A call that never answers counts as a failed try. */
+export const RESERVE_TRY_DEADLINE_MS = 45_000;
 
 interface EgressIdentity {
   agent: string;
@@ -120,56 +133,190 @@ async function setStored(patch: Partial<StoredEgress>): Promise<StoredEgress> {
 
 // -------------------------------------------------------------- identity
 
-/** Register-once: reuse the stored identity, adopt an existing device with
- *  our label, or mint a fresh one; in that order. Control plane only: no
- *  browser permission is involved anywhere in here. */
-async function ensureIdentity(): Promise<EgressIdentity> {
+function identityFrom(row: Record<string, unknown>): EgressIdentity | null {
+  const agent = str(row["agent"]);
+  const address = str(row["address"]);
+  if (!agent || !address) return null;
+  return { agent, address, label: DEVICE_LABEL, fqdn: str(row["fqdn"])?.replace(/\.$/, "") ?? null };
+}
+
+/** Thrown when every try ended without an address. Typed, so the caller
+ *  never has to read the message to tell it from any other failure. */
+export class ReservationExhausted extends Error {
+  constructor() {
+    super("could not reserve an address after several tries");
+    this.name = "ReservationExhausted";
+  }
+}
+
+/** Only what carries no verdict on the request itself is worth another try:
+ *  a transport failure or timeout, or an error the plane calls retryable. A
+ *  refusal, a missing or rejected key, a spent quota and a malformed answer
+ *  are final. */
+function worthRetrying(e: unknown): boolean {
+  if (e instanceof GraphError) return e.reason === "timeout" || e.reason === "connect" || e.reason === "server";
+  if (e instanceof ControlError) return e.retryable === true;
+  return false;
+}
+
+/** What one reservation remembers across its tries. */
+interface Sent {
+  /** A registration has gone out. It may have created the device, so no
+   *  second one is ever sent: later tries only re-read the account. */
+  register: boolean;
+}
+
+/** One try: the stored identity, else this browser's device already on the
+ *  account (adopted), else the reservation's one registration. null = not
+ *  ready yet. `live.over` turns true when the try's deadline passed, so a try
+ *  that is still running then never sends a registration. */
+async function findOrMint(sent: Sent, live: { over: boolean }): Promise<EgressIdentity | null> {
   const stored = await getStored();
   if (stored.identity) return stored.identity;
 
-  // Adoption: the account may already hold this browser's device (e.g. a
-  // reinstall). Registration writes durable state, so never duplicate.
+  // Adoption: the account may already hold this browser's device (a reinstall,
+  // or a registration that has not shown on the list yet). Registration writes
+  // durable state, so never duplicate.
+  let listedWithoutAddress = false;
   try {
-    const list = await controlCall("list", { kind: "agents" });
-    for (const row of list.rows) {
-      const item = row["item"];
-      if (!isObject(item)) continue;
-      if (str(item["label"]) !== DEVICE_LABEL) continue;
-      if (str(item["state"]) !== "active") continue;
-      const agent = str(item["agent"]);
-      const address = str(item["address"]);
-      if (agent && address) {
-        const identity: EgressIdentity = {
-          agent,
-          address,
-          label: DEVICE_LABEL,
-          fqdn: str(item["fqdn"])?.replace(/\.$/, "") ?? null,
-        };
-        await setStored({ identity });
-        return identity;
-      }
-    }
-  } catch {
-    // listing failed: fall through to register (it will fail loudly if truly broken)
+    const found = await scanRoster(null);
+    if (found.identity) return found.identity;
+    listedWithoutAddress = found.listedWithoutAddress;
+  } catch (e) {
+    // A final answer (signed out, a rejected key, a spent quota, a refusal)
+    // is never swallowed once a registration went out: it is the real reason.
+    if (sent.register && !worthRetrying(e)) throw e;
+    // Before any registration went out, fall through to register (it will
+    // fail loudly if truly broken). After one did, that device may exist
+    // already, so registering blind could add a second.
+    if (sent.register) return null;
   }
+  // The device exists and has no address yet: registering again would add a
+  // second one. This try is "not ready yet".
+  if (listedWithoutAddress) return null;
+  // Not listed, but a registration already went out: wait for it to show.
+  if (sent.register || live.over) return null;
 
-  const res = await controlCall(
-    "register",
-    { label: DEVICE_LABEL, device: true },
-    CONTROL_PROVISION_TIMEOUT_MS,
-  );
+  sent.register = true;
+  let res: Awaited<ReturnType<typeof controlCall>>;
+  try {
+    res = await controlCall("register", { label: DEVICE_LABEL, device: true }, CONTROL_PROVISION_TIMEOUT_MS);
+  } catch (e) {
+    // The device exists already and has not shown on the list yet.
+    if (e instanceof ControlError && e.code === "ALREADY_REGISTERED") return null;
+    throw e;
+  }
   const row = res.rows[0] ?? {};
-  const agent = str(row["agent"]);
-  const address = str(row["address"]);
-  if (!agent || !address) throw new ControlError(0, "register returned no identity");
-  const identity: EgressIdentity = {
-    agent,
-    address,
-    label: DEVICE_LABEL,
-    fqdn: str(row["fqdn"])?.replace(/\.$/, "") ?? null,
-  };
-  await setStored({ identity });
-  return identity;
+  const direct = identityFrom(row);
+  if (direct) {
+    await setStored({ identity: direct });
+    return direct;
+  }
+  // The service creates the device at once, but its answer does not carry the
+  // device's id. Read the account again right away: the device is usually
+  // listed already. When the answer carried an address, the listed one must
+  // match it. Not listed yet: this try is "not ready", and the next ones re-read.
+  try {
+    return (await scanRoster(str(row["address"]))).identity;
+  } catch (e) {
+    if (!worthRetrying(e)) throw e;
+    return null;
+  }
+}
+
+/** Read the account's list for this browser's device. `address`, when given,
+ *  must be the listed device's address too. */
+async function scanRoster(
+  address: string | null,
+): Promise<{ identity: EgressIdentity | null; listedWithoutAddress: boolean }> {
+  const list = await controlCall("list", { kind: "agents" });
+  let listedWithoutAddress = false;
+  for (const row of list.rows) {
+    const item = row["item"];
+    if (!isObject(item)) continue;
+    if (str(item["label"]) !== DEVICE_LABEL) continue;
+    if (str(item["state"]) !== "active") continue;
+    const identity = identityFrom(item);
+    if (identity) {
+      if (address && identity.address !== address) continue;
+      await setStored({ identity });
+      return { identity, listedWithoutAddress };
+    }
+    listedWithoutAddress = true;
+  }
+  return { identity: null, listedWithoutAddress };
+}
+
+/** One try, with a hard deadline: past it the try is a failed one, so the
+ *  reservation always settles however a call behaves. */
+async function tryOnce(sent: Sent): Promise<EgressIdentity | null> {
+  const live = { over: false };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const work = findOrMint(sent, live);
+  work.catch(() => undefined); // a late failure after the deadline is not news
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new GraphError("timeout", "a try took too long")), RESERVE_TRY_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    live.over = true;
+  }
+}
+
+// Progress lives in memory, exactly as long as the work it describes.
+let reservation: Promise<EgressIdentity> | null = null;
+let reserving: { attempt: number; of: number } | null = null;
+let reserveFailed = false;
+
+/** Forget the last reservation's failure: it belongs to the account it ran against. */
+export function forgetReserveFailure(): void {
+  reserveFailed = false;
+}
+
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function reserveWithRetries(): Promise<EgressIdentity> {
+  const sent: Sent = { register: false };
+  for (let attempt = 1; attempt <= RESERVE_TRIES; attempt++) {
+    reserving = { attempt, of: RESERVE_TRIES };
+    if (attempt > 1) await pause(RESERVE_WAITS_MS[attempt - 2] ?? RESERVE_WAITS_MS[RESERVE_WAITS_MS.length - 1]!);
+    try {
+      const identity = await tryOnce(sent);
+      if (identity) return identity;
+    } catch (e) {
+      if (!worthRetrying(e)) throw e;
+    }
+  }
+  reserveFailed = true;
+  throw new ReservationExhausted();
+}
+
+/**
+ * Register-once: reuse the stored identity, adopt an existing device with
+ * our label, or register (once per reservation) and then find the new device
+ * on the account; in that order, retried (see RESERVE_TRIES). At most one
+ * reservation runs at a time: a second request joins it and gets its result,
+ * so there is never more than one registration in flight. Control plane only:
+ * no browser permission is involved anywhere in here.
+ */
+async function ensureIdentity(): Promise<EgressIdentity> {
+  if (reservation) return reservation;
+  // A stored identity is returned before any progress is marked, and leaves
+  // the outcome of an earlier reservation as it was.
+  const stored = await getStored();
+  if (stored.identity) return stored.identity;
+  if (reservation) return reservation;
+  reserveFailed = false;
+  const run = reserveWithRetries().finally(() => {
+    reserving = null;
+    reservation = null;
+  });
+  reservation = run;
+  return run;
 }
 
 /**
@@ -502,6 +649,8 @@ export async function egressStatus(): Promise<EgressStatus> {
     webrtcHardened: IS_FIREFOX ? null : s.on,
     privateWindowsRouted: await privateWindowsRouted(),
     error: s.error,
+    reserving: reserving ? { ...reserving } : null,
+    reserveFailed,
   };
 }
 
@@ -564,6 +713,11 @@ export async function egressEnable(): Promise<EgressStatus> {
     }
     return egressStatus();
   } catch (e) {
+    if (e instanceof ReservationExhausted) {
+      // The status carries it (reserveFailed); nothing was half-applied.
+      await setStored({ on: false, error: null });
+      return egressStatus();
+    }
     const message =
       e instanceof GraphError && e.reason === "nokey"
         ? "sign in first; the browser identity lives on your Whisper account"

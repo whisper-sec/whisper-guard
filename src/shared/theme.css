@@ -480,6 +480,27 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .pc-actions:empty { margin-top: 0; }
 .pc-note { margin-top: 8px; }
 
+/* The steps shown while the address is reserved and routing is turned on.
+   State is never the shape or the colour alone: every step also carries it
+   as text for assistive technology. The spinner is a CSS animation, which
+   the global reduced-motion rule below already stops. */
+.pc-progress { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.pc-progress-title { color: var(--w-text); font-weight: 700; font-size: 14px; }
+.pc-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.pc-step { display: flex; align-items: center; gap: 10px; color: var(--w-text); }
+.pc-step.todo { color: var(--w-muted); }
+.pc-mark {
+  flex: none; box-sizing: border-box; width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid var(--w-line-strong); font-size: 11px; font-weight: 700; line-height: 1;
+}
+.pc-step.done .pc-mark { border-color: var(--w-ok); color: var(--w-ok); }
+.pc-step.current .pc-mark { border-color: var(--w-accent-line); border-top-color: var(--w-accent); animation: pc-spin 0.9s linear infinite; }
+.pc-step-try { color: var(--w-muted); font-size: 12px; }
+.pc-progress-hint { color: var(--w-muted); font-size: 12px; line-height: 1.45; }
+.pc-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@keyframes pc-spin { to { transform: rotate(360deg); } }
+
 a { color: var(--w-accent); }
 /* A link that inherits a quiet ink class still has to look like a link:
    .w-note beats the bare `a` on specificity, which is how the endpoint

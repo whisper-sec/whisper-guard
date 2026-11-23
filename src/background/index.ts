@@ -75,7 +75,7 @@ import {
   resetFeed,
   syncPollAlarm,
 } from "./monitor";
-import { armEgressRouting, egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, resumeEgress } from "./egress";
+import { armEgressRouting, egressDisable, egressEnable, egressStatus, enrollBrowser, forgetIdentity, forgetReserveFailure, ReservationExhausted, resumeEgress } from "./egress";
 import { readDevicePolicy, revokeEndpoint, writeDevicePolicy } from "./govern";
 import { scanTabLinks } from "./link-scan";
 import { scanTabIocs } from "./page-scan";
@@ -444,6 +444,8 @@ ext.contextMenus.onClicked.addListener((info) => onMenuClicked(info));
 // Sign-in / sign-out repaints every open http(s) tab right away: the keyed
 // tier lights up the moment the console approves, no re-navigation needed.
 onAuthChanged(() => {
+  // A failed reservation belongs to the account it ran against.
+  forgetReserveFailure();
   recheckOpenTabs().catch(() => undefined);
 });
 
@@ -931,6 +933,9 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
             nokey: true,
           };
         }
+        // Every try used without an address: a typed answer, so the surface
+        // shows its own sentence rather than this one.
+        if (e instanceof ReservationExhausted) return { ok: false, error: e.message, exhausted: true };
         return { ok: false, error: String(e instanceof Error ? e.message : e) };
       }
     case "scanIocs":
