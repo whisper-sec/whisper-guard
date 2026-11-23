@@ -17,11 +17,11 @@ history.
 **No account (fully keyless, works the instant it installs):**
 
 - **Live graph verdict on every site.** The toolbar mark answers "is THIS site
-  safe?" from the Whisper security graph: green for no known threat, amber for
-  suspicious, a filled red octagon plate reserved for evidenced-malicious, and
-  an honest dashed-slate UNKNOWN for the internet's long tail. Never a fake
-  green. Popularity feeds (Tranco and friends) are treated as good, never as a
-  threat.
+  safe?" from the Whisper security graph: a green tile with a ✓ for no known
+  threat, an amber tile with a ! for suspicious, a solid red tile with STOP
+  reserved for evidenced-malicious, and an honest dashed-outline UNKNOWN with a
+  ? for the internet's long tail. Never a fake green. Popularity feeds (Tranco
+  and friends) are treated as good, never as a threat.
 - **The chain: the join path behind the name.** Any product can look a name
   up. Click the mark and Guard walks the path instead, rung by rung: the
   NAME and how long ago it was registered, what RUNS ON it, the ADDRESS it
@@ -105,8 +105,10 @@ history.
   quiet wins by category (clicks held, identities verified, cookie prompts
   declined) and nothing else: the record is a category, a count and today's
   date, so it resets on its own and can never learn a site you visited. There
-  is no toast, no badge nag and no notification anywhere, because the extension
-  holds no notifications permission at all.
+  is no toast and no notification anywhere, because the extension holds no
+  notifications permission at all. The toolbar badge is not a counter and never
+  nags: it shows only the state of the site in the tab (✓, !, STOP, ?, or … while
+  a check runs).
 
 **Signed in (free, one tap, no API key to handle):**
 
@@ -239,8 +241,8 @@ history.
 
 ## How loud Guard is allowed to get
 
-One table decides, for every surface: silent, ambient (the toolbar mark and a
-single badge pulse), pre-emptive (hold the action you are taking and show the
+One table decides, for every surface: silent, ambient (the toolbar mark and its
+verdict badge), pre-emptive (hold the action you are taking and show the
 receipts first), conversational (a dismissible word on the page), blocking (the
 full-page stop). Most of the table is silent, and the whole no-evidence row is
 silent, which is where the overwhelming majority of browsing lands. Guard
