@@ -206,11 +206,12 @@ history.
 - Sign-in is the RFC 8628 device flow: you approve in the Whisper console and
   the extension receives its credential. You never see or paste a key.
 - **Every surface follows your system's colour scheme**, light or dark, and
-  every one of them is the Whisper console's design system in the browser: the
-  same tokens, type scale, spacing and component grammar, so moving between
-  the console and the extension is moving inside one product. Contrast is
-  measured on what actually renders, in both schemes, and the suite fails
-  under the WCAG AA floor.
+  every one of them is the Whisper design system in the browser: its colours
+  and its two typefaces, on the console's type scale, spacing and component
+  grammar, so moving between the console and the extension is moving inside
+  one product. The fonts (Lato and JetBrains Mono) ship inside the package;
+  none is fetched. Contrast is measured on what actually renders, in both
+  schemes, and the suite fails under the WCAG AA floor.
 
 **Active Shield (optional, off by default):**
 
@@ -484,5 +485,9 @@ MIT (c) 2026 viaGraph B.V. (Whisper Security). See `LICENSE`.
 
 The bundled Public Suffix List snapshot is maintained by Mozilla and the PSL
 community under the Mozilla Public License 2.0; see `NOTICE`.
+
+The bundled fonts, Lato and JetBrains Mono, are under the SIL Open Font
+License 1.1; the licence texts sit beside the files in `assets/fonts/` and in
+each build's `fonts/` folder, and `NOTICE` records their source and version.
 
 [moz-2013465]: https://bugzilla.mozilla.org/show_bug.cgi?id=2013465

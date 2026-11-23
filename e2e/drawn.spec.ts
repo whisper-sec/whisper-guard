@@ -27,6 +27,8 @@ import {
 } from "./helpers/extension";
 
 const EVIL = "drawn-evil-guard-e2e.com";
+/** Flagged like EVIL, but registered long ago: its age bar is filled well past the tick. */
+const OLD = "drawn-old-guard-e2e.com";
 const GOOD = "drawn-good-guard-e2e.com";
 const SECOND = "drawn-second-guard-e2e.com";
 
@@ -56,6 +58,18 @@ test.beforeAll(async () => {
   const registered = new Date(Date.now() - 16 * 86_400_000).toISOString();
   net.setHistory(EVIL, [{ createDate: registered, updateDate: registered }]);
   net.setPage(EVIL, "<!doctype html><html><body><h1>sign in</h1></body></html>");
+
+  net.setVerdict(OLD, { band: "CRITICAL", coverage: "malicious-evidenced", label: "credential-phishing suspect" });
+  net.setEnrich(OLD, {
+    ip: "192.0.2.67", city: "Example City, CA", country: "CA", asn: "AS64550",
+    owner: "Bad Hosting LLC", asnName: "BADHOST - Bad Hosting LLC",
+    prefix: "192.0.2.0/24", threatNeighbors: 9, verdict: "CRITICAL",
+  });
+  net.setIdentify(OLD, []);
+  // 200 days before the run, for the same reason EVIL is dated from the run.
+  const longAgo = new Date(Date.now() - 200 * 86_400_000).toISOString();
+  net.setHistory(OLD, [{ createDate: longAgo, updateDate: longAgo }]);
+  net.setPage(OLD, "<!doctype html><html><body><h1>sign in</h1></body></html>");
 
   for (const [host, ip, asn] of [
     [GOOD, "198.51.100.40", "AS64540"],
@@ -134,6 +148,54 @@ test("the warning page draws the join, and every mark comes from a measurement",
     "counting reason strings as independent sources is an overclaim",
   ).not.toContainText("independent citations");
 
+  await page.close();
+});
+
+test("the new-domain tick stays visible where it crosses the age bar, in both colour schemes", async () => {
+  // The tick is one line drawn on top of the bar. For a name older than the
+  // threshold the bar's fill runs under it, so the tick is only there for a
+  // reader if its colour stands out from that fill: a see-through or
+  // near-fill colour draws a threshold nobody can see, under a caption that
+  // tells the reader to look for it.
+  await markHostBlocked(ext, OLD);
+  const page = await ext.context.newPage();
+  await page.goto(`chrome-extension://${ext.id}/warning.html?host=${OLD}`);
+  const bar = page.locator("#ev-age svg");
+  await expect(bar).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("#ev-age")).toContainText("The tick is 32 days");
+  // CONTROL: track, fill and tick are all drawn, and the fill reaches past the
+  // tick (200 of 365 days against a tick at 32), or nothing is under it.
+  await expect(bar.locator("rect")).toHaveCount(3);
+  expect(Number(await bar.getAttribute("data-pct")), "200 days of a 365 day scale").toBeGreaterThan(20);
+
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+    const ratio = await bar.evaluate((svg) => {
+      const px = (c: string): number[] => {
+        const raw = (c.match(/-?[\d.]+/g) ?? []).map(Number);
+        // A computed colour comes back as rgb()/rgba() on 0-255 or as color(srgb ...) on 0-1.
+        const scale = c.startsWith("color(") ? 255 : 1;
+        return [raw[0]! * scale, raw[1]! * scale, raw[2]! * scale, raw[3] ?? 1];
+      };
+      const lum = (c: number[]): number => {
+        const f = (v: number): number => {
+          const x = v / 255;
+          return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * f(c[0]!) + 0.7152 * f(c[1]!) + 0.0722 * f(c[2]!);
+      };
+      // Drawing order: the track, the fill, then the tick on top.
+      const [, fillRect, tickRect] = Array.from(svg.querySelectorAll("rect"));
+      const fill = px(getComputedStyle(fillRect!).fill);
+      const tick = px(getComputedStyle(tickRect!).fill);
+      // What the tick actually paints: its own colour laid over the fill.
+      const a = tick[3]!;
+      const painted = [0, 1, 2].map((i) => tick[i]! * a + fill[i]! * (1 - a));
+      const [hi, lo] = [lum(painted), lum(fill)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    });
+    expect(ratio, `${scheme}: the tick against the fill under it (a mark needs 3:1)`).toBeGreaterThanOrEqual(3);
+  }
   await page.close();
 });
 

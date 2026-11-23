@@ -6,9 +6,11 @@
    full-page warning. Tokens and primitives only; each surface keeps its
    own layout.
 
-   It is the EDR console's design system, in the browser. The tokens, the
-   type scale, the spacing rhythm and the component grammar below are the
-   console's, so a reader moving between edr.whisper.security and this
+   It is the Whisper UI kit, in the browser: the kit's violet interactive
+   colour and ink on near-black in the dark scheme, the light popup board's
+   palette in daylight, Lato for text and JetBrains Mono for what is
+   measured. The type scale, the spacing rhythm and the component grammar
+   below are the console's, so a reader moving between the console and this
    extension is moving inside one product rather than between two.
 
    Rules the tokens encode:
@@ -18,9 +20,9 @@
      hard-codes a colour outside this file, so a surface cannot be
      dark-only by accident.
    - --w-faint NEVER CARRIES MEANING. It is the console's ink-mute and it
-     measures 2.4:1 to 3.2:1 on our surfaces in both themes, below the
+     measures 2.3:1 to 3.1:1 on our surfaces in both themes, below the
      4.5:1 floor everywhere. Labels, marks and decoration only; a sentence
-     a reader is meant to read is --w-muted (5.6:1 and up) or --w-text.
+     a reader is meant to read is --w-muted (4.6:1 and up) or --w-text.
    - STATUS HUES COLOUR THE DOT, NOT THE WORDS. --w-ok in the light theme
      peaks around 4.3:1, so no sentence depends on a status colour; a dot
      or a border is a non-text indicator and clears its 3:1 easily. Every
@@ -29,38 +31,142 @@
      the category palette, so a category hue can never impersonate a
      verdict.
    - MONO FOR EVERYTHING MEASURED: numbers, addresses, hostnames, with
-     tabular numerals.
+     tabular numerals. Both families ship inside the package (see the
+     @font-face rules below); no font is ever fetched from the network.
    - MOTION is transform/opacity only and yields to prefers-reduced-motion. */
+
+/* ------------------------------------------------------------- the fonts
+
+   Lato (400, 700, 900) and JetBrains Mono (400, 700), as woff2 files in
+   fonts/ beside this sheet, each in two subsets: Latin and Latin Extended.
+   The interface is English and hostnames are shown in ASCII, so any other
+   script falls back to the system stack named after each family.
+
+   font-display: block. The files are the extension's own and load in a
+   few milliseconds, so the first painted frame already uses the shipped
+   face; a swap would paint the system face first and then move every line
+   when the metrics change. Weights the sheets ask for between the faces
+   (300, 500, 600) resolve to the nearest shipped face, and the italic
+   uses are a synthesised slant: no italic face ships. */
+
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("fonts/lato-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("fonts/lato-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("fonts/lato-latin-ext-700-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("fonts/lato-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url("fonts/lato-latin-ext-900-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url("fonts/lato-latin-900-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("fonts/jetbrains-mono-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("fonts/jetbrains-mono-latin-ext-700-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   color-scheme: dark;
 
   /* Surfaces, page ground to raised. */
-  --w-bg: #0a0a10;
-  --w-surface: #0e0e15;
-  --w-card: #12121a;
-  --w-elev: #171721;
-  --w-hover: #1b1b26;
+  --w-bg: #06060c;
+  --w-surface: #050310;
+  --w-card: #0d0d1a;
+  --w-elev: #1a1a2e;
+  /* One small step above raised; --w-muted on it stays above 4.5:1 (4.65). */
+  --w-hover: #1f1f36;
 
-  --w-line: #1e1e2a;
-  --w-line-strong: #2c2c3c;
+  /* Hairlines. The kit draws them as white at 10% and 16%; here they are
+     those two lines as they land on a card, as SOLID colours. Several marks
+     draw a line on top of another fill (the tick across a ratio bar, the
+     rail under a chain dot), and a see-through line vanishes over a light
+     fill and doubles where two cross. */
+  --w-line: #252531;
+  --w-line-strong: #34343f;
 
   /* Ink. --w-faint is decoration only; see the rule above. */
-  --w-text: #ececf1;
-  --w-muted: #9a9aae;
-  --w-faint: #5e5e72;
+  --w-text: #eeeef0;
+  --w-muted: #8888a0;
+  --w-faint: #5a5a72;
 
-  /* The single accent. --w-accent-line is the focus ring and every
-     accent border: it is tuned to clear 3:1 as a non-text indicator on
-     every surface in both themes. */
-  --w-accent: #6ea8ff;
-  --w-accent-line: #3d6db8;
-  --w-accent-soft: color-mix(in srgb, var(--w-accent) 12%, transparent);
+  /* The single accent. --w-accent is the violet drawn as text and fills
+     (8.3:1 on a card); the kit's interactive violet, #7d5ce0, is only
+     4.1:1 as text on a card, so it lives in --w-accent-line, the focus
+     ring and every accent border, where it clears 3:1 as a non-text mark
+     on every surface (3.4:1 on --w-hover up to 4.4:1 on --w-surface). */
+  --w-accent: #b49cf5;
+  --w-accent-line: #7d5ce0;
+  --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 14%, transparent);
 
   /* Verdict scale - RESERVED for safety meaning only. */
   --w-ok: #34d399;
-  --w-v-none: #5e5e72;
-  --w-v-info: #6ea8ff;
+  --w-v-none: #8888a0;
+  --w-v-info: #b49cf5;
   --w-v-low: #fbbf24;
   --w-v-med: #fb923c;
   --w-v-high: #f87171;
@@ -81,10 +187,11 @@
   --w-cat-infrastructure: #c49a3a;
   --w-cat-unresolved: #9098a8;
 
-  /* Type. The console's stack. */
+  /* Type. The bundled faces first, the system stacks behind them for any
+     script the subsets do not cover. */
   --w-font: var(--w-font-sans);
-  --w-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --w-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --w-font-sans: "Lato", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --w-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 }
 
 /* ------------------------------------------------------------ daylight
@@ -97,33 +204,33 @@
   :root {
     color-scheme: light;
 
-    --w-bg: #f2f3f7;
-    --w-surface: #f9fafc;
+    --w-bg: #f4f4f8;
+    --w-surface: #ffffff;
     --w-card: #ffffff;
-    --w-elev: #eceef4;
-    --w-hover: #e7eaf1;
+    --w-elev: #ececf3;
+    --w-hover: #e9e9f1;
 
-    --w-line: #dfe2ea;
-    --w-line-strong: #c5cad8;
+    --w-line: #e4e4ee;
+    --w-line-strong: #c4c4d6;
 
-    --w-text: #1a1c26;
-    --w-muted: #565b6f;
-    --w-faint: #9096a8;
+    --w-text: #1a1a2e;
+    --w-muted: #5f5f70;
+    --w-faint: #9a9ab0;
 
-    --w-accent: #3563b8;
-    --w-accent-line: #487bce;
-    --w-accent-soft: color-mix(in srgb, var(--w-accent) 9%, transparent);
+    --w-accent: #5b3fc4;
+    --w-accent-line: #6a4bd6;
+    --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 12%, transparent);
 
-    /* The console's daylight status hues, each darkened just enough to
-       clear 4.5:1 on --w-elev (#eceef4), the lowest-contrast ground a chip
-       sits on here. The console's own audit records that these peak around
-       4.35:1 and so never carries a sentence in them; Guard draws short
-       status WORDS in them (a chip is a word plus a colour, never a colour
-       alone), so it pays the few points to clear the text floor outright.
-       Measured, not assumed: ok 4.79, low 4.80, med 4.83, high 4.71. */
+    /* The status hues, each dark enough to clear 4.5:1 on --w-elev
+       (#ececf3) and on --w-hover (#e9e9f1), the lowest-contrast grounds a
+       chip sits on here. Guard draws short status WORDS in them (a chip is
+       a word plus a colour, never a colour alone), so it pays the few
+       points to clear the text floor outright. Measured, not assumed, on
+       --w-elev / --w-hover: ok 4.73 / 4.60, low 4.73 / 4.61, med 4.76 /
+       4.64, high 4.65 / 4.53. */
     --w-ok: #0c7753;
-    --w-v-none: #9096a8;
-    --w-v-info: #3563b8;
+    --w-v-none: #7a7a90;
+    --w-v-info: #5b3fc4;
     --w-v-low: #8b6004;
     --w-v-med: #aa4c0c;
     --w-v-high: #c53030;
@@ -161,7 +268,8 @@ body {
      12.5 body, card titles
      13   emphasis, mono readouts
      15   page title
-     26   the one hero number per surface (mono, light) */
+     26   the one hero number per surface (mono; it asks for the light
+          weight and draws in regular, the lightest mono face that ships) */
 
 .w-h1 { font: 600 15px/1.35 var(--w-font-sans); letter-spacing: 0.01em; color: var(--w-text); }
 .w-h2 { font: 600 12.5px/1.4 var(--w-font-sans); color: var(--w-text); }
@@ -482,7 +590,7 @@ a.w-note, .w-note a, .w-privacy a { color: var(--w-accent); }
   flex: 1;
 }
 /* The rung name is a WORD THE READER READS, not a mark, so it is ink-dim
-   and never --w-faint. --w-faint measures 3.12:1 on the panel ground, which
+   and never --w-faint. --w-faint measures about 3:1 on the panel ground, which
    the theme's own rule reserves for decoration; a rung called PREFIX that a
    reader cannot read is a rung that is not there. Caught by the contrast
    sweep in e2e/theme.spec.ts rather than by eye. */

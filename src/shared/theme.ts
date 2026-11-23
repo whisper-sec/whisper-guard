@@ -75,11 +75,11 @@ export interface ChartInk {
 
 export function chartInk(): ChartInk {
   return {
-    text: themeColor("--w-text", "#ececf1"),
-    muted: themeColor("--w-muted", "#9a9aae"),
-    line: themeColor("--w-line-strong", "#2c2c3c"),
-    track: themeColor("--w-line-strong", "#2c2c3c"),
-    accent: themeColor("--w-accent", "#6ea8ff"),
+    text: themeColor("--w-text", "#eeeef0"),
+    muted: themeColor("--w-muted", "#8888a0"),
+    line: themeColor("--w-line-strong", "#34343f"),
+    track: themeColor("--w-line-strong", "#34343f"),
+    accent: themeColor("--w-accent", "#b49cf5"),
     ok: themeColor("--w-ok", "#34d399"),
     warn: themeColor("--w-v-low", "#fbbf24"),
     crit: themeColor("--w-v-high", "#f87171"),
@@ -87,4 +87,47 @@ export function chartInk(): ChartInk {
 }
 
 /** The document's font stacks, for canvas `ctx.font`. */
-export const CANVAS_MONO = "ui-monospace, monospace";
+export const CANVAS_MONO = '"JetBrains Mono", ui-monospace, monospace';
+
+// A <canvas> does not repaint when a font finishes loading: text drawn
+// before the face arrives stays in the fallback. A drawing that uses the
+// mono face registers here; if the face is not loaded yet it is drawn again
+// once it is. One pending redraw per canvas, the latest wins, and a face
+// that is already loaded costs nothing.
+//
+// The load is tried ONCE per page. A face that failed to load still reports
+// "not loaded" afterwards, and every redraw registers again, so without the
+// settled flag a broken font file would redraw the canvas in a loop for as
+// long as the page is open. After the one attempt the drawing keeps
+// whichever face it got.
+const pendingRedraws = new Map<HTMLCanvasElement, () => void>();
+let monoLoading = false;
+let monoSettled = false;
+
+export function redrawWhenMonoLoads(canvas: HTMLCanvasElement, redraw: () => void): void {
+  if (monoSettled || typeof document === "undefined" || !document.fonts) return;
+  const probe = `10px ${CANVAS_MONO}`;
+  if (document.fonts.check(probe)) {
+    monoSettled = true;
+    return;
+  }
+  pendingRedraws.set(canvas, redraw);
+  if (monoLoading) return;
+  monoLoading = true;
+  void document.fonts
+    .load(probe)
+    .catch(() => undefined)
+    .then(() => {
+      monoLoading = false;
+      monoSettled = true;
+      const run = [...pendingRedraws.values()];
+      pendingRedraws.clear();
+      for (const fn of run) {
+        try {
+          fn();
+        } catch {
+          // one bad redraw never stops the others
+        }
+      }
+    });
+}

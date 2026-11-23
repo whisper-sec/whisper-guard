@@ -2,7 +2,7 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // Build one target: node scripts/build.mjs <chromium|firefox>
-// Bundles the TypeScript with esbuild, copies static pages / styles /
+// Bundles the TypeScript with esbuild, copies static pages / styles / fonts /
 // icons, stamps the manifest with the package version, and then VERIFIES
 // the output: a dist that is missing any file the manifest references
 // fails the build instead of shipping broken.
@@ -86,6 +86,14 @@ for (const [from, to] of [
   copyFileSync(join(ROOT, from), join(OUT, to));
 }
 
+// 2b) Fonts. theme.css declares them with relative url("fonts/...") and the
+// SIL Open Font License asks each copy to carry its notice, so the licence
+// texts travel with the files. Every file is on the self-check list below.
+const FONT_DIR = join(ROOT, "assets", "fonts");
+const FONT_FILES = readdirSync(FONT_DIR).filter((f) => f.endsWith(".woff2") || f.endsWith(".txt"));
+mkdirSync(join(OUT, "fonts"), { recursive: true });
+for (const f of FONT_FILES) copyFileSync(join(FONT_DIR, f), join(OUT, "fonts", f));
+
 // 3) Icons.
 mkdirSync(join(OUT, "icons"), { recursive: true });
 const iconDir = join(ROOT, "icons");
@@ -124,6 +132,27 @@ for (const extra of [
 ]) {
   referenced.add(extra);
 }
+// Every font file theme.css names must have been shipped (a stylesheet that
+// names a file the build dropped falls back to system fonts without a
+// sound), and so must the two licence texts.
+const themeCss = readFileSync(join(ROOT, "src/shared/theme.css"), "utf8");
+const fontUrls = [...themeCss.matchAll(/@font-face\s*\{([^}]*)\}/g)].flatMap((face) =>
+  [...face[1].matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)].map((m) => m[1]),
+);
+if (fontUrls.length === 0) {
+  console.error("build: theme.css declares no @font-face rules; the fonts are load-bearing");
+  process.exit(1);
+}
+// A font is a file in fonts/ of this package and nothing else: an address
+// with a scheme, a host or a path out of the folder would be fetched from
+// somewhere else at run time, and no font is ever fetched from the network.
+const notBundled = fontUrls.filter((u) => !/^fonts\/[\w.-]+\.woff2$/.test(u));
+if (notBundled.length > 0) {
+  console.error(`build: theme.css names a font that is not a bundled file: ${notBundled.join(", ")}`);
+  process.exit(1);
+}
+for (const u of fontUrls) referenced.add(u);
+for (const lic of ["fonts/OFL-Lato.txt", "fonts/OFL-JetBrainsMono.txt"]) referenced.add(lic);
 
 let missing = 0;
 for (const rel of referenced) {
