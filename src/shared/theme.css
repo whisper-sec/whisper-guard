@@ -163,6 +163,8 @@
      on every surface (3.4:1 on --w-hover up to 4.4:1 on --w-surface). */
   --w-accent: #b49cf5;
   --w-accent-line: #7d5ce0;
+  /* Thin accent strokes drawn as marks, such as the arc of a spinner. */
+  --w-accent-stroke: #9b7cf0;
   --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 14%, transparent);
 
   /* Verdict scale - RESERVED for safety meaning only. */
@@ -222,6 +224,8 @@
 
     --w-accent: #5b3fc4;
     --w-accent-line: #6a4bd6;
+    /* Thin accent strokes drawn as marks, such as the arc of a spinner. */
+    --w-accent-stroke: #6a4bd6;
     --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 12%, transparent);
 
     /* The status hues, each dark enough to clear 4.5:1 on --w-elev

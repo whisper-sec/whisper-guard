@@ -15,7 +15,7 @@
 // browsing is never blocked.
 
 import { ext } from "../shared/api";
-import { NAV_DEBOUNCE_MS } from "../shared/config";
+import { GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { atLeast, decide } from "../shared/escalation";
 import { extractHostname } from "../shared/hostname";
 import { registrableDomain } from "../shared/psl";
@@ -123,6 +123,20 @@ const lastUrl = new Map<number, string>();
  * answers these with an honest stand-in instead of an empty state.
  */
 const pending = new Set<number>();
+/**
+ * Callers waiting for a tab's check to settle (the popup's "Check this site
+ * now"). Keyed by tab, not by generation: when a navigation supersedes a check,
+ * the state of the page the tab shows now is the right answer. Memory only.
+ */
+const settleWaiters = new Map<number, Array<(state: TabState | null) => void>>();
+
+/** Hand a settled state (or null when no state will come) to every waiter of the tab. */
+function resolveSettled(tabId: number, state: TabState | null): void {
+  const waiting = settleWaiters.get(tabId);
+  if (!waiting) return;
+  settleWaiters.delete(tabId);
+  for (const resolve of waiting) resolve(state);
+}
 
 function blankState(): TabState {
   return {
@@ -178,6 +192,7 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
     pending.delete(tabId);
     await saveTabState(tabId, state, current);
     await paintIcon(tabId, "neutral");
+    resolveSettled(tabId, state);
     return;
   }
   state.hostname = hostname;
@@ -232,6 +247,9 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
   pending.delete(tabId);
   await saveTabState(tabId, state, current);
   await paintIcon(tabId, state.icon);
+  // The settled answer reaches a waiting popup before the shield step below,
+  // so it carries the verdict even when the tab is then moved to the warning page.
+  if (current()) resolveSettled(tabId, state);
 
   // 4) Ambient rung and up: the session log. Below it,
   // silence: the network/verdict layer already handled the outcome.
@@ -348,7 +366,10 @@ function scheduleEvaluate(tabId: number, url: string): void {
       debounce.delete(tabId);
       evaluate(tabId, url, gen).catch(() => {
         // An evaluation that threw must not leave the tab "checking" forever.
-        if (navGen.get(tabId) === gen) pending.delete(tabId);
+        if (navGen.get(tabId) === gen) {
+          pending.delete(tabId);
+          resolveSettled(tabId, null);
+        }
       });
     }, NAV_DEBOUNCE_MS),
   );
@@ -408,6 +429,7 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 ext.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
   pending.delete(tabId);
+  resolveSettled(tabId, null);
   void forgetTabState(tabId);
   navGen.delete(tabId);
   lastUrl.delete(tabId);
@@ -630,6 +652,58 @@ async function lookupTabState(tabId: number): Promise<TabState> {
   return blankState();
 }
 
+/** Wait for the tab's next settled state, bounded by the longest a check can take. */
+function waitForSettled(tabId: number): Promise<TabState | null> {
+  return new Promise((resolve) => {
+    const done = (state: TabState | null): void => {
+      clearTimeout(timer);
+      resolve(state);
+    };
+    const timer = setTimeout(() => {
+      const rest = (settleWaiters.get(tabId) ?? []).filter((f) => f !== done);
+      if (rest.length > 0) settleWaiters.set(tabId, rest);
+      else settleWaiters.delete(tabId);
+      resolve(null);
+    }, GRAPH_TIMEOUT_MS + NAV_DEBOUNCE_MS + 1500);
+    settleWaiters.set(tabId, [...(settleWaiters.get(tabId) ?? []), done]);
+  });
+}
+
+/**
+ * Check the page a tab shows now, for a tab that was never checked or whose
+ * answer was dropped. It runs the same check a navigation does (cache first,
+ * one whisper.assess on a miss, the private-window rule, the toolbar paint)
+ * and answers with the settled state. The address is read here, never taken
+ * from the caller.
+ */
+async function checkTabNow(tabId: number): Promise<TabState> {
+  let url = lastUrl.get(tabId);
+  let learned = false;
+  if (url === undefined) {
+    try {
+      url = (await ext.webNavigation.getFrame({ tabId, frameId: 0 }))?.url;
+    } catch {
+      url = undefined;
+    }
+    // A commit that landed during the await already started a check of the
+    // page the tab shows now: wait for that one.
+    if (lastUrl.has(tabId)) url = lastUrl.get(tabId);
+    else learned = true;
+  }
+  if (!url || !/^https?:/i.test(url)) return lookupTabState(tabId);
+
+  const settled = waitForSettled(tabId);
+  // A check already in flight (queued, or past its first write and waiting on
+  // the graph) is waited for, never repeated.
+  if (!pending.has(tabId) && tabs.get(tabId)?.icon !== "checking") {
+    if (learned) lastUrl.set(tabId, url);
+    tabs.delete(tabId);
+    scheduleEvaluate(tabId, url);
+  }
+  const state = await settled;
+  return state ? { ...state } : lookupTabState(tabId);
+}
+
 async function checkHost(rawHost: string): Promise<CheckHostResult> {
   const host = rawHost.toLowerCase();
   const settings = await getSettings();
@@ -745,6 +819,11 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       // answer to a read mutate the thing being read, so a later paint could
       // observe a field this handler set rather than one evaluate() decided.
       const state = await lookupTabState(msg.tabId);
+      state.signedIn = await hasKey();
+      return { ok: true, tabState: state };
+    }
+    case "checkTab": {
+      const state = await checkTabNow(msg.tabId);
       state.signedIn = await hasKey();
       return { ok: true, tabState: state };
     }

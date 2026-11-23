@@ -205,6 +205,8 @@ test("the popup is a fixed 400 x 600 frame and only the content region scrolls",
 // Block id -> the panel that holds it (header and footer ids are in none).
 const HOMES: Record<string, string | null> = {
   "host-row": "panel-site",
+  "checking-view": "panel-site",
+  "not-checked-view": "panel-site",
   lookalike: "panel-site",
   "blocked-card": "panel-site",
   "graph-error": "panel-site",
@@ -385,7 +387,7 @@ test("while a check is in flight This page says so, and shows its cards once it 
   await waitForIcon(ext, tabId, ["checking"]);
   const popup = await openPopup(ext, tabId, { popupTab: "page" });
   await expect(popup.locator("#page-empty")).toBeVisible();
-  const note = (await popup.locator("#band-note").textContent()) ?? "";
+  const note = (await popup.locator("#checking-text").textContent()) ?? "";
   expect(note.length).toBeGreaterThan(0);
   await expect(popup.locator("#page-empty")).toHaveText(note);
   await expect(popup.locator("#linkscan-card")).toBeHidden();

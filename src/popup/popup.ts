@@ -20,10 +20,12 @@
 // way", never as green. The answers sit under three tabs (tabs.ts): This site
 // holds the verdict, the chain and the evidence, This page the link check and
 // the indicator scan, This browser the identity and the activity. Every tab is
-// filled when the popup opens. This site's footer carries the per-host
-// privacy line saying exactly what was sent.
+// filled when the popup opens, and that holds while a check waits and on a tab
+// Guard has not checked yet: This site then shows a ring with placeholders, or a
+// card with a button, and the verdict replaces either in place. This site's
+// footer carries the per-host privacy line saying exactly what was sent.
 
-import { send, type BrowserReport } from "../shared/messages";
+import { send, type BgResponse, type BrowserReport } from "../shared/messages";
 import {
   WIN_CATEGORIES,
   type CandidateVerdict,
@@ -886,11 +888,9 @@ async function loadTier(): Promise<void> {
 
 // ---------------------------------------------------------------- render
 
-function render(): void {
-  if (!state) return;
-  const s = state;
-  const cloudCheck = settings?.cloudCheck ?? true;
-
+/** Everything that does not depend on this site's check: drawn once at open,
+ *  in every case, so every tab is filled while a check waits or a press is due. */
+function renderShell(signedIn: boolean, activeHost: string, first: TabState | null): void {
   void loadScale();
   void loadToday();
   void loadBrowser24h();
@@ -901,7 +901,7 @@ function render(): void {
   // This browser's protection is on every page, signed in or not: keyed
   // readers get the one control, keyless readers get the one thing that
   // unlocks it. Two tiers, both honest, one action either way.
-  if (s.signedIn) void loadIdentity();
+  if (signedIn) void loadIdentity();
   else {
     wireSignin();
     void loadTier();
@@ -913,7 +913,66 @@ function render(): void {
   // list is session-wide, not tab-scoped, so it runs BEFORE the eligibility
   // gate: even on an ineligible tab (a browser page, or the block page itself)
   // a session block stays visible and clearable, never a silent dead end.
-  void loadBlocked(s.hostname ?? "");
+  void loadBlocked(activeHost);
+
+  // The on-device look-alike catch needs no check and sends nothing.
+  if (first) drawLookalike(first);
+}
+
+let lookalikeDrawn = false;
+
+/** The look-alike card and its report button, from the on-device detector. */
+function drawLookalike(s: TabState): void {
+  if (lookalikeDrawn || !s.detector || !s.hostname) return;
+  lookalikeDrawn = true;
+  const host = s.hostname;
+  const d = s.detector;
+  $("lookalike").hidden = false;
+  const kindText: Record<string, string> = {
+    confusable: "is a confusable look-alike of",
+    tldswap: "uses the name of",
+    combosquat: "embeds the name of",
+    "brand-subdomain": "impersonates",
+    nearmiss: "is one keystroke away from",
+  };
+  $("lookalike-text").textContent = `This site ${kindText[d.kind] ?? "looks like"} ${d.brandDomain}. Caught on-device.`;
+  const go = $<HTMLAnchorElement>("btn-goto");
+  go.textContent = `Go to the real ${d.brandDomain}`;
+  go.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    chrome.tabs.update(tabId, { url: d.goTo }).then(() => window.close());
+  });
+
+  if (s.signedIn) {
+    const report = $("btn-report");
+    report.hidden = false;
+    report.addEventListener("click", async () => {
+      report.textContent = "Reporting...";
+      const res = await send({ kind: "report", host, note: "reported from Whisper Guard" });
+      const status = $("report-status");
+      status.hidden = false;
+      status.textContent = res.ok ? "Reported. Thank you." : "Could not submit the report; try again.";
+      report.hidden = true;
+    });
+  }
+}
+
+let siteRendered = false;
+
+/** The part of the popup that is this site's answer: drawn at most once, so
+ *  its listeners are attached once, either at open or after the press. */
+function renderSite(s: TabState): void {
+  const cloudCheck = settings?.cloudCheck ?? true;
+  $("checking-view").hidden = true;
+  $("not-checked-view").hidden = true;
+  // A tab with no answer is never drawn as a verdict: it gets the card.
+  if (cloudCheck && s.lost && s.eligible && s.hostname) {
+    drawNotChecked();
+    return;
+  }
+  if (siteRendered) return;
+  siteRendered = true;
+  drawLookalike(s);
 
   if (!s.eligible || !s.hostname) {
     $("ineligible").hidden = false;
@@ -972,15 +1031,6 @@ function render(): void {
     chip.textContent = "COULD NOT CHECK";
     note.textContent = "Not confirmed either way. On-device checks still ran.";
     void loadProtection(host);
-  } else if (cloudCheck && s.lost) {
-    // The worker was stopped and no answer for this exact name was kept. Not a
-    // failed check and not a verdict: no chip, just the honest sentence.
-    glyph.className = "glyph unknown";
-    rail.className = "band-rail unknown";
-    glyph.textContent = "?";
-    chip.hidden = true;
-    note.textContent = "No answer kept for this page. Reload it to check again.";
-    void loadProtection(host);
   } else if (cloudCheck) {
     glyph.className = "glyph unknown";
     rail.className = "band-rail unknown";
@@ -999,39 +1049,6 @@ function render(): void {
     chip.className = "w-chip unknown";
     chip.textContent = "LIVE CHECK OFF";
     note.textContent = "On-device protection only. Turn the live check back on in settings.";
-  }
-
-  if (s.detector) {
-    const d = s.detector;
-    $("lookalike").hidden = false;
-    const kindText: Record<string, string> = {
-      confusable: "is a confusable look-alike of",
-      tldswap: "uses the name of",
-      combosquat: "embeds the name of",
-      "brand-subdomain": "impersonates",
-      nearmiss: "is one keystroke away from",
-    };
-    $("lookalike-text").textContent = `This site ${kindText[d.kind] ?? "looks like"} ${d.brandDomain}. Caught on-device.`;
-    const go = $<HTMLAnchorElement>("btn-goto");
-    go.textContent = `Go to the real ${d.brandDomain}`;
-    go.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      chrome.tabs.update(tabId, { url: d.goTo }).then(() => window.close());
-    });
-  }
-
-  if (s.signedIn && (band === "CRITICAL" || band === "HIGH" || band === "MEDIUM" || s.detector)) {
-    const report = $("btn-report");
-    if (s.detector) $("lookalike").hidden = false;
-    report.hidden = !s.detector;
-    report.addEventListener("click", async () => {
-      report.textContent = "Reporting...";
-      const res = await send({ kind: "report", host, note: "reported from Whisper Guard" });
-      const status = $("report-status");
-      status.hidden = false;
-      status.textContent = res.ok ? "Reported. Thank you." : "Could not submit the report; try again.";
-      report.hidden = true;
-    });
   }
 
   if (s.graphError) {
@@ -1107,6 +1124,7 @@ function render(): void {
       : `Privacy: nothing was sent. The live check is off; on-device checks still ran.`;
 }
 
+
 /** The one writer of the sentence that says why This page has nothing to
  *  show: text to show it, null to hide it. */
 function syncPageNote(text: string | null): void {
@@ -1127,6 +1145,7 @@ async function init(): Promise<void> {
   });
   $("btn-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("btn-refresh").addEventListener("click", () => window.location.reload());
+  $("btn-check-now").addEventListener("click", () => void checkNow());
 
   // Normally the active tab; ?tab=<id> pins the panel to a specific tab
   // (debugging and UI testing when the panel is opened as a full page).
@@ -1138,36 +1157,99 @@ async function init(): Promise<void> {
     tabId = tab?.id ?? -1;
   }
   const [stateRes, settingsRes] = await Promise.all([
-    send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId }),
+    send({ kind: "getTabState", tabId }).catch(() => null),
     send<{ ok: true; settings: Settings; signedIn: boolean; corpusVersion: number; corpusUpdated: string }>({
       kind: "getSettings",
-    }),
+    }).catch(() => null),
   ]);
-  if (settingsRes.ok) settings = settingsRes.settings;
-  if (!stateRes.ok) return;
-  state = stateRes.tabState;
-  // Only after BOTH answers: a tab with the live check off must never flash
-  // CHECKING. render() attaches listeners and must run exactly once, so while a
-  // check is in flight only a minimal view is drawn and render() waits.
-  if (state.icon === "checking" && state.eligible && state.hostname && (settings?.cloudCheck ?? true)) {
-    drawChecking(state.hostname);
-    state = await waitUntilSettled(state);
+  if (settingsRes?.ok) settings = settingsRes.settings;
+  const first = tabStateOf(stateRes);
+  if (!first) {
+    // The worker could not answer. The shell still draws, and the card offers
+    // the check, which needs no hostname from here.
+    renderShell(settingsRes?.ok ? settingsRes.signedIn : false, "", null);
+    drawNotChecked();
+    return;
   }
-  render();
+  state = first;
+  const cloudCheck = settings?.cloudCheck ?? true;
+  renderShell(first.signedIn, first.hostname ?? "", first);
+  // Only after BOTH answers: a tab with the live check off must never flash
+  // the checking view. renderSite() attaches listeners and runs at most once,
+  // so while a check is in flight only the checking view is drawn and the
+  // verdict replaces it in place.
+  if (first.icon === "checking" && first.eligible && first.hostname && cloudCheck) {
+    drawChecking(first.hostname);
+    try {
+      state = await waitUntilSettled(first);
+    } catch {
+      // The worker stopped while waiting: no answer to draw.
+      drawNotChecked();
+      return;
+    }
+  }
+  if (cloudCheck && state.lost && state.eligible && state.hostname) {
+    drawNotChecked();
+    return;
+  }
+  renderSite(state);
 }
 
+function tabStateOf(res: BgResponse | null): TabState | null {
+  return res && res.ok && "tabState" in res ? res.tabState : null;
+}
+
+/** The waiting view: the site's name and placeholders that the verdict replaces. */
 function drawChecking(host: string): void {
-  $("host-row").hidden = false;
-  $("hostname").textContent = host;
-  $("band-glyph").className = "glyph unknown";
-  $("band-glyph").textContent = "…";
-  $("band-rail").className = "band-rail unknown";
-  $("band-chip").className = "w-chip unknown";
-  $("band-chip").textContent = "CHECKING";
-  const checking = "Checking this site...";
-  $("band-note").textContent = checking;
-  syncPageNote(checking);
-  $("privacy-line").textContent = `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`;
+  $("not-checked-view").hidden = true;
+  $("host-row").hidden = true;
+  $("checking-host").textContent = host;
+  $("checking-host").hidden = host === "";
+  $("checking-view").hidden = false;
+  syncPageNote($("checking-text").textContent?.trim() ?? null);
+  // After a press on a tab whose hostname the popup could not read, there is
+  // no name to report yet; the verdict view writes the line.
+  if (host) {
+    $("privacy-line").textContent = `Privacy: only "${host}" was sent, to ${GRAPH_HOST}. Never the page, path, or your history.`;
+  }
+}
+
+/** The card for a tab with no answer. It sends nothing and says nothing was
+ *  sent or checked beyond its own words; the footer has nothing to show. */
+function drawNotChecked(): void {
+  $("checking-view").hidden = true;
+  $("host-row").hidden = true;
+  $("not-checked-view").hidden = false;
+  ($("btn-check-now") as HTMLButtonElement).disabled = false;
+  // Empty, never a space: the footer hides itself when its line is empty.
+  $("privacy-line").textContent = "";
+  // The words of the card, so This page has one source for them.
+  syncPageNote($("not-checked-title").textContent?.trim() ?? null);
+}
+
+/** "Check this site now": one check of this tab's page by the worker, drawn in
+ *  place. The popup and the page are never reloaded. */
+async function checkNow(): Promise<void> {
+  const button = $("btn-check-now") as HTMLButtonElement;
+  const hadFocus = document.activeElement === button;
+  button.disabled = true;
+  drawChecking(state?.hostname ?? "");
+  let next: TabState | null = null;
+  try {
+    next = tabStateOf(await send({ kind: "checkTab", tabId }));
+    if (next && next.icon === "checking" && next.eligible && next.hostname) next = await waitUntilSettled(next);
+  } catch {
+    next = null;
+  }
+  if (next && !(next.lost && next.eligible && next.hostname)) {
+    state = next;
+    renderSite(next);
+    // The pressed button is gone; keep focus inside the panel.
+    if (hadFocus) $("panel-site").focus();
+  } else {
+    drawNotChecked();
+    if (hadFocus) button.focus();
+  }
 }
 
 /** Poll the worker until the check settles; bounded by the longest the worker

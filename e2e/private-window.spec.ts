@@ -22,8 +22,11 @@ import {
   extensionPage,
   launchExtension,
   makeShieldDist,
+  openPopup,
+  rebindWorker,
   setKey,
   setSettings,
+  stopWorker,
   visit,
   waitForIcon,
   type Extension,
@@ -165,6 +168,109 @@ test("should write no destination, verdict or risk entry for a private-window pa
       .toBe(true);
     await normal.page.close();
     await again.page.close();
+  } finally {
+    await closePrivate(p.windowId);
+  }
+});
+
+test("pressing Check this site now on a private-window tab writes no saved state, destination or risk entry", async () => {
+  const priv = "private-press-guard-e2e.com";
+  const norm = "normal-press-guard-e2e.com";
+  net.setVerdict(priv, FLAGGED);
+  net.setVerdict(norm, FLAGGED);
+
+  const p = await openPrivate(`https://${priv}/`);
+  try {
+    await waitForIcon(own, p.tabId, ["suspicious"]);
+    // The worker restarts holding nothing for the private tab.
+    await stopWorker(own);
+    const via = await extensionPage(own);
+    await via.evaluate(async () => {
+      await chrome.storage.session.remove("verdicts");
+      await chrome.storage.local.remove("navlog");
+    });
+    const asksBefore = asked(priv);
+
+    const popup = await openPopup(own, p.tabId);
+    await expect(popup.locator("#not-checked-view")).toBeVisible();
+    await popup.locator("#btn-check-now").click();
+    await expect(popup.locator("#band-chip")).toHaveText("SUSPICIOUS");
+    // The check asked the graph (nothing was kept for the private tab, so the
+    // popup's protection read may ask again).
+    expect(asked(priv)).toBeGreaterThan(asksBefore);
+    await popup.close();
+    await rebindWorker(own);
+
+    // Positive control, checked after the private page: a normal-window tab
+    // writes all three stores and its own saved state.
+    const normal = await visit(own, `https://${norm}/`);
+    await waitForIcon(own, normal.tabId, ["suspicious"]);
+    await expect
+      .poll(
+        async () => {
+          const s = await stores();
+          return s.navlog.includes(norm) && s.verdicts.includes(norm) && s.risks.includes(norm);
+        },
+        { message: "the normal-window host in all three stores", timeout: 10_000 },
+      )
+      .toBe(true);
+
+    const s = await stores();
+    expect(s.navlog).not.toContain(priv);
+    expect(s.risks).not.toContain(priv);
+    const keys = await own.sw.evaluate(async () => Object.keys(await chrome.storage.session.get(null)));
+    expect(keys).toContain(`tabState:${normal.tabId}`);
+    expect(keys).not.toContain(`tabState:${p.tabId}`);
+    await normal.page.close();
+  } finally {
+    await closePrivate(p.windowId);
+  }
+});
+
+test("a check request for a private-window tab writes no verdict, destination, risk or saved state", async () => {
+  const priv = "private-request-guard-e2e.com";
+  const norm = "normal-request-guard-e2e.com";
+  net.setVerdict(priv, FLAGGED);
+  net.setVerdict(norm, FLAGGED);
+
+  const p = await openPrivate(`https://${priv}/`);
+  try {
+    await waitForIcon(own, p.tabId, ["suspicious"]);
+    // No popup is open: the request comes from an extension page alone.
+    const asksBefore = asked(priv);
+    const answer = (await send({ kind: "checkTab", tabId: p.tabId })) as {
+      ok?: boolean;
+      tabState?: { verdict?: { band?: string } };
+    };
+    expect(answer.ok).toBe(true);
+    expect(answer.tabState?.verdict?.band).toBe("MEDIUM");
+    expect(asked(priv)).toBe(asksBefore + 1);
+    // Nothing was kept in memory: a second request asks the graph afresh.
+    await send({ kind: "checkTab", tabId: p.tabId });
+    expect(asked(priv)).toBe(asksBefore + 2);
+
+    // Positive control, checked after the private page: a normal-window tab
+    // writes all three stores and its own saved state.
+    const normal = await visit(own, `https://${norm}/`);
+    await waitForIcon(own, normal.tabId, ["suspicious"]);
+    await expect
+      .poll(
+        async () => {
+          const s = await stores();
+          return s.navlog.includes(norm) && s.verdicts.includes(norm) && s.risks.includes(norm);
+        },
+        { message: "the normal-window host in all three stores", timeout: 10_000 },
+      )
+      .toBe(true);
+
+    const s = await stores();
+    expect(s.navlog).not.toContain(priv);
+    expect(s.verdicts).not.toContain(priv);
+    expect(s.risks).not.toContain(priv);
+    const keys = await own.sw.evaluate(async () => Object.keys(await chrome.storage.session.get(null)));
+    expect(keys).toContain(`tabState:${normal.tabId}`);
+    expect(keys).not.toContain(`tabState:${p.tabId}`);
+    await normal.page.close();
   } finally {
     await closePrivate(p.windowId);
   }

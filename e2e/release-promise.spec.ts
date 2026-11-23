@@ -64,6 +64,15 @@ async function settled(tabId: number, host: string): Promise<void> {
   });
 }
 
+/** The not-yet-checked card, in its own words, in place of a verdict row. */
+async function expectNotChecked(popup: Page): Promise<void> {
+  await expect(popup.locator("#not-checked-view")).toBeVisible();
+  await expect(popup.locator("#not-checked-title")).toHaveText("Guard hasn\u2019t checked this tab yet");
+  await expect(popup.locator("#not-checked-text")).toHaveText(
+    "This can happen when the page was open before Guard started, for example right after an install or update.",
+  );
+}
+
 async function chipText(popup: Page): Promise<string> {
   return ((await popup.locator("#band-chip").textContent().catch(() => "")) ?? "").trim();
 }
@@ -179,9 +188,7 @@ test("should answer from the exact-name cache with no request", async () => {
   // A subdomain is not answered with its parent's verdict.
   net.clearLog();
   const subPopup = await openPopup(ext, s.tabId);
-  await expect(subPopup.locator("#band-note")).toHaveText(
-    "No answer kept for this page. Reload it to check again.",
-  );
+  await expectNotChecked(subPopup);
   expect(await chipText(subPopup)).not.toBe("NO KNOWN THREAT");
   expect(net.requestsTo(GRAPH_READ_HOST).filter((r) => r.body.includes("whisper.assess"))).toHaveLength(0);
   await subPopup.close();
@@ -200,9 +207,7 @@ test("should say no answer was kept when the state and the cache are both gone",
   await via.evaluate((k) => chrome.storage.session.remove(["verdicts", k]), stateKey(tabId));
 
   const popup = await openPopup(ext, tabId);
-  await expect(popup.locator("#band-note")).toHaveText(
-    "No answer kept for this page. Reload it to check again.",
-  );
+  await expectNotChecked(popup);
   const until = Date.now() + 5000;
   while (Date.now() < until) {
     const body = await popup.locator("body").innerText();
@@ -231,10 +236,9 @@ test("should say no answer was kept when the worker stops in the middle of a che
 
   await stopWorker(ext);
   const popup = await openPopup(ext, tabId);
-  await expect(popup.locator("#band-note")).toHaveText(
-    "No answer kept for this page. Reload it to check again.",
-  );
+  await expectNotChecked(popup);
   await expect(popup.locator("#band-chip")).toBeHidden();
+  await expect(popup.locator("#host-row")).toBeHidden();
   // The lost check is not reported as a failed one, and nothing was kept as a
   // verdict. Sampled for a while, as above: a late "could not check" from the
   // abandoned check is exactly what must not appear.
@@ -301,10 +305,9 @@ test("should discard a saved state whose hostname is not the page's", async () =
 
   // A state saved for another hostname is not shown for this page.
   const popupB = await openPopup(ext, b.tabId);
-  await expect(popupB.locator("#band-note")).toHaveText(
-    "No answer kept for this page. Reload it to check again.",
-  );
+  await expectNotChecked(popupB);
   await expect(popupB.locator("#band-chip")).toBeHidden();
+  await expect(popupB.locator("#host-row")).toBeHidden();
   expect(await popupB.locator("body").innerText()).not.toMatch(/HIGH RISK|planted/);
   for (const body of await otherPopupTabsText(popupB)) expect(body).not.toMatch(/HIGH RISK|planted/);
   await popupB.close();
@@ -320,10 +323,13 @@ test("should move from Checking to Could not check within 4.5 s", async () => {
   const { page, tabId } = await visit(ext, `https://${host}/`);
   await waitForIcon(ext, tabId, ["checking"]);
   const popup = await openPopup(ext, tabId);
-  await expect(popup.locator("#band-chip")).toHaveText("CHECKING");
+  await expect(popup.locator("#checking-view")).toBeVisible();
+  await expect(popup.locator("#checking-text")).toHaveText("Checking this site\u2026 usually under a second");
+  await expect(popup.locator("#checking-host")).toHaveText(host);
   const t0 = Date.now();
   await expect(popup.locator("#band-chip")).toHaveText("COULD NOT CHECK", { timeout: 4500 });
   expect(Date.now() - t0).toBeLessThanOrEqual(4500);
+  await expect(popup.locator("#checking-view")).toBeHidden();
   await popup.close();
   await page.close();
 });
@@ -335,12 +341,15 @@ test("should show live check off at once and at 5 s", async () => {
     const popup = await openPopup(ext, tabId);
     await expect(popup.locator("#band-chip")).toHaveText("LIVE CHECK OFF", { timeout: 500 });
     const seen: string[] = [];
+    let checkingViewSeen = false;
     const until = Date.now() + 5000;
     while (Date.now() < until) {
       seen.push(await chipText(popup));
+      if (await popup.locator("#checking-view").isVisible()) checkingViewSeen = true;
       await new Promise((r) => setTimeout(r, 100));
     }
     expect(seen).not.toContain("CHECKING");
+    expect(checkingViewSeen).toBe(false);
     expect(seen.at(-1)).toBe("LIVE CHECK OFF");
     await popup.close();
     await page.close();

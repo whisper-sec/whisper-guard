@@ -36,6 +36,10 @@ import type { PreemptDecision, PreemptDisposition } from "./preempt";
 
 export type BgRequest =
   | { kind: "getTabState"; tabId: number }
+  // Check the page a tab shows now, as a navigation to it would, and answer
+  // with the settled state. It carries a tab id and never a hostname: the
+  // worker reads the address itself.
+  | { kind: "checkTab"; tabId: number }
   | { kind: "getSession" }
   | { kind: "getBlock"; host: string }
   | { kind: "getSettings" }

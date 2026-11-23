@@ -107,6 +107,9 @@ test("should answer an error and change nothing for a kind the on-page layer doe
     await waitForIcon(ext, tabId, ["benign"]);
     const before = await storedSettings();
     const sessionBefore = await sessionAllowList();
+    const assessesOf = (h: string): number =>
+      net.requestsTo(GRAPH_READ_HOST).filter((r) => r.body.includes("whisper.assess") && r.body.includes(h)).length;
+    const assessedBefore = assessesOf(source);
 
     const refused: Record<string, unknown>[] = [
       { kind: "setSettings", patch: { amberBanner: false, allowlist: [permHost] } },
@@ -114,6 +117,7 @@ test("should answer an error and change nothing for a kind the on-page layer doe
       { kind: "allowHost", host: sessHost, session: true },
       { kind: "getTabState", tabId },
       { kind: "getBrowserReport" },
+      { kind: "checkTab", tabId },
     ];
     for (const msg of refused) {
       const answer = await fromTab(tabId, msg);
@@ -122,6 +126,8 @@ test("should answer an error and change nothing for a kind the on-page layer doe
     }
 
     expect(await storedSettings()).toBe(before);
+    // The refused check request started no check of the tab's page.
+    expect(assessesOf(source)).toBe(assessedBefore);
     expect(await permanentAllowList()).not.toContain(permHost);
     expect(await sessionAllowList()).toEqual(sessionBefore);
 
@@ -135,6 +141,7 @@ test("should answer an error and change nothing for a kind the on-page layer doe
     expect((await fromGuardPage({ kind: "allowHost", host: permHost, session: false }))?.ok).toBe(true);
     expect((await fromGuardPage({ kind: "getTabState", tabId }))?.ok).toBe(true);
     expect((await fromGuardPage({ kind: "getBrowserReport" }))?.ok).toBe(true);
+    expect((await fromGuardPage({ kind: "checkTab", tabId }))?.ok).toBe(true);
     await expect.poll(permanentAllowList).toContain(permHost);
     expect(await sessionAllowList()).toContain(permHost);
     const patched = await fromGuardPage({ kind: "setSettings", patch: { amberBanner: false } });

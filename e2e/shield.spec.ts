@@ -17,11 +17,14 @@
 import { test, expect } from "@playwright/test";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
+  extensionPage,
   launchExtension,
   makeShieldDist,
   openPopup,
+  rebindWorker,
   setKey,
   setSettings,
+  stopWorker,
   visit,
   waitForIcon,
   type Extension,
@@ -39,6 +42,7 @@ const EVIL = {
   goback: "evil-goback-guard-e2e.com",
   popup: "evil-popup-guard-e2e.com",
   ledger: "evil-ledger-guard-e2e.com",
+  press: "evil-press-guard-e2e.com",
   credential: "evil-credential-guard-e2e.com",
 };
 
@@ -242,4 +246,41 @@ test("a session-blocked host is listed in the popup and clearable in-flow", asyn
   await after.goto(`https://${EVIL.ledger}/`, { waitUntil: "domcontentloaded" });
   await expect(after.locator("h1")).toContainText(EVIL.ledger);
   await after.close();
+});
+
+test("a check started from the popup on a known-threat page moves the tab to the warning page, and the popup shows the verdict", async () => {
+  // Active Shield is off while the page is first seen, so the tab is left where it is.
+  await setSettings(ext, { shield: false });
+  try {
+    const { page, tabId } = await visit(ext, `https://${EVIL.press}/`);
+    await waitForIcon(ext, tabId, ["malicious"]);
+    await expect
+      .poll(async () => {
+        const s = await (await extensionPage(ext)).evaluate(() => chrome.storage.session.get(null));
+        return `tabState:${tabId}` in s && EVIL.press in ((s["verdicts"] as Record<string, unknown>) ?? {});
+      })
+      .toBe(true);
+    expect(page.url()).toContain(EVIL.press);
+
+    // The worker restarts holding nothing for the tab, then Active Shield goes on.
+    await stopWorker(ext);
+    const via = await extensionPage(ext);
+    await via.evaluate(async (k) => {
+      await chrome.storage.session.remove(["verdicts", k]);
+      await chrome.storage.local.remove("navlog");
+    }, `tabState:${tabId}`);
+    await rebindWorker(ext);
+    await setSettings(ext, { shield: true });
+
+    const popup = await openPopup(ext, tabId);
+    await expect(popup.locator("#not-checked-view")).toBeVisible();
+    await popup.locator("#btn-check-now").click();
+    await expect(popup.locator("#band-chip")).toHaveText("MALICIOUS - evidenced");
+    await page.waitForURL((u) => u.href.includes("warning.html"), { timeout: 15_000 });
+    expect(page.url()).toContain(`host=${EVIL.press}`);
+    await popup.close();
+    await page.close();
+  } finally {
+    await setSettings(ext, { shield: true, amberBanner: true, fieldGuard: true });
+  }
 });

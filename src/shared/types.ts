@@ -58,9 +58,10 @@ export interface TabState {
   // checks still ran, and the popup says so instead of faking a verdict.
   graphError: string | null;
   shieldOn: boolean;
-  // Set only on a state the worker rebuilt after it was stopped and no answer
-  // for this exact name was kept: the popup says so instead of faking a
-  // verdict or claiming the check failed. Optional so older saved states and
+  // Set only on a state the worker rebuilt after it was stopped (or for a tab
+  // it never saw) and no answer for this exact name was kept: the popup shows
+  // the not-yet-checked card, with a button that checks the site, instead of
+  // faking a verdict or claiming the check failed. Optional so older saved states and
   // fixtures stay valid.
   lost?: true;
 }
