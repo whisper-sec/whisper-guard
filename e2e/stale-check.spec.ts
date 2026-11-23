@@ -25,6 +25,7 @@ import {
   makeShieldDist,
   navigateInTab,
   openPopup,
+  otherPopupTabsText,
   extensionPage,
   setKey,
   setSettings,
@@ -109,6 +110,7 @@ test.describe("default dist: mark, popup state and stored state", () => {
     expect(state.tabState.icon).toBe("suspicious");
     await expect(popup.locator("#hostname")).toHaveText(B);
     expect(await popup.locator("body").innerText()).not.toContain(A);
+    for (const body of await otherPopupTabsText(popup)) expect(body).not.toContain(A);
     await popup.close();
 
     // AC2, no stored state: no risk logged, no block recorded for A.

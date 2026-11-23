@@ -23,6 +23,7 @@ import {
   openDashboard,
   openPopup,
   markHostBlocked,
+  selectPopupTab,
   setKey,
   setSettings,
   visit,
@@ -87,9 +88,9 @@ function fleet(net: E2ENetwork): void {
 async function shot(page: Page, name: string, scheme: "dark" | "light", w = 390, h = 760): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-  // Same reason as settlePopup: a sticky masthead stitches into the middle
-  // of a full-page capture of a page taller than the viewport, which is
-  // every panel with its drawers open.
+  // The dashboard's top bar is a sticky <header>: stitched into the middle of
+  // a full-page capture of a page taller than the viewport, it would lie over
+  // the section it covers. The popup's own header is not sticky.
   await page.addStyleTag({ content: "header { position: static !important; }" }).catch(() => undefined);
   await page.setViewportSize({ width: w, height: h });
   await page.waitForTimeout(350);
@@ -123,7 +124,15 @@ test.describe("panel, pages", () => {
       const { page, tabId } = await visit(ext, `https://${host}/`);
       await waitForIcon(ext, tabId, [...icons]);
       const popup = await openPopup(ext, tabId);
-      for (const s of SCHEMES) await shot(popup, name, s);
+      for (const s of SCHEMES) await shot(popup, name, s, 400, 600);
+      // A clean host also gets the other two tabs, in both schemes: this
+      // sheet is where a person sees them side by side.
+      if (host === CLEAN) {
+        for (const tab of ["page", "browser"] as const) {
+          await selectPopupTab(popup, tab);
+          for (const s of SCHEMES) await shot(popup, `${name}-${tab}`, s, 400, 600);
+        }
+      }
       await popup.close();
       await page.close();
     }
@@ -137,7 +146,15 @@ test.describe("panel, pages", () => {
       const { page, tabId } = await visit(ext, `https://${host}/`);
       await waitForIcon(ext, tabId, [...icons]);
       const popup = await openPopup(ext, tabId);
-      for (const s of SCHEMES) await shot(popup, name, s);
+      for (const s of SCHEMES) await shot(popup, name, s, 400, 600);
+      // A clean host also gets the other two tabs, in both schemes: this
+      // sheet is where a person sees them side by side.
+      if (host === CLEAN) {
+        for (const tab of ["page", "browser"] as const) {
+          await selectPopupTab(popup, tab);
+          for (const s of SCHEMES) await shot(popup, `${name}-${tab}`, s, 400, 600);
+        }
+      }
       await popup.close();
       await page.close();
     }
@@ -151,7 +168,11 @@ test.describe("panel, pages", () => {
     await popup.locator("#exp-why summary").click();
     await popup.locator("#exp-neighborhood summary").click();
     await popup.waitForTimeout(1500);
-    for (const s of SCHEMES) await shot(popup, "panel-drawers", s, 390, 900);
+    // The popup is a fixed frame: one picture per drawer, each scrolled into view.
+    await popup.locator("#why-body").scrollIntoViewIfNeeded();
+    for (const s of SCHEMES) await shot(popup, "panel-drawers-explain", s, 400, 600);
+    await popup.locator("#graph-canvas").scrollIntoViewIfNeeded();
+    for (const s of SCHEMES) await shot(popup, "panel-drawers-neighborhood", s, 400, 600);
     await popup.close();
     await page.close();
   });
@@ -233,12 +254,12 @@ test.describe("the one control: offered and refused", () => {
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
 
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
-    for (const s of SCHEMES) await shot(popup, "control-panel-offered", s);
+    for (const s of SCHEMES) await shot(popup, "control-panel-offered", s, 400, 600);
     await popup.locator("#btn-protect").click();
     await popup.locator("#route-line").filter({ hasText: "Not routed" }).waitFor({ timeout: 30_000 });
-    for (const s of SCHEMES) await shot(popup, "control-panel-refused", s);
+    for (const s of SCHEMES) await shot(popup, "control-panel-refused", s, 400, 600);
     await popup.close();
 
     const dash = await openDashboard(ext, "browser");
@@ -278,12 +299,12 @@ test.describe("the one control: granted", () => {
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await popup.locator("#btn-protect").click();
     await popup.locator("#route-line").filter({ hasText: "Protected" }).waitFor({ timeout: 30_000 });
     await popup.waitForTimeout(1200);
-    for (const s of SCHEMES) await shot(popup, "control-panel-protected", s);
+    for (const s of SCHEMES) await shot(popup, "control-panel-protected", s, 400, 600);
     await popup.close();
 
     const dash = await openDashboard(ext, "browser");
@@ -324,12 +345,12 @@ test.describe("the one control: another extension owns the proxy", () => {
     await setKey(ext, MOCK_KEY);
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await popup.locator("#btn-protect").click();
     await popup.locator("#route-line").filter({ hasText: "Another extension" }).waitFor({ timeout: 30_000 });
     await popup.waitForTimeout(800);
-    for (const s of SCHEMES) await shot(popup, "control-panel-conflict", s);
+    for (const s of SCHEMES) await shot(popup, "control-panel-conflict", s, 400, 600);
     await popup.close();
     await page.close();
   });
@@ -358,22 +379,22 @@ test.describe("the one control: reserving the address", () => {
     await waitForIcon(ext, tabId, ["benign"]);
 
     net.scriptRegister({ outcome: "real", hiddenReads: 2 });
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await popup.locator("#btn-protect").click();
     await popup.locator("#protect-steps li[aria-current='step']").filter({ hasText: "try 2 of 3" }).waitFor();
-    for (const s of SCHEMES) await shot(popup, "control-panel-reserving", s);
+    for (const s of SCHEMES) await shot(popup, "control-panel-reserving", s, 400, 600);
     await popup.locator("#identity-detail").waitFor({ state: "visible", timeout: 20_000 });
     await popup.close();
 
     net.clearEndpoints();
     await ext.sw.evaluate(() => chrome.storage.local.remove("egress"));
     net.scriptRegister({ outcome: "real", hiddenReads: Infinity });
-    const again = await openPopup(ext, tabId);
+    const again = await openPopup(ext, tabId, { popupTab: "browser" });
     await again.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await again.locator("#btn-protect").click();
     await again.locator("#route-line").filter({ hasText: "couldn’t reserve" }).waitFor({ timeout: 30_000 });
-    for (const s of SCHEMES) await shot(again, "control-panel-reserve-failed", s);
+    for (const s of SCHEMES) await shot(again, "control-panel-reserve-failed", s, 400, 600);
     await again.close();
     await page.close();
   });

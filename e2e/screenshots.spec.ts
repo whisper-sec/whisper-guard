@@ -235,7 +235,12 @@ async function assertScheme(
   }
 }
 
-async function popupShot(tabId: number, file: string, prep?: (p: import("@playwright/test").Page) => Promise<void>) {
+async function popupShot(
+  tabId: number,
+  file: string,
+  prep?: (p: import("@playwright/test").Page) => Promise<void>,
+  popupTab?: "site" | "page" | "browser",
+) {
   const popup = await openPopup(ext, tabId);
   // reducedMotion: the live-feed dot and the CHECKING ring breathe, so a
   // still capture otherwise freezes a random animation phase and every run
@@ -245,10 +250,12 @@ async function popupShot(tabId: number, file: string, prep?: (p: import("@playwr
   // dark and carries a light capture of each surface beside it, so the claim
   // is shown rather than asserted; the panel's own protection states are
   // captured in both by e2e/protect.spec.ts.
-  await settlePopup(popup, { colorScheme: "dark", width: 400, height: 700 });
+  // The popup is a fixed 400 x 600 frame: each picture shows the tab that
+  // holds its subject, and `prep` scrolls the subject into view.
+  await settlePopup(popup, { colorScheme: "dark", width: 400, height: 600, popupTab });
   if (prep) await prep(popup);
   await assertScheme(popup, "dark", file);
-  await popup.screenshot({ path: join(SHOTS, file), fullPage: true });
+  await popup.screenshot({ path: join(SHOTS, file) });
   await popup.close();
 }
 
@@ -329,16 +336,21 @@ test("popup: keyed evidenced-malicious with explain expanded", async () => {
   await setKey(ext, MOCK_KEY);
   const { page, tabId } = await visit(ext, `https://${LOOKALIKE}/`);
   await waitForIcon(ext, tabId, ["malicious"]);
-  await popupShot(tabId, "popup-keyed-malicious.png");
+  await popupShot(tabId, "popup-keyed-malicious.png", async (p) => {
+    // The caption's subject is the evidence block, below the chain.
+    await expect(p.locator("#why-panel")).toBeVisible();
+    await p.locator("#why-panel").scrollIntoViewIfNeeded();
+  });
   await popupShot(tabId, "popup-keyed-explain.png", async (p) => {
     await p.locator("#exp-why summary").click();
     await expect(p.locator("#why-body")).toContainText("CRITICAL");
-    await p.setViewportSize({ width: 380, height: 780 });
+    await p.locator("#why-body").scrollIntoViewIfNeeded();
   });
   await popupShot(tabId, "popup-keyed-neighborhood.png", async (p) => {
     await p.locator("#exp-neighborhood summary").click();
     await expect(p.locator("#neighborhood-note")).toContainText("flagged in the graph", { timeout: 20_000 });
-    await p.setViewportSize({ width: 380, height: 800 });
+    // The note sits under the drawing, so scrolling to it shows both.
+    await p.locator("#neighborhood-note").scrollIntoViewIfNeeded();
   });
   await page.close();
 });
@@ -566,12 +578,12 @@ test("popup: the activity line for this browser", async () => {
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
   await popupShot(tabId, "popup-activity.png", async (p) => {
-    await p.setViewportSize({ width: 390, height: 720 });
     // The four-tile grid became one line, and the only number in it that a
     // reader can act on is the flagged one. Pin the line rather than merely
     // capturing it, so a caption quoting it cannot go stale in silence.
     await expect(p.locator("#browser-24h")).toContainText("in the last 24h");
-  });
+    await p.locator("#browser-24h").scrollIntoViewIfNeeded();
+  }, "browser");
   await page.close();
 });
 
@@ -687,9 +699,9 @@ test("popup: the calm 'handled quietly today' line, with the counts that interru
   await setKey(ext, null);
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
   await popup.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await popup.setViewportSize({ width: 380, height: 650 });
+  await popup.setViewportSize({ width: 400, height: 600 });
   // Pinned to the exact number, not merely "not 0". A negated matcher is
   // satisfied by a missing element, so not.toHaveText("0") would survive the
   // hero being deleted outright, and this caption quotes that number.
@@ -698,7 +710,8 @@ test("popup: the calm 'handled quietly today' line, with the counts that interru
   // ("a risky click held and a cookie prompt declined") is what is on screen.
   await expect(popup.locator("#today-breakdown")).toContainText("risky click stopped");
   await expect(popup.locator("#today-breakdown")).toContainText("cookie prompt declined");
-  await popup.screenshot({ path: join(SHOTS, "popup-today.png"), fullPage: true });
+  await popup.locator("#today-breakdown").scrollIntoViewIfNeeded();
+  await popup.screenshot({ path: join(SHOTS, "popup-today.png") });
   await popup.close();
   await page.close();
 });

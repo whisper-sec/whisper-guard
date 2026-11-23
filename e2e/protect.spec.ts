@@ -47,11 +47,14 @@ const SHOTS = resolve(dirname(fileURLToPath(import.meta.url)), "../shots");
 const CLEAN = "intranet-tools-vendor.com";
 
 /** Capture the panel exactly as a reader in that colour scheme sees it,
- *  with every animated value settled (see settlePopup). */
+ *  with every animated value settled (see settlePopup). Every picture here is
+ *  of the protect control or the sign-in offer, which sit on This browser, so
+ *  the reload that settling needs is followed by choosing that tab. */
 async function shot(popup: Page, file: string, scheme: "dark" | "light" = "dark"): Promise<void> {
   mkdirSync(SHOTS, { recursive: true });
-  await settlePopup(popup, { colorScheme: scheme, width: 400, height: 700 });
-  await popup.screenshot({ path: join(SHOTS, file), fullPage: true });
+  await settlePopup(popup, { colorScheme: scheme, width: 400, height: 600, popupTab: "browser" });
+  await popup.locator("#identity-card:visible, #signin-pitch:visible").first().scrollIntoViewIfNeeded();
+  await popup.screenshot({ path: join(SHOTS, file) });
 }
 
 function seed(net: E2ENetwork): void {
@@ -89,7 +92,7 @@ test.describe("the routing permission is refused", () => {
     await setKey(ext, null);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign", "signedout", "unknown"]);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await expect(popup.locator("#signin-pitch")).toBeVisible();
     await expect(popup.locator("#btn-signin")).toHaveText("Sign in with Whisper");
     // The keyed control is not offered to a reader who cannot use it.
@@ -105,7 +108,7 @@ test.describe("the routing permission is refused", () => {
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
 
     // Before: one control, and it is the primary one.
     await expect(popup.locator("#identity-state")).toHaveText("NOT ENROLLED", { timeout: 10_000 });
@@ -190,7 +193,7 @@ test.describe("the routing permission is granted", () => {
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
 
     await expect(popup.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
     await popup.locator("#btn-protect").click();
@@ -251,7 +254,7 @@ test.describe("the routing permission is granted", () => {
     // CONTROL: "no second device" is trivially true when there is no first.
     expect(before, "the previous test must have enrolled, or reuse is untested").toBe(1);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
     await expect(popup.locator("#btn-protect")).toHaveText("Turn routing on", { timeout: 10_000 });
     await popup.locator("#btn-protect").click();
     await expect(popup.locator("#route-line")).toContainText("Protected", { timeout: 25_000 });
@@ -296,7 +299,7 @@ test.describe("another extension owns the proxy setting", () => {
     // every run. The conflict being captured is about ROUTING; the site
     // verdict above it should be settled, not racing.
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
 
     await expect(popup.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
     await popup.locator("#btn-protect").click();

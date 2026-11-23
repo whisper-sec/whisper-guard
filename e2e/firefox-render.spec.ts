@@ -27,6 +27,7 @@ import { test, expect, chromium, firefox, type Browser, type Page } from "@playw
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectPopupTab } from "./helpers/extension";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/firefox");
@@ -101,6 +102,8 @@ interface Geometry {
   railHeight: number;
   bodyScrollWidth: number;
   bodyClientWidth: number;
+  /** Sideways overflow of the scrolling content region, read on each tab. */
+  regionOverflow: { tab: string; scrollWidth: number; clientWidth: number }[];
   scaleVisible: boolean;
   sparkPaths: number;
   tierWidthPct: number;
@@ -120,7 +123,6 @@ async function measure(browser: Browser, scheme: "dark" | "light"): Promise<Geom
 
   const g = await page.evaluate((): Geometry => {
     const rail = document.getElementById("band-rail");
-    const fill = document.getElementById("tier-fill");
     const scale = document.getElementById("scale");
     return {
       rungs: document.querySelectorAll("#chain-mount .ch-rung").length,
@@ -130,11 +132,29 @@ async function measure(browser: Browser, scheme: "dark" | "light"): Promise<Geom
       bodyClientWidth: document.body.clientWidth,
       scaleVisible: scale ? !scale.hasAttribute("hidden") : false,
       sparkPaths: document.querySelectorAll("#scale-pulse svg path").length,
-      tierWidthPct: fill ? (fill.getBoundingClientRect().width / 340) * 100 : -1,
+      tierWidthPct: -1,
+      regionOverflow: [],
       chainLabels: [...document.querySelectorAll("#chain-mount .ch-label")].map(
         (e) => e.textContent ?? "",
       ),
     };
+  });
+  // Each panel is laid out only while its tab is selected (a hidden panel
+  // measures 0), so the region's sideways overflow is read on each tab, and
+  // the tier meter, which sits on This browser, is read once that is chosen.
+  const region = (tab: string): Promise<Geometry["regionOverflow"][number]> =>
+    page.evaluate((t) => {
+      const r = document.getElementById("tab-content") as HTMLElement;
+      return { tab: t, scrollWidth: r.scrollWidth, clientWidth: r.clientWidth };
+    }, tab);
+  g.regionOverflow.push(await region("site"));
+  await selectPopupTab(page, "page");
+  g.regionOverflow.push(await region("page"));
+  await selectPopupTab(page, "browser");
+  g.regionOverflow.push(await region("browser"));
+  g.tierWidthPct = await page.evaluate(() => {
+    const fill = document.getElementById("tier-fill");
+    return fill ? (fill.getBoundingClientRect().width / 340) * 100 : -1;
   });
   await page.close();
   return g;
@@ -186,6 +206,70 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
         g.bodyScrollWidth,
         `${engine} overflows the panel horizontally (${g.bodyScrollWidth} > ${g.bodyClientWidth})`,
       ).toBeLessThanOrEqual(g.bodyClientWidth + 1);
+      // The content region keeps its own overflow, so a block that is too wide
+      // scrolls inside it rather than widening the body: check it on each tab.
+      for (const r of g.regionOverflow) {
+        expect(
+          r.scrollWidth,
+          `${engine} overflows the ${r.tab} tab horizontally (${r.scrollWidth} > ${r.clientWidth})`,
+        ).toBeLessThanOrEqual(r.clientWidth + 1);
+      }
+    }
+  } finally {
+    await ff.close();
+    await cr.close();
+  }
+});
+
+test("the tabs expose their roles and answer the keyboard in both engines, and choosing one sends nothing", async () => {
+  test.setTimeout(120_000);
+  const ff = await firefox.launch();
+  const cr = await chromium.launch();
+  try {
+    for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
+      const page = await browser.newPage({ viewport: { width: 400, height: 600 }, reducedMotion: "reduce" });
+      await page.addInitScript(SHIM);
+      await page.goto(`file://${join(DIST, "popup.html")}`);
+      await page.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
+
+      await expect(page.getByRole("tablist", { name: "Popup sections" }), engine).toHaveCount(1);
+      await expect(page.getByRole("tab"), engine).toHaveCount(3);
+      await expect(page.getByRole("tabpanel", { includeHidden: true }), engine).toHaveCount(3);
+
+      // The count of messages the page has sent, once opening has settled:
+      // equal on two reads in a row, no timer.
+      const sent = (): Promise<number> =>
+        page.evaluate(() => (window as unknown as { __sent: string[] }).__sent.length);
+      let last = -1;
+      await expect
+        .poll(
+          async () => {
+            const n = await sent();
+            const same = n === last;
+            last = n;
+            return same;
+          },
+          { message: `${engine}: the open never settled` },
+        )
+        .toBe(true);
+      const opened = last;
+
+      // By click, on every tab.
+      for (const tab of ["page", "browser", "site"] as const) {
+        await selectPopupTab(page, tab);
+        expect(await sent(), `${engine}: choosing ${tab} by click sent a message`).toBe(opened);
+      }
+
+      // By key: ArrowRight shows This page.
+      await page.getByRole("tab", { name: "This site" }).focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(page.locator("#panel-page"), engine).toBeVisible();
+      await page.keyboard.press("End");
+      await expect(page.locator("#panel-browser"), engine).toBeVisible();
+      await page.keyboard.press("Home");
+      await expect(page.locator("#panel-site"), engine).toBeVisible();
+      expect(await sent(), `${engine}: choosing a tab by key sent a message`).toBe(opened);
+      await page.close();
     }
   } finally {
     await ff.close();

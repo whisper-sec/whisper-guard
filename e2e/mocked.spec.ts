@@ -14,6 +14,7 @@ import { CONSOLE_HOST, E2ENetwork, GRAPH_READ_HOST, MOCK_API_KEY as MOCK_KEY } f
 import {
   launchExtension,
   openPopup,
+  selectPopupTab,
   setKey,
   setSettings,
   getStoredKey,
@@ -145,9 +146,10 @@ test("keyless: popup shows the on-device look-alike hit and the honest privacy l
   await expect(popup.locator("#hostname")).toHaveText("paypa1-secure-login.com");
   await expect(popup.locator("#lookalike-text")).toContainText("paypal.com");
   await expect(popup.locator("#btn-goto")).toHaveText("Go to the real paypal.com");
+  await expect(popup.locator("#privacy-line")).toContainText(GRAPH_READ_HOST);
+  await selectPopupTab(popup, "browser");
   await expect(popup.locator("#signin-pitch")).toBeVisible();
   await expect(popup.locator("#btn-signin")).toHaveText("Sign in with Whisper");
-  await expect(popup.locator("#privacy-line")).toContainText(GRAPH_READ_HOST);
   await popup.close();
   await page.close();
 });
@@ -353,7 +355,7 @@ test("device flow: one click signs in and the key lands in storage", async () =>
   // per-site verdict, so this asserts the sign-in itself completes.
   const { page, tabId } = await visit(ext, "https://clean-site-guard-e2e.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId);
+  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
   await popup.locator("#btn-signin").click();
 
   // The flow opens the console approval tab (our mock approves on visit)

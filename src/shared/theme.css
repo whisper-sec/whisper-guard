@@ -152,6 +152,8 @@
   /* Ink. --w-faint is decoration only; see the rule above. */
   --w-text: #eeeef0;
   --w-muted: #8888a0;
+  /* Secondary text and the ink of the header icons: between --w-text and --w-muted. */
+  --w-text-2: #c3c3cd;
   --w-faint: #5a5a72;
 
   /* The single accent. --w-accent is the violet drawn as text and fills
@@ -215,6 +217,7 @@
 
     --w-text: #1a1a2e;
     --w-muted: #5f5f70;
+    --w-text-2: #4a4a5c;
     --w-faint: #9a9ab0;
 
     --w-accent: #5b3fc4;

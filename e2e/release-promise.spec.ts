@@ -22,6 +22,7 @@ import {
   iconState,
   launchExtension,
   openPopup,
+  otherPopupTabsText,
   rebindWorker,
   setKey,
   setSettings,
@@ -209,6 +210,11 @@ test("should say no answer was kept when the state and the cache are both gone",
     expect(body).not.toMatch(/nothing was sent/i);
     await new Promise((r) => setTimeout(r, 200));
   }
+  // And nowhere on the other two tabs either.
+  for (const body of await otherPopupTabsText(popup)) {
+    expect(body).not.toMatch(/could not check/i);
+    expect(body).not.toMatch(/nothing was sent/i);
+  }
   await popup.close();
   await page.close();
   await rebindWorker(ext);
@@ -238,6 +244,10 @@ test("should say no answer was kept when the worker stops in the middle of a che
     expect(body).not.toMatch(/could not check/i);
     expect(body).not.toMatch(/nothing was sent/i);
     await new Promise((r) => setTimeout(r, 200));
+  }
+  for (const body of await otherPopupTabsText(popup)) {
+    expect(body).not.toMatch(/could not check/i);
+    expect(body).not.toMatch(/nothing was sent/i);
   }
 
   await rebindWorker(ext);
@@ -296,6 +306,7 @@ test("should discard a saved state whose hostname is not the page's", async () =
   );
   await expect(popupB.locator("#band-chip")).toBeHidden();
   expect(await popupB.locator("body").innerText()).not.toMatch(/HIGH RISK|planted/);
+  for (const body of await otherPopupTabsText(popupB)) expect(body).not.toMatch(/HIGH RISK|planted/);
   await popupB.close();
 
   await rebindWorker(ext);

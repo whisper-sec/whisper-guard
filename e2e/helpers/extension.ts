@@ -382,10 +382,51 @@ export async function markHostBlocked(ext: Extension, host: string): Promise<voi
   }, host);
 }
 
-/** Open the popup pinned to a tab (the ?tab= debugging/testing affordance). */
-export async function openPopup(ext: Extension, tabId: number): Promise<Page> {
+export type PopupTab = "site" | "page" | "browser";
+
+const POPUP_TAB_LABEL: Record<PopupTab, string> = {
+  site: "This site",
+  page: "This page",
+  browser: "This browser",
+};
+
+/**
+ * Select one of the popup's own tabs (This site, This page, This browser) by
+ * its role and label, then wait until its panel is laid out. The label is a
+ * substring match so a marker appended to a tab name later does not break it.
+ * It takes only a Page, so it also works on the file:// page of the Firefox
+ * render spec. Not for the dashboard, which has tabs of its own.
+ */
+export async function selectPopupTab(popup: Page, tab: PopupTab): Promise<void> {
+  await popup.getByRole("tab", { name: POPUP_TAB_LABEL[tab] }).click();
+  await popup.locator(`#panel-${tab}`).waitFor({ state: "visible" });
+}
+
+/**
+ * What a reader sees on This page and on This browser, as the text of the
+ * document while each is selected. `body.innerText()` omits a hidden panel, so
+ * a "this text is nowhere on the popup" check that reads it on This site covers
+ * one tab only: it reads the other two here, once each, and leaves the popup on
+ * This browser.
+ */
+export async function otherPopupTabsText(popup: Page): Promise<string[]> {
+  const out: string[] = [];
+  for (const tab of ["page", "browser"] as const) {
+    await selectPopupTab(popup, tab);
+    out.push(await popup.locator("body").innerText());
+  }
+  return out;
+}
+
+/**
+ * Open the popup pinned to a browser tab (the ?tab= debugging/testing
+ * affordance). `popupTab` is the popup's own tab to select once it has
+ * loaded; the popup always opens on This site.
+ */
+export async function openPopup(ext: Extension, tabId: number, opts: { popupTab?: PopupTab } = {}): Promise<Page> {
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
+  if (opts.popupTab && opts.popupTab !== "site") await selectPopupTab(page, opts.popupTab);
   return page;
 }
 
@@ -445,27 +486,25 @@ export async function navigateInTab(page: Page, url: string): Promise<void> {
  */
 export async function settlePopup(
   popup: Page,
-  opts: { colorScheme?: "dark" | "light"; width?: number; height?: number } = {},
+  opts: { colorScheme?: "dark" | "light"; width?: number; height?: number; popupTab?: PopupTab } = {},
 ): Promise<string | null> {
   await popup.emulateMedia({
     colorScheme: opts.colorScheme ?? "dark",
     reducedMotion: "reduce",
   });
-  await popup.setViewportSize({ width: opts.width ?? 400, height: opts.height ?? 700 });
+  await popup.setViewportSize({ width: opts.width ?? 400, height: opts.height ?? 600 });
   await popup.reload();
-  // A sticky masthead and a full-page capture do not mix. Playwright scrolls
-  // and stitches a page taller than it can grow the viewport to, so the
-  // header is painted wherever it happened to be and lands across the middle
-  // of the picture, over the section it is covering. Pinning it for the
-  // capture shows the panel as a reader sees it at the top, which is the
-  // only place that header is ever actually drawn.
-  await popup.addStyleTag({ content: "header { position: static !important; }" });
   await popup
     .locator("#chain-mount .ch-rung")
     .first()
     .waitFor({ timeout: 15_000 })
     .catch(() => undefined);
   await popup.waitForTimeout(500);
+
+  // The tab is selected after the rung wait (the wait looks for a visible
+  // rung, which only This site shows) and before the readout reads, which
+  // would otherwise return early when the readout is absent.
+  if (opts.popupTab && opts.popupTab !== "site") await selectPopupTab(popup, opts.popupTab);
 
   const first = await popup.locator("#scale-nodes").textContent().catch(() => null);
   if (first === null) return null;
