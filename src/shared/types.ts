@@ -280,6 +280,12 @@ export interface EgressStatus {
   privateWindowsRouted: boolean | null;
   /** Last error, human-readable, when a step failed. */
   error: string | null;
+  /** While the identity is being reserved: which try is running, of how many.
+   *  Lives in the background's memory only. */
+  reserving: { attempt: number; of: number } | null;
+  /** True when the last reservation used every try without getting an address.
+   *  Cleared when the next reservation starts or one succeeds. */
+  reserveFailed: boolean;
 }
 
 /** The result of enrolling this browser (identity only, no routing). */

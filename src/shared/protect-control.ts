@@ -30,6 +30,11 @@
 //     permission of any kind, and must not be downstream of a promise that
 //     may never settle: a reader who refuses the prompt, or whose popup
 //     the prompt closed, still ends up with the address they asked for.
+//   - Reserving the identity is tried up to three times by the background,
+//     and takes a few seconds when the address is slow to appear. While it
+//     runs, the control shows its steps and names the try, read from the
+//     status so a surface opened mid-way shows the same thing. Closing the
+//     surface changes nothing: the background finishes the work.
 //   - Routing comes last and is allowed to fail. When it does, the status
 //     that comes back names what is in the way and the control shows it,
 //     with a way to retry. Never a dead end.
@@ -66,6 +71,12 @@ export function routeLineText(s: Pick<EgressStatus, "webrtcHardened" | "privateW
   return `${ROUTE_LINE_BASE}${priv}${webrtc}`;
 }
 
+/** What the route line says once every try at reserving an address is used. */
+export const RESERVE_FAILED_TEXT = "We couldn’t reserve an address yet. Your verdicts still work.";
+
+/** How often a running reservation's status is re-read. Nothing polls otherwise. */
+const RESERVE_POLL_MS = 500;
+
 /** The empty status: what the surfaces show when the background cannot answer. */
 const NO_EGRESS: EgressStatus = {
   on: false,
@@ -79,6 +90,8 @@ const NO_EGRESS: EgressStatus = {
   webrtcHardened: null,
   privateWindowsRouted: null,
   error: null,
+  reserving: null,
+  reserveFailed: false,
 };
 
 /**
@@ -175,6 +188,8 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
 
   const routeLine = el("div", "pc-route");
   routeLine.id = "route-line";
+  // Made a live region by setRoute once it holds its first words, so opening
+  // a surface never reads the first fill out: only later changes are announced.
 
   const detail = el("div", "pc-detail");
   detail.id = "identity-detail";
@@ -194,22 +209,46 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   note.id = "identity-note";
   note.hidden = true;
 
-  root.replaceChildren(head, routeLine, detail, actions, note);
+  // The steps shown while the address is reserved and routing is turned on.
+  const progress = el("div", "pc-progress");
+  progress.id = "protect-progress";
+  progress.setAttribute("aria-live", "polite");
+  progress.tabIndex = -1;
+  progress.hidden = true;
+  const steps = el("ol", "pc-steps");
+  steps.id = "protect-steps";
+  const hint = el("div", "pc-progress-hint");
+  progress.append(el("div", "pc-progress-title", "Protecting this browser…"), steps, hint);
+
+  root.replaceChildren(head, progress, routeLine, detail, actions, note);
 
   /** RDAP verification of the enrolled address; null until it lands. */
   let verified: boolean | null = null;
   let last: EgressStatus = NO_EGRESS;
+  /** This surface's own click is in flight: reserving the address, or turning routing on. */
+  let pending: "reserving" | "routing" | null = null;
+  /** Bumped whenever `pending` changes, so a slow status read never paints over a newer state. */
+  let epoch = 0;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let drawn = "";
 
   function setNote(text: string | null): void {
     note.hidden = text === null;
     note.textContent = text ?? "";
   }
 
+  let routeKey = "";
   function setRoute(dot: "on" | "blocked" | "off", lead: string, rest: string): void {
+    // Same words, same dot: leave the line alone so it is not announced again.
+    const key = `${dot}|${lead}|${rest}`;
+    if (key === routeKey) return;
+    routeKey = key;
+    const first = routeLine.childNodes.length === 0;
     const d = el("span", `w-dot ${dot}`);
     const text = el("span", "pc-route-text");
     text.append(el("span", "pc-route-lead", lead), document.createTextNode(` ${rest}`));
     routeLine.replaceChildren(d, text);
+    if (first) routeLine.setAttribute("aria-live", "polite");
   }
 
   function fact(label: string, value: Node): HTMLElement {
@@ -244,6 +283,94 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     detail.replaceChildren(...rows);
   }
 
+  function step(state: "done" | "current" | "todo", label: string, tryNote?: string): HTMLElement {
+    const li = el("li", `pc-step ${state}`);
+    if (state === "current") li.setAttribute("aria-current", "step");
+    const mark = el("span", "pc-mark", state === "done" ? "✓" : "");
+    mark.setAttribute("aria-hidden", "true");
+    const text = el("span", "pc-step-text", label);
+    if (tryNote) text.append(" ", el("span", "pc-step-try", tryNote));
+    // The state is words as well as a shape and a colour.
+    const words = state === "done" ? "done" : state === "current" ? "in progress" : "not started";
+    li.append(mark, text, el("span", "pc-sr", ` (${words})`));
+    return li;
+  }
+
+  /** Draw the steps for what is running. Redrawn only when they change, so a
+   *  screen reader is not told the same thing every poll. */
+  function drawSteps(phase: "reserving" | "routing", attempt: number, of: number): void {
+    const key = `${phase}:${attempt}/${of}`;
+    if (key === drawn) return;
+    drawn = key;
+    hint.textContent =
+      phase === "reserving"
+        ? "A new address can take a few seconds to appear."
+        : "Identity reserved. Waiting for the browser's permission before routing.";
+    const reserve = "Reserving your Whisper address";
+    steps.replaceChildren(
+      step("done", "Signed in"),
+      phase === "reserving" ? step("current", reserve, `(try ${attempt} of ${of})`) : step("done", reserve),
+      step(phase === "reserving" ? "todo" : "current", "Turning routing on"),
+    );
+  }
+
+  /** Show the steps in place of the route line and the buttons, or put those
+   *  back. Done BEFORE painting: a change written into a hidden live region is
+   *  never announced, so the route line must be visible when its words change. */
+  function showRegions(s: EgressStatus): "reserving" | "routing" | null {
+    const busy = s.reserving ? "reserving" : pending;
+    progress.hidden = busy === null;
+    routeLine.hidden = busy !== null;
+    actions.hidden = busy !== null;
+    return busy;
+  }
+
+  /** What follows the paint: the steps, the note (paint may have shown it) and the focus. */
+  function finishRegions(
+    s: EgressStatus,
+    busy: "reserving" | "routing" | null,
+    hadFocus: boolean,
+    progressHadFocus: boolean,
+  ): void {
+    if (busy === null) {
+      drawn = "";
+      if (progressHadFocus) btn.focus();
+      return;
+    }
+    note.hidden = true;
+    drawSteps(busy, s.reserving?.attempt ?? 1, s.reserving?.of ?? 3);
+    if (hadFocus) progress.focus();
+  }
+
+  /** While a reservation runs, on this surface or any other, keep its status fresh. */
+  function syncPolling(s: EgressStatus): void {
+    const need = s.reserving !== null || pending === "reserving";
+    if (need && pollTimer === null) {
+      pollTimer = setInterval(() => void tick(), RESERVE_POLL_MS);
+    } else if (!need && pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  let ticking = false;
+  async function tick(): Promise<void> {
+    if (ticking) return;
+    ticking = true;
+    const seen = epoch;
+    try {
+      const s = await currentEgress();
+      if (seen !== epoch) return;
+      if (pending !== null) render(s);
+      else await apply(s);
+    } catch {
+      // The background cannot be reached: stop waiting on it (see settleAfterFailure).
+      if (seen === epoch) await settleAfterFailure();
+    } finally {
+      ticking = false;
+    }
+  }
+
   /**
    * One status, one control, and never a dead end. The chip is what this
    * browser IS on the network (an identity fact, which survives every
@@ -252,6 +379,17 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
    * hide a real state.
    */
   function render(s: EgressStatus): void {
+    // Focus follows the button that is replaced by the steps, and returns to
+    // it. Read before painting: repainting the actions can drop the focus.
+    const hadFocus = actions.contains(document.activeElement);
+    const progressHadFocus = document.activeElement === progress;
+    const busy = showRegions(s);
+    paint(s);
+    finishRegions(s, busy, hadFocus, progressHadFocus);
+    syncPolling(s);
+  }
+
+  function paint(s: EgressStatus): void {
     last = s;
     btn.disabled = false;
     btn.hidden = false;
@@ -265,6 +403,17 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
       chip.textContent = "NOT ENROLLED";
       chip.title = "This browser has no Whisper identity yet.";
       renderDetail(s);
+      if (s.reserveFailed) {
+        // Every try is used. Said once, in the control's own words, and the
+        // raw error is not shown; the verdicts do not depend on any of this.
+        setRoute("blocked", "Not protected.", RESERVE_FAILED_TEXT);
+        btn.className = "w-btn primary";
+        btn.textContent = "Try again";
+        btn.onclick = protect;
+        setNote(null);
+        opts.onStatus?.(s, verified);
+        return;
+      }
       setRoute(
         "off",
         "Not protected.",
@@ -372,6 +521,7 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   }
 
   function protect(): void {
+    if (pending !== null) return;
     let request: Promise<boolean>;
     try {
       request = Promise.resolve(chrome.permissions.request(routingPermissions()));
@@ -380,30 +530,51 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
       // resolving false. Either way the identity half below still runs.
       request = Promise.resolve(false);
     }
-    btn.disabled = true;
-    btn.textContent = "Working...";
-    fix.hidden = true;
-    setNote("Reserving this browser's identity. A few seconds.");
-    void run(request);
+    // A browser that already holds its address is only turning routing on.
+    pending = last.enrolled && last.address ? "routing" : "reserving";
+    epoch++;
+    render(last);
+    void run(request).catch(settleAfterFailure);
+  }
+
+  /** The background did not answer (stopped mid-way, reloaded under an open
+   *  page): end the waiting, stop polling, and repaint from what can be read,
+   *  so the buttons are never left hidden behind steps that will not move. */
+  async function settleAfterFailure(): Promise<void> {
+    finish();
+    let s = NO_EGRESS;
+    try {
+      s = await currentEgress();
+    } catch {
+      // nothing to read either: the empty status stands
+    }
+    render(s);
+  }
+
+  function finish(): void {
+    pending = null;
+    epoch++;
   }
 
   async function run(request: Promise<boolean>): Promise<void> {
-    const enrolled = await send<{ ok: true; enrollment: Enrollment } | { ok: false; error: string }>({
-      kind: "enroll",
-    });
+    const enrolled = await send<
+      { ok: true; enrollment: Enrollment } | { ok: false; error: string; exhausted?: boolean }
+    >({ kind: "enroll" });
     if (!enrolled.ok) {
+      finish();
       render(await currentEgress());
-      setNote(enrolled.error);
+      // Every try used: the status carries it and the line says it. Anything
+      // else is shown as it always was.
+      if (!enrolled.exhausted) setNote(enrolled.error);
       return;
     }
     // The identity is real from here on. Show it before routing is even
     // tried, so what the reader gets is never contingent on what happens
     // next.
     verified = enrolled.enrollment.verification?.isWhisperAgent ?? null;
+    pending = "routing";
+    epoch++;
     render(await currentEgress());
-    btn.disabled = true;
-    btn.textContent = "Working...";
-    setNote("Identity reserved. Waiting for the browser's permission before routing.");
 
     // The answer is waited for, not read: enabling re-checks the permission
     // itself and reports the honest reason when it is missing, so there is
@@ -414,6 +585,7 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     const res = await send<{ ok: true; egress: EgressStatus } | { ok: false; error: string }>({
       kind: "egressEnable",
     });
+    finish();
     if (!res.ok) {
       render(await currentEgress());
       setNote(res.error);

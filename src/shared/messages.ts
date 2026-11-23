@@ -207,7 +207,7 @@ export type BgResponse =
   // on-device check found for it (null when none, and when not blocked).
   | { ok: true; block: { blocked: boolean; brand: string | null; brandDomain: string | null } }
   | { ok: true }
-  | { ok: false; error: string; nokey?: boolean; nohost?: boolean };
+  | { ok: false; error: string; nokey?: boolean; nohost?: boolean; exhausted?: boolean };
 
 export function send<T extends BgResponse = BgResponse>(msg: BgRequest): Promise<T> {
   return chrome.runtime.sendMessage(msg) as Promise<T>;
