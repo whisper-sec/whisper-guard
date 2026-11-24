@@ -25,6 +25,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { E2ENetwork, MOCK_API_KEY } from "./helpers/servers";
 import {
   launchExtension,
+  openGraphDrawers,
   openPopup,
   selectPopupTab,
   setKey,
@@ -40,6 +41,8 @@ let ext: Extension;
 
 const HOST = "tabs-full-guard-e2e.com";
 const SLOW = "tabs-slow-guard-e2e.com";
+// A site with a threat factor, so "Why this verdict" has something to show.
+const FLAGGED = "tabs-flagged-guard-e2e.com";
 
 test.beforeAll(async () => {
   net = new E2ENetwork();
@@ -75,6 +78,8 @@ test.beforeAll(async () => {
     exchangeCount: 4,
   });
   net.setVerdict(SLOW, { band: "NONE", coverage: "known-clean", label: "clean" });
+  net.setVerdict(FLAGGED, { band: "MEDIUM", coverage: "malicious-evidenced", label: "suspicious" });
+  net.setExplain(FLAGGED, [{ score: 16.9, sources: [{ feedId: "e2e-feed" }] }]);
   ext = await launchExtension({ proxyPort: net.proxyPort });
 });
 
@@ -205,10 +210,15 @@ test("the popup is a fixed 400 x 600 frame and only the content region scrolls",
 // Block id -> the panel that holds it (header and footer ids are in none).
 const HOMES: Record<string, string | null> = {
   "host-row": "panel-site",
+  "checking-view": "panel-site",
+  "not-checked-view": "panel-site",
   lookalike: "panel-site",
   "blocked-card": "panel-site",
   "graph-error": "panel-site",
+  "site-chips": "panel-site",
   "chain-card": "panel-site",
+  "graph-path": "panel-site",
+  "neighbours-note": "panel-site",
   "protect-card": "panel-site",
   expanders: "panel-site",
   "exp-why": "panel-site",
@@ -250,7 +260,9 @@ test("every block sits under the tab that holds it, and no id occurs twice", asy
   expect(twice).toEqual([]);
 
   await selectPopupTab(popup, "site");
-  for (const id of ["host-row", "chain-card", "protect-card", "expanders"]) {
+  // "Why this verdict" shows only for a threat factor or a score above zero,
+  // so it is asserted on a flagged site below, not on this clean one.
+  for (const id of ["host-row", "chain-card", "expanders"]) {
     await expect(popup.locator(`#${id}`), `#${id} on This site`).toBeVisible();
   }
   await selectPopupTab(popup, "page");
@@ -260,6 +272,13 @@ test("every block sits under the tab that holds it, and no id occurs twice", asy
   await expect(popup.locator("#btn-dashboard")).toBeVisible();
   await popup.close();
   await page.close();
+
+  const flagged = await visit(ext, `https://${FLAGGED}/`);
+  await waitForIcon(ext, flagged.tabId, ["suspicious"]);
+  const popupB = await openPopup(ext, flagged.tabId);
+  await expect(popupB.locator("#protect-card"), "#protect-card on This site").toBeVisible();
+  await popupB.close();
+  await flagged.page.close();
 });
 
 test("signed in, This browser holds the identity and the activity", async () => {
@@ -385,7 +404,7 @@ test("while a check is in flight This page says so, and shows its cards once it 
   await waitForIcon(ext, tabId, ["checking"]);
   const popup = await openPopup(ext, tabId, { popupTab: "page" });
   await expect(popup.locator("#page-empty")).toBeVisible();
-  const note = (await popup.locator("#band-note").textContent()) ?? "";
+  const note = (await popup.locator("#checking-text").textContent()) ?? "";
   expect(note.length).toBeGreaterThan(0);
   await expect(popup.locator("#page-empty")).toHaveText(note);
   await expect(popup.locator("#linkscan-card")).toBeHidden();
@@ -528,10 +547,10 @@ test("a panel shown again does not replay its entrance, and later arrivals still
   const { popup, page } = await openSite();
   const name = (sel: string): Promise<string> => popup.locator(sel).evaluate((e) => getComputedStyle(e).animationName);
 
-  expect(await name("#band-rail"), "control: the rail grows on arrival").toBe("rail-grow");
+  expect(await name("#band-glyph"), "control: the verdict mark scales in on arrival").toBe("pp-verdict-in");
   await selectPopupTab(popup, "page");
   await selectPopupTab(popup, "site");
-  expect(await name("#band-rail")).toBe("none");
+  expect(await name("#band-glyph")).toBe("none");
   expect(await name(`${LIVE_RUNG} >> nth=0`)).toBe("none");
 
   // A rung detail the reader opens afterwards animates as it always did.
@@ -548,6 +567,7 @@ const fadeShown = (popup: Page): Promise<boolean> => popup.locator("#tab-fade").
 
 /** Open every drawer of This site so its panel runs past the region. */
 async function overflowSite(popup: Page): Promise<void> {
+  await openGraphDrawers(popup);
   for (const id of ["exp-why", "exp-who", "exp-session"]) await popup.locator(`#${id} summary`).click();
   await expect
     .poll(() => popup.locator("#tab-content").evaluate((r) => r.scrollHeight - r.clientHeight))

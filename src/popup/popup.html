@@ -46,20 +46,59 @@
   <div class="pp-stage">
   <main id="tab-content" class="pp-content">
     <section id="panel-site" class="pp-panel" role="tabpanel" aria-labelledby="tab-site" tabindex="0">
-    <!-- 1. THE VERDICT (tab 1). A coloured rail, the name, one badge, one sentence.
-         The sentence never restates the badge; coverage lives with the
-         evidence, never beside the verdict where it reads as a score. -->
-    <section id="host-row" hidden>
-      <span id="band-rail" class="band-rail"></span>
-      <div class="host-meta">
-        <div id="hostname" class="hostname w-host"></div>
-        <div class="chips">
-          <span id="band-chip" class="w-chip"></span>
+    <!-- WHILE A CHECK RUNS: the site's name, one sentence, and placeholders
+         that the verdict replaces in place. The shapes carry nothing the
+         sentence does not. -->
+    <section id="checking-view" class="pp-checking" hidden>
+      <div class="pp-card pp-checking-card">
+        <span class="pp-ring" aria-hidden="true"></span>
+        <div class="pp-checking-text">
+          <div id="checking-host" class="pp-checking-host"></div>
+          <div id="checking-text" class="pp-checking-line" role="status">Checking this site… usually under a second</div>
         </div>
-        <div id="band-note" class="verdict-line"></div>
       </div>
-      <div id="band-glyph" class="glyph" aria-hidden="true"></div>
+      <div class="pp-skel-pill" aria-hidden="true"></div>
+      <div class="pp-skel-block" aria-hidden="true">
+        <span class="pp-skel-bar"></span>
+        <span class="pp-skel-bar"></span>
+        <span class="pp-skel-bar"></span>
+        <span class="pp-skel-bar"></span>
+        <span class="pp-skel-bar"></span>
+      </div>
     </section>
+
+    <!-- A TAB GUARD HAS NOT CHECKED: opened before Guard started, or its
+         answer was dropped. Nothing about the site is sent until the button
+         is pressed. -->
+    <section id="not-checked-view" class="pp-notchecked" hidden>
+      <span class="pp-notchecked-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>
+      <h2 id="not-checked-title" class="pp-notchecked-title">Guard hasn’t checked this tab yet</h2>
+      <p id="not-checked-text" class="pp-notchecked-text">This can happen when the page was open before Guard started, for example right after an install or update.</p>
+      <button id="btn-check-now" class="pp-btn primary large" type="button">Check this site now</button>
+      <p id="not-checked-note" class="pp-notchecked-note">No reload needed. Only the site name is sent.</p>
+    </section>
+
+    <!-- 1. THE VERDICT (tab 1). A round mark, the name, one pill and one
+         reason. The reason never restates the pill; the age of the name
+         joins it only once the graph has said it. -->
+    <section id="host-row" class="pp-card pp-verdict" hidden>
+      <div id="band-glyph" class="pp-disc" aria-hidden="true"></div>
+      <div class="pp-verdict-text">
+        <div class="pp-verdict-head">
+          <div id="hostname" class="pp-host"></div>
+          <span id="band-chip" class="pp-pill"></span>
+        </div>
+        <div class="pp-reason"><span id="band-note"></span> <span id="band-age" hidden></span></div>
+      </div>
+    </section>
+
+    <!-- Plain facts about the name, each shown only when its data exists.
+         Coverage says in words that it is not a safety score. -->
+    <div id="site-chips" class="pp-chips" hidden>
+      <span id="coverage-chip" class="pp-chip" hidden></span>
+      <span id="score-chip" class="pp-chip" hidden></span>
+      <span id="allow-chip" class="pp-chip" title="On your Trusted sites list in settings" hidden>Allowlisted</span>
+    </div>
 
     <!-- The on-device look-alike catch: an alert with its own way out. -->
     <section id="lookalike" class="w-card warn" hidden>
@@ -81,21 +120,9 @@
 
     <section id="graph-error" class="w-card muted" hidden></section>
 
-    <!-- 2. THE CHAIN. The join path behind the name: what runs it, what it
-         resolves to, the prefix that address sits in, the network that
-         announces the prefix, the operator that holds the network, and the
-         buildings that operator is physically present in.
-
-         Any product can look a name up. This is the one thing on the panel
-         that needs a graph rather than a feed, and it is why the panel is
-         worth opening on a site that turns out to be fine. -->
-    <section id="chain-card" class="panel" hidden>
-      <div id="chain-mount"></div>
-      <div id="chain-note" class="w-note" hidden></div>
-    </section>
-
-    <!-- 3. THE EVIDENCE behind the verdict: the named weighted factors the
-         graph scored it on, and how much it knows about the name at all. -->
+    <!-- 2. THE EVIDENCE behind the verdict: the named weighted factors the
+         graph scored it on. Shown only for a threat factor or a score above
+         zero, and above the facts whenever it is shown. -->
     <section id="protect-card" class="panel" hidden>
       <div id="why-panel" hidden>
         <div class="why-head">
@@ -106,30 +133,46 @@
         <div id="why-factors" class="why-factors"></div>
       </div>
       <div id="why-chips" class="why-chips"></div>
-      <div id="coverage-chip" class="w-note coverage-line" hidden></div>
     </section>
 
-    <div id="expanders" hidden>
-      <details id="exp-why">
-        <summary>The full graph answer</summary>
-        <div id="why-body" class="exp-body">Loading...</div>
+    <!-- 3. WHO IS BEHIND IT. The join path behind the name: what runs it, what
+         it resolves to, the prefix that address sits in, the network that
+         announces the prefix, the operator that holds the network, and the
+         buildings that operator is physically present in. Seven facts, with
+         a count of how many were read.
+
+         Any product can look a name up. This is the one thing on the panel
+         that needs a graph rather than a feed, and it is why the panel is
+         worth opening on a site that turns out to be fine. The card ends
+         with the way to the full path and one closed row of the drawers. -->
+    <section id="chain-card" class="pp-card pp-facts" hidden>
+      <div id="chain-mount"></div>
+      <div id="chain-note" class="pp-note" hidden></div>
+      <div id="neighbours-note" class="pp-note pp-soft" hidden>Neighbours flagged on a shared CDN range are common and do not change this verdict.</div>
+      <a id="graph-path" class="pp-link" href="check-link.html">Show the graph path →</a>
+      <details id="expanders" class="pp-more" hidden>
+        <summary>More from the graph</summary>
+        <details id="exp-why">
+          <summary>The full graph answer</summary>
+          <div id="why-body" class="exp-body">Loading...</div>
+        </details>
+        <details id="exp-who">
+          <summary>Who runs it</summary>
+          <div id="who-body" class="exp-body">Loading...</div>
+        </details>
+        <details id="exp-neighborhood">
+          <summary>Look-alike neighborhood</summary>
+          <div class="exp-body">
+            <canvas id="graph-canvas" width="340" height="180"></canvas>
+            <div id="neighborhood-note" class="w-note"></div>
+          </div>
+        </details>
+        <details id="exp-session">
+          <summary id="session-summary">This session</summary>
+          <div id="session-body" class="exp-body"></div>
+        </details>
       </details>
-      <details id="exp-who">
-        <summary>Who runs it</summary>
-        <div id="who-body" class="exp-body">Loading...</div>
-      </details>
-      <details id="exp-neighborhood">
-        <summary>Look-alike neighborhood</summary>
-        <div class="exp-body">
-          <canvas id="graph-canvas" width="340" height="180"></canvas>
-          <div id="neighborhood-note" class="w-note"></div>
-        </div>
-      </details>
-      <details id="exp-session">
-        <summary id="session-summary">This session</summary>
-        <div id="session-body" class="exp-body"></div>
-      </details>
-    </div>
+    </section>
 
     <section id="ineligible" class="w-card muted" hidden>
       Nothing to check on this page (browser page, local address, or file).
@@ -235,11 +278,11 @@
        and takes no space when it has nothing to show. -->
   <footer class="pp-footer">
     <div id="footer-site" class="pp-foot-slot">
-      <div id="footer-actions" class="row gap" hidden>
-        <button id="btn-console" class="w-btn small" hidden>Open in console</button>
-        <button id="btn-dossier" class="w-btn small" hidden>Copy dossier</button>
+      <div id="footer-actions" class="pp-actions" hidden>
+        <button id="btn-console" class="pp-btn primary" hidden>Open in console</button>
+        <button id="btn-dossier" class="pp-btn" hidden>Copy dossier</button>
       </div>
-      <div id="privacy-line" class="w-privacy"></div>
+      <div id="privacy-line" class="pp-privacy" hidden><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="privacy-text"></span></div>
     </div>
     <div id="footer-page" class="pp-foot-slot" hidden>
       <div id="footer-page-line" class="w-privacy" hidden>Link check sends link hostnames only, never paths or the page.</div>

@@ -18,7 +18,7 @@
 // gate covers.
 //
 // The assertions are geometric rather than visual: how many rungs the spine
-// laid out, whether the verdict rail actually has height, whether anything
+// laid out, whether the verdict mark actually has height, whether anything
 // overflows the 400-pixel panel sideways. Those are the failures that
 // happen, and they are the ones a screenshot diff would report as "1200
 // pixels changed" without saying why.
@@ -99,7 +99,7 @@ window.chrome = {
 interface Geometry {
   rungs: number;
   liveRungs: number;
-  railHeight: number;
+  discHeight: number;
   bodyScrollWidth: number;
   bodyClientWidth: number;
   /** Sideways overflow of the scrolling content region, read on each tab. */
@@ -122,12 +122,12 @@ async function measure(browser: Browser, scheme: "dark" | "light"): Promise<Geom
   await page.waitForTimeout(600);
 
   const g = await page.evaluate((): Geometry => {
-    const rail = document.getElementById("band-rail");
+    const disc = document.getElementById("band-glyph");
     const scale = document.getElementById("scale");
     return {
       rungs: document.querySelectorAll("#chain-mount .ch-rung").length,
       liveRungs: document.querySelectorAll("#chain-mount .ch-rung.ch-live").length,
-      railHeight: rail ? rail.getBoundingClientRect().height : 0,
+      discHeight: disc ? disc.getBoundingClientRect().height : 0,
       bodyScrollWidth: document.body.scrollWidth,
       bodyClientWidth: document.body.clientWidth,
       scaleVisible: scale ? !scale.hasAttribute("hidden") : false,
@@ -171,25 +171,26 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
     // CONTROL: the measurement is real. A shim that never rendered would
     // report zeroes and every equality below would still hold.
     expect(blink.rungs, "the Blink render produced no spine at all").toBe(7);
-    expect(blink.railHeight, "the verdict rail has no height in Blink").toBeGreaterThan(20);
+    expect(blink.discHeight, "the verdict mark has no height in Blink").toBeGreaterThan(20);
 
     // The spine: same count, same rungs, same order, in both engines.
     expect(gecko.rungs, "Gecko laid out a different number of rungs").toBe(blink.rungs);
     expect(gecko.liveRungs).toBe(blink.liveRungs);
     expect(gecko.chainLabels).toEqual(blink.chainLabels);
     expect(gecko.chainLabels).toEqual([
-      "NAME",
-      "RUNS ON",
-      "ADDRESS",
-      "PREFIX",
-      "NETWORK",
-      "OPERATOR",
-      "PRESENT AT",
+      "Name",
+      "Runs on",
+      "Address",
+      "Prefix",
+      "Network",
+      "Operator",
+      "Present at",
     ]);
 
-    // The verdict rail is a stretched flex child, which is exactly the kind
-    // of thing that collapses to zero in one engine and not the other.
-    expect(gecko.railHeight, "the verdict rail collapsed in Gecko").toBeGreaterThan(20);
+    // The verdict mark is a fixed-size flex child inside a centred row, which
+    // is exactly the kind of thing that collapses to zero in one engine and
+    // not the other.
+    expect(gecko.discHeight, "the verdict mark collapsed in Gecko").toBeGreaterThan(20);
 
     // The live readouts really drew: an inline SVG path and a filled meter.
     expect(gecko.scaleVisible && blink.scaleVisible, "the scale readout did not appear").toBe(true);

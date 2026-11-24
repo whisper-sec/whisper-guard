@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import {
   launchExtension,
   openDashboard,
+  openGraphDrawers,
   openPopup,
   setKey,
   visit,
@@ -132,7 +133,7 @@ test.describe("live graph, real key", () => {
     const popup = await openPopup(ext, tabId);
     await expect(popup.locator("#band-chip")).toHaveText("NO KNOWN THREAT");
     await expect(popup.locator("#coverage-chip")).toContainText("known-clean");
-    await expect(popup.locator("#privacy-line")).toContainText('only "example.com" was sent');
+    await expect(popup.locator("#privacy-line")).toContainText("Only “example.com” was sent");
     await popup.close();
     await page.close();
     evidence(`- keyed clean: example.com -> band NONE, coverage known-clean, icon=benign`);
@@ -148,6 +149,7 @@ test.describe("live graph, real key", () => {
     await expect(popup.locator("#coverage-chip")).toContainText("not a safety score");
 
     // The "why": whisper.explain against production, real feed listings.
+    await openGraphDrawers(popup);
     await popup.locator("#exp-why summary").click();
     await expect(popup.locator("#why-body")).toContainText("CRITICAL", { timeout: 20_000 });
     const why = await popup.locator("#why-body").textContent();
@@ -163,6 +165,7 @@ test.describe("live graph, real key", () => {
     const { page, tabId } = await visit(ext, "https://github.com/");
     await waitForIcon(ext, tabId, ["benign", "unknown"], 15_000);
     const popup = await openPopup(ext, tabId);
+    await openGraphDrawers(popup);
     await popup.locator("#exp-who summary").click();
     await expect(popup.locator("#who-body")).toContainText("ithub", { timeout: 20_000 });
     await popup.close();
@@ -187,6 +190,7 @@ test.describe("live graph, real key", () => {
     const { page, tabId } = await visit(ext, `http://${LOOKALIKE}:${localPort}/`);
     await waitForIcon(ext, tabId, ["suspicious", "unknown"], 15_000);
     const popup = await openPopup(ext, tabId);
+    await openGraphDrawers(popup);
     await popup.locator("#exp-neighborhood summary").click();
     // Real answer either way: confirmed look-alikes or the honest "none
     // currently flagged". Both are legitimate production outcomes.

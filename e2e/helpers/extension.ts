@@ -403,6 +403,16 @@ export async function selectPopupTab(popup: Page, tab: PopupTab): Promise<void> 
 }
 
 /**
+ * Open the one closed row that holds the four graph drawers on This site, so
+ * a drawer's own summary can be clicked. Does nothing when it is already open.
+ */
+export async function openGraphDrawers(popup: Page): Promise<void> {
+  const row = popup.locator("#expanders");
+  await row.waitFor({ state: "visible" });
+  if ((await row.getAttribute("open")) === null) await popup.locator("#expanders > summary").click();
+}
+
+/**
  * What a reader sees on This page and on This browser, as the text of the
  * document while each is selected. `body.innerText()` omits a hidden panel, so
  * a "this text is nowhere on the popup" check that reads it on This site covers
