@@ -30,6 +30,7 @@ import {
   WIN_CATEGORIES,
   type CandidateVerdict,
   type ChainRungKind,
+  type DetectorHit,
   type ExplainResult,
   type GraphBand,
   type LinkScanResult,
@@ -45,7 +46,7 @@ import {
 import type { PageScanResult } from "../background/page-scan";
 import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
-import { initTabs } from "./tabs";
+import { initTabs, setPageFlagCount } from "./tabs";
 import { compact, countUp, sparkline } from "../shared/spark";
 import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
@@ -58,12 +59,15 @@ let tabId = -1;
 let state: TabState | null = null;
 let settings: Settings | null = null;
 
+/** The mark in the verdict disc: a character, a drawn mark, or null for the check. */
+type Glyph = string | (() => SVGSVGElement) | null;
+
 /** Per band: the tone of the card, mark and pill, the pill's words, and the
  *  mark's glyph (null draws the check). */
-const BAND_UI: Record<GraphBand, { tone: string; chip: string; glyph: string | null }> = {
+const BAND_UI: Record<GraphBand, { tone: string; chip: string; glyph: Glyph }> = {
   CRITICAL: { tone: "crit", chip: "MALICIOUS - evidenced", glyph: "⬣" },
   HIGH: { tone: "high", chip: "HIGH RISK", glyph: "⬣" },
-  MEDIUM: { tone: "med", chip: "SUSPICIOUS", glyph: "▲" },
+  MEDIUM: { tone: "med", chip: "SUSPICIOUS · MEDIUM", glyph: warnMark },
   LOW: { tone: "ok", chip: "NO KNOWN THREAT", glyph: null },
   INFO: { tone: "ok", chip: "NO KNOWN THREAT", glyph: null },
   NONE: { tone: "ok", chip: "NO KNOWN THREAT", glyph: null },
@@ -89,6 +93,11 @@ const FACT_LABEL: Record<ChainRungKind, string> = {
 const BAND_SYNONYM =
   /^(clean|none|no known threat|unknown|benign|safe|ok|low|info|informational|malicious|suspicious|high|medium|critical)$/i;
 
+/** What to do about a suspicious site, said after the reason and the age. */
+const ADVICE: Partial<Record<GraphBand, string>> = {
+  MEDIUM: "Be careful with passwords and payment details.",
+};
+
 /** The single true sentence about this site. Said once, with the graph's own
  *  label folded in when the label adds something the band does not. */
 function verdictSentence(band: GraphBand, label: string | null): string {
@@ -100,7 +109,7 @@ function verdictSentence(band: GraphBand, label: string | null): string {
     case "HIGH":
       return `Strong risk signals in the graph${q}. Leave this site.`;
     case "MEDIUM":
-      return `Some risk signals in the graph${q}. Do not enter anything private here.`;
+      return `Some risk signals in the graph${q}.`;
     case "LOW":
       return `Nothing lists this site as a threat; only low-level signals${q}.`;
     case "INFO":
@@ -108,7 +117,7 @@ function verdictSentence(band: GraphBand, label: string | null): string {
     case "NONE":
       return `Nothing in the graph lists this site${q}.`;
     case "UNKNOWN":
-      return `Not confirmed safe or unsafe${q}. The graph has little or no data on this name.`;
+      return `The graph has no evidence on this name yet${q}. Absence of evidence is not safety.`;
   }
 }
 
@@ -312,7 +321,23 @@ async function loadBlocked(activeHost: string): Promise<void> {
   );
 }
 
-/** One named weighted factor row: dot + name + weight, colored by kind. */
+const round1 = (x: number): number => Math.round(x * 10) / 10;
+
+/** The weights are drawn only when they can be believed: the score is known,
+ *  every listed factor carries a weight, and the weights as shown add up to the
+ *  score as shown. Anything else lists the names alone. */
+function weightsAddUp(p: Protection): boolean {
+  if (p.score === null || p.whyFactors.length === 0) return false;
+  if (p.whyFactors.some((f) => f.weight === null)) return false;
+  const sum = p.whyFactors.reduce((acc, f) => acc + round1(f.weight as number), 0);
+  return round1(sum) === p.score;
+}
+
+function factorTitle(f: WhyFactor): string {
+  return f.kind === "threat" ? `${f.name}: a threat feed listing` : `${f.name}: a popularity/trust listing (good standing)`;
+}
+
+/** One named factor row with no weight: dot, name, and what kind of listing it is. */
 function factorRow(f: WhyFactor): HTMLElement {
   const row = document.createElement("div");
   row.className = `why-factor ${f.kind}`;
@@ -321,14 +346,45 @@ function factorRow(f: WhyFactor): HTMLElement {
   const name = document.createElement("span");
   name.className = "wf-name";
   name.textContent = f.name;
-  name.title = f.kind === "threat" ? `${f.name}: a threat feed listing` : `${f.name}: a popularity/trust listing (good standing)`;
+  name.title = factorTitle(f);
   const meta = document.createElement("span");
   meta.className = "wf-meta";
-  meta.textContent =
-    f.kind === "threat"
-      ? `threat feed${f.weight !== null ? ` · weight ${f.weight}` : ""}`
-      : `good standing${f.weight !== null ? ` · weight ${f.weight}` : ""}`;
+  meta.textContent = f.kind === "threat" ? "threat feed" : "good standing";
   row.append(dot, name, meta);
+  return row;
+}
+
+/** The text of a weight: a sign, then the number. */
+function weightText(w: number): string {
+  const r = round1(w);
+  if (r > 0) return `+${r}`;
+  if (r < 0) return `\u2212${-r}`;
+  return "0";
+}
+
+/** One factor row with its weight and a bar sized to its share of the score. */
+function weightedRow(f: WhyFactor, score: number): HTMLElement {
+  const w = f.weight as number;
+  const row = document.createElement("div");
+  row.className = `why-factor ${f.kind} weighted`;
+  const line = document.createElement("div");
+  line.className = "wf-line";
+  const name = document.createElement("span");
+  name.className = "wf-name";
+  name.textContent = f.name;
+  name.title = factorTitle(f);
+  const weight = document.createElement("span");
+  weight.className = "wf-weight";
+  weight.textContent = weightText(w);
+  line.append(name, weight);
+  const bar = document.createElement("div");
+  bar.className = "wf-bar";
+  const fill = document.createElement("span");
+  fill.className = "wf-fill";
+  // Capped: a weight above the score (a negative one elsewhere in the list can allow it) must not run past its track.
+  fill.style.width = `${score > 0 ? Math.min(100, (Math.max(0, round1(w)) / score) * 100) : 0}%`;
+  bar.appendChild(fill);
+  row.append(line, bar);
   return row;
 }
 
@@ -341,7 +397,9 @@ interface WhyRender {
   truncated: boolean;
 }
 
-/** The WHY, front and center: the graph's score + its named weighted factors. */
+/** The WHY, front and center: the graph's score + its named factors. With
+ *  weights that add up to the score, every factor is listed with its weight
+ *  and a bar; otherwise the names stand alone and a long list is cut. */
 function renderWhy(p: Protection): WhyRender {
   const panel = $("why-panel");
   const scoreChip = $("why-score");
@@ -353,7 +411,13 @@ function renderWhy(p: Protection): WhyRender {
   panel.hidden = false;
   if (p.score !== null) {
     scoreChip.hidden = false;
-    scoreChip.textContent = `graph score ${p.score}`;
+    scoreChip.textContent = `score ${p.score}`;
+  }
+  const weighted = weightsAddUp(p);
+  box.classList.toggle("weighted", weighted);
+  if (weighted) {
+    box.replaceChildren(...p.whyFactors.map((f) => weightedRow(f, p.score as number)));
+    return { shown: true, truncated: false };
   }
   const shown = p.whyFactors.slice(0, MAX_FACTORS_SHOWN);
   const truncated = p.whyFactors.length > shown.length;
@@ -435,7 +499,7 @@ function isTrusted(host: string, registrable: string | null, list: readonly stri
  * thing twice in two vocabularies, which is how a surface starts to read as
  * padding, and it left two places for the same fact to disagree.
  */
-async function loadProtection(host: string): Promise<void> {
+async function loadProtection(host: string, band: GraphBand | null, coverage: string | null): Promise<void> {
   const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
   if (!res.ok) return;
   const p = res.protection;
@@ -458,7 +522,13 @@ async function loadProtection(host: string): Promise<void> {
     }),
   );
   card.hidden = !why.shown;
-  renderScoreChip(p.score);
+  card.classList.toggle("hot", band === "HIGH" || band === "CRITICAL");
+  // The coverage chip under the verdict already says "partial"; the card adds
+  // what that means, and only while it shows.
+  $("why-coverage").hidden = !(why.shown && coverage === "partial");
+  // The score is said once: in the card's head when the card shows, in the
+  // chip row when it does not.
+  if (!why.shown) renderScoreChip(p.score);
 }
 
 // ---------------------------------------- this browser: the ONE control
@@ -543,6 +613,8 @@ function renderLinkScan(scan: LinkScanResult): void {
   const note = $("linkscan-note");
   note.hidden = false;
   note.textContent = "Only the link hostnames were checked, never the page, its text, or your history.";
+  // The tab bar carries the count of malicious links this result holds.
+  setPageFlagCount(scan.flagged);
 }
 
 // When the reader was blocked (the popup opened without host access to this
@@ -917,6 +989,34 @@ function checkMark(): SVGSVGElement {
   return svg;
 }
 
+/** The warning triangle of a suspicious verdict, drawn as the disc's glyph. */
+function warnMark(): SVGSVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", "22");
+  svg.setAttribute("height", "22");
+  svg.setAttribute("viewBox", "0 0 40 40");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("aria-hidden", "true");
+  const tri = document.createElementNS(ns, "path");
+  tri.setAttribute("d", "M20 5 L36 33 H4 Z");
+  tri.setAttribute("stroke-width", "3.6");
+  tri.setAttribute("stroke-linejoin", "round");
+  const bar = document.createElementNS(ns, "path");
+  bar.setAttribute("d", "M20 15v8");
+  bar.setAttribute("stroke-width", "3.6");
+  bar.setAttribute("stroke-linecap", "round");
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", "20");
+  dot.setAttribute("cy", "28");
+  dot.setAttribute("r", "2");
+  dot.setAttribute("fill", "currentColor");
+  dot.setAttribute("stroke", "none");
+  svg.append(tri, bar, dot);
+  return svg;
+}
+
 /** "registered 12 years ago" as a sentence for the reason line. */
 function sentenceOf(fact: string): string {
   return fact.charAt(0).toUpperCase() + fact.slice(1) + ".";
@@ -1048,23 +1148,88 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
 
 let lookalikeDrawn = false;
 
+/** How each kind of catch is worded in the trick line. */
+const KIND_TEXT: Record<string, string> = {
+  confusable: "is a confusable look-alike of",
+  tldswap: "uses the name of",
+  combosquat: "embeds the name of",
+  "brand-subdomain": "impersonates",
+  nearmiss: "is one keystroke away from",
+};
+
+/** The one character a confusable name swaps: where it sits in the host, what
+ *  the host has and what the brand has. */
+interface Swap {
+  at: number;
+  got: string;
+  want: string;
+}
+
+/**
+ * The swap, worked out on the device from the two names. The detector's hit does
+ * not carry the character, so it is derived only when it is certain: a
+ * confusable catch between plain ASCII names whose first labels have the same
+ * length and differ in exactly one place, on a host that is, or sits under, the
+ * name the detector matched. Anything else singles out no character.
+ */
+function swapOf(host: string, d: DetectorHit): Swap | null {
+  if (d.kind !== "confusable") return null;
+  const matched = d.matched.toLowerCase();
+  const brand = d.brandDomain.toLowerCase();
+  const plain = /^[\x21-\x7e]+$/;
+  if (!plain.test(matched) || !plain.test(brand)) return null;
+  if ([...matched.split("."), ...brand.split(".")].some((l) => l.startsWith("xn--"))) return null;
+  const ours = matched.split(".")[0] ?? "";
+  const theirs = brand.split(".")[0] ?? "";
+  if (ours.length === 0 || ours.length !== theirs.length) return null;
+  let i = -1;
+  for (let k = 0; k < ours.length; k++) {
+    if (ours[k] === theirs[k]) continue;
+    if (i !== -1) return null;
+    i = k;
+  }
+  if (i === -1) return null;
+  const h = host.toLowerCase();
+  if (h !== matched && !h.endsWith(`.${matched}`)) return null;
+  const at = h.length - matched.length + i;
+  return { at, got: h.charAt(at), want: theirs.charAt(i) };
+}
+
+/** Write a name with its swapped character marked. The text is always the full
+ *  name: nothing is cut, so a long name cannot hide a look-alike. */
+function writeName(el: HTMLElement, host: string, swap: Swap | null): void {
+  if (!swap) {
+    el.textContent = host;
+    return;
+  }
+  const mark = document.createElement("span");
+  mark.className = "pp-swap";
+  mark.textContent = host.charAt(swap.at);
+  el.replaceChildren(host.slice(0, swap.at), mark, host.slice(swap.at + 1));
+}
+
+/** The trick, said from what was read on the device. */
+function trickText(swap: Swap | null, d: DetectorHit): string {
+  if (swap) {
+    const say = (c: string): string => (/[0-9]/.test(c) ? `the digit \u201c${c}\u201d` : `\u201c${c}\u201d`);
+    return `Trick: homoglyph, ${say(swap.got)} in place of ${say(swap.want)}.`;
+  }
+  return `Trick: this site ${KIND_TEXT[d.kind] ?? "looks like"} ${d.brandDomain}.`;
+}
+
 /** The look-alike card and its report button, from the on-device detector. */
 function drawLookalike(s: TabState): void {
   if (lookalikeDrawn || !s.detector || !s.hostname) return;
   lookalikeDrawn = true;
   const host = s.hostname;
   const d = s.detector;
+  const swap = swapOf(host, d);
   $("lookalike").hidden = false;
-  const kindText: Record<string, string> = {
-    confusable: "is a confusable look-alike of",
-    tldswap: "uses the name of",
-    combosquat: "embeds the name of",
-    "brand-subdomain": "impersonates",
-    nearmiss: "is one keystroke away from",
-  };
-  $("lookalike-text").textContent = `This site ${kindText[d.kind] ?? "looks like"} ${d.brandDomain}. Caught on-device.`;
+  $("lookalike-text").textContent = `This site looks like ${d.brandDomain} but is not it.`;
+  writeName($("lookalike-on"), host, swap);
+  $("lookalike-real").textContent = d.brandDomain;
+  $("lookalike-trick").textContent = trickText(swap, d);
   const go = $<HTMLAnchorElement>("btn-goto");
-  go.textContent = `Go to the real ${d.brandDomain}`;
   go.addEventListener("click", (ev) => {
     ev.preventDefault();
     chrome.tabs.update(tabId, { url: d.goTo }).then(() => window.close());
@@ -1118,7 +1283,7 @@ function renderSite(s: TabState): void {
   void send({ kind: "preemptArm", tabId });
 
   $("host-row").hidden = false;
-  $("hostname").textContent = host;
+  writeName($("hostname"), host, s.detector ? swapOf(host, s.detector) : null);
   const band: GraphBand | null = s.verdict?.band ?? null;
   if (cloudCheck) {
     wireLinkScan();
@@ -1141,17 +1306,17 @@ function renderSite(s: TabState): void {
 
   if (band) {
     const ui = BAND_UI[band];
-    paintVerdict(ui.tone, ui.tone, ui.glyph, ui.chip, verdictSentence(band, s.verdict?.label ?? null));
+    paintVerdict(ui.tone, ui.tone, ui.glyph, ui.chip, verdictSentence(band, s.verdict?.label ?? null), ADVICE[band] ?? null);
     renderCoverage(s.verdict?.coverage ?? null);
-    void loadProtection(host);
+    void loadProtection(host, band, s.verdict?.coverage ?? null);
   } else if (cloudCheck && s.graphError) {
     // The check was made and Whisper did not answer. Its own word, glyph and
     // amber, so it is never read as SUSPICIOUS or as a clean "unknown".
     paintVerdict("err", "err", "!", "COULD NOT CHECK", "Not confirmed either way. On-device checks still ran.");
-    void loadProtection(host);
+    void loadProtection(host, null, null);
   } else if (cloudCheck) {
     paintVerdict("unknown", "unknown", "?", "UNKNOWN", "No verdict yet for this site.");
-    void loadProtection(host);
+    void loadProtection(host, null, null);
   } else {
     // A plain ring: no reading was taken. U+26BF has no glyph in a good many
     // system font stacks and falls back to a tofu box, which reads as a
@@ -1236,16 +1401,30 @@ function renderSite(s: TabState): void {
 
 /** Draw the verdict card: the tone of the card and mark, the pill's own tone
  *  (the live-check-off state keeps the unknown pill), the glyph (null is the
- *  check), the pill's words and the one reason. */
-function paintVerdict(tone: string, pill: string, glyph: string | null, chip: string, reason: string): void {
+ *  check), the pill's words, the one reason and, for a suspicious site, what
+ *  to do about it. */
+function paintVerdict(
+  tone: string,
+  pill: string,
+  glyph: Glyph,
+  chip: string,
+  reason: string,
+  advice: string | null = null,
+): void {
   $("host-row").className = `pp-card pp-verdict ${tone}`;
+  // The facts card colours its counter by the verdict above it.
+  $("chain-card").dataset["tone"] = tone;
   const disc = $("band-glyph");
   if (glyph === null) disc.replaceChildren(checkMark());
+  else if (typeof glyph === "function") disc.replaceChildren(glyph());
   else disc.textContent = glyph;
   const pillEl = $("band-chip");
   pillEl.className = `pp-pill ${pill}`;
   pillEl.textContent = chip;
   $("band-note").textContent = reason;
+  const note = $("band-advice");
+  note.textContent = advice ?? "";
+  note.hidden = advice === null;
 }
 
 /** The one writer of the privacy line: text to show it, null to hide it.

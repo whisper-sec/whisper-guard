@@ -39,9 +39,9 @@ history.
   because an outage that renders as an empty row is an outage that reads as
   safety.
 - **The composed picture, WHY included.** The graph's score and its named,
-  weighted factors (each threat-feed listing with its weight; popularity
-  listings shown as good standing), plus a look-alike neighborhood confirmed
-  against the graph.
+  weighted factors (each threat-feed listing, with its weight when the weights
+  add up to the score shown; popularity listings shown as good standing), plus
+  a look-alike neighborhood confirmed against the graph.
 - **Page-link pre-verdicts.** One click reads every link on the current page
   and verdicts each destination BEFORE you visit any of them: malicious,
   suspicious, unknown, or clean, riskiest first. The links are reduced to bare

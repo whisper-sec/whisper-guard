@@ -174,11 +174,18 @@
   /* The green and the amber as FILLS: grounds, borders and dots, never text. */
   --w-ok-fill: #10b981;
   --w-v-low-fill: #f59e0b;
+  /* The amber fill lightened 12% toward white: the hover of the solid amber
+     button, under --w-on-warn ink (8.9:1). */
+  --w-v-low-fill-hover: #f6aa28;
   --w-v-none: #8888a0;
   --w-v-info: #b49cf5;
   --w-v-low: #fbbf24;
   --w-v-med: #fb923c;
   --w-v-high: #f87171;
+  /* The red as a FILL: the dot on a tab, and the base of red tints. Never text. */
+  --w-v-high-fill: #ef4444;
+  /* Ink on the solid amber button. */
+  --w-on-warn: #1c1917;
   /* The filled malicious plate. A fill carries white text, so it is a
      darker red than the outline hue above, which is drawn AS text. */
   --w-v-crit: #b8202a;
@@ -247,11 +254,17 @@
        a tint and never drawn as a mark or as text. */
     --w-ok-fill: #10b981;
     --w-v-low-fill: #b7791f;
+    /* Hover of the solid amber button, under --w-on-warn ink (5.7:1). */
+    --w-v-low-fill-hover: #c0893a;
     --w-v-none: #7a7a90;
     --w-v-info: #5b3fc4;
     --w-v-low: #8b6004;
     --w-v-med: #aa4c0c;
     --w-v-high: #c53030;
+    /* The red as a FILL: the dot on a tab, and the base of red tints. Never text. */
+    --w-v-high-fill: #ef4444;
+    /* Ink on the solid amber button. */
+    --w-on-warn: #1c1917;
     --w-v-crit: #b02525;
 
     --w-cat-search: #2d63ae;

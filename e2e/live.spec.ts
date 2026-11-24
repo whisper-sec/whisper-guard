@@ -119,7 +119,7 @@ test.describe("live graph, real key", () => {
 
     const popup = await openPopup(ext, tabId);
     await expect(popup.locator("#lookalike-text")).toContainText("paypal.com");
-    await expect(popup.locator("#lookalike-text")).toContainText("Caught on-device");
+    await expect(popup.locator("#lookalike-head")).toHaveText("Look-alike caught on this device");
     await popup.close();
     await page.close();
     evidence(`- keyless on-device hit: ${LOOKALIKE} flagged as look-alike of paypal.com, icon=suspicious (on-device detector)`);

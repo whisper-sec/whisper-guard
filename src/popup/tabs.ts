@@ -6,7 +6,8 @@
 // Every panel is filled when the popup opens (popup.ts), so choosing a tab
 // only shows what is already drawn. Nothing here talks to the extension, reads
 // the page's address or remembers the choice: a reload always lands on
-// This site.
+// This site. The one thing it keeps besides the selection is the red dot on
+// the This page tab (setPageFlagCount), which only shows a count it is given.
 //
 // The tabs follow the WAI-ARIA tabs pattern with automatic activation: Left
 // and Right move and select, wrapping at the ends; Home and End go to the
@@ -54,6 +55,29 @@ export function updateFade(): void {
   const region = el("tab-content");
   const more = region.scrollHeight - region.clientHeight - region.scrollTop > 1;
   el("tab-fade").hidden = !more;
+}
+
+/**
+ * Show how many malicious links the link result on This page holds.
+ *
+ * Call it with the result's `flagged` count (critical and high link results, as
+ * the link check counts them) each time a link result is drawn, including after
+ * a re-check. A count above zero shows the red dot on the This page tab and
+ * gives the tab a text alternative ("1 malicious link on this page", or "N
+ * malicious links on this page"); zero or null hides both and empties the text.
+ * Calling it again with the same count changes nothing. It sends nothing,
+ * stores nothing, never selects a tab, never moves focus and touches nothing
+ * outside the This page tab. A failed check does not call it, so the last
+ * result's dot stays; the result is not kept once the popup closes.
+ */
+export function setPageFlagCount(n: number | null): void {
+  const count = n !== null && Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+  const dot = el("tab-page-dot");
+  const text = el("tab-page-flags");
+  dot.hidden = count === 0;
+  text.hidden = count === 0;
+  text.textContent =
+    count === 0 ? "" : count === 1 ? "1 malicious link on this page" : `${count} malicious links on this page`;
 }
 
 export function initTabs(): void {

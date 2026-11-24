@@ -146,7 +146,8 @@ test("keyless: popup shows the on-device look-alike hit and the honest privacy l
   const popup = await openPopup(ext, tabId);
   await expect(popup.locator("#hostname")).toHaveText("paypa1-secure-login.com");
   await expect(popup.locator("#lookalike-text")).toContainText("paypal.com");
-  await expect(popup.locator("#btn-goto")).toHaveText("Go to the real paypal.com");
+  await expect(popup.locator("#btn-goto")).toHaveText("Go to the real site");
+  await expect(popup.locator("#lookalike-real")).toHaveText("paypal.com");
   await expect(popup.locator("#privacy-line")).toContainText(GRAPH_READ_HOST);
   await selectPopupTab(popup, "browser");
   await expect(popup.locator("#signin-pitch")).toBeVisible();
@@ -239,7 +240,9 @@ test("keyed: identify renders on a clean host, and UNKNOWN is honest, never gree
   await waitForIcon(ext, nobody.tabId, ["unknown"]);
   const popup2 = await openPopup(ext, nobody.tabId);
   await expect(popup2.locator("#band-chip")).toHaveText("UNKNOWN");
-  await expect(popup2.locator("#band-note")).toContainText("Not confirmed safe or unsafe");
+  await expect(popup2.locator("#band-note")).toHaveText(
+    "The graph has no evidence on this name yet. Absence of evidence is not safety.",
+  );
   await popup2.close();
   await nobody.page.close();
 });
