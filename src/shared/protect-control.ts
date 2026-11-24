@@ -168,6 +168,59 @@ export function addressNode(address: string): HTMLElement {
   return wrap;
 }
 
+/**
+ * The browser's public name, with a break allowed after each dot. None of the
+ * breaks is text, so the name is still selected and copied as one exact
+ * string. The popup keeps the name to one line: the start part is trimmed with
+ * an ellipsis when it does not fit, and when the name has more than three
+ * labels its zone (the last three, agents.whisper.online) is a part of its own
+ * that stays in view. The dashboard draws both parts inline as one name. Both
+ * parts are inline: a block or flex part would put a line break into a
+ * selection between them.
+ *
+ * --pc-name-zone tells the style how much of the line the zone takes. It
+ * starts as the zone's length in ch (each character of the monospace face is
+ * 1ch wide) and is then set to the zone's drawn width, which also counts any
+ * letter spacing the reader's own style adds. Where the zone is not drawn as a
+ * box of its own (the dashboard) its width reads 0 and the value is left as it is.
+ */
+export function nameNode(fqdn: string): HTMLElement {
+  const name = el("span", "w-mono pc-name");
+  name.title = fqdn;
+  const labels = fqdn.split(".");
+  const appendLabels = (into: HTMLElement, from: number, to: number): void => {
+    for (let i = from; i < to; i++) {
+      const last = i === labels.length - 1;
+      into.append(document.createTextNode(last ? labels[i]! : `${labels[i]}.`));
+      if (!last) into.append(document.createElement("wbr"));
+    }
+  };
+  const start = el("span", "pc-name-start");
+  if (labels.length <= 3) {
+    appendLabels(start, 0, labels.length);
+    name.append(start);
+    return name;
+  }
+  const cut = labels.length - 3;
+  const zone = el("span", "pc-name-zone");
+  appendLabels(start, 0, cut);
+  appendLabels(zone, cut, labels.length);
+  name.style.setProperty("--pc-name-zone", `${labels.slice(cut).join(".").length}ch`);
+  name.append(start, zone);
+  if (typeof ResizeObserver === "function") {
+    const watch = new ResizeObserver((entries) => {
+      if (!zone.isConnected) {
+        watch.disconnect();
+        return;
+      }
+      const width = entries[entries.length - 1]?.borderBoxSize?.[0]?.inlineSize ?? 0;
+      if (width > 0) name.style.setProperty("--pc-name-zone", `${width}px`);
+    });
+    watch.observe(zone);
+  }
+  return name;
+}
+
 export interface ProtectControlOptions {
   /** The element the control renders itself into. Emptied on mount. */
   root: HTMLElement;
@@ -329,17 +382,7 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     const rows: HTMLElement[] = [fact("Address", addressNode(s.address))];
     // The name and the proof are the public record's answer, so they show once
     // it has said yes. The address does not wait for it.
-    if (verified === true && s.fqdn) {
-      const name = el("span", "w-mono pc-name");
-      // A break is preferred after each dot (a label too long for the column can
-      // still be split), and none of it is text: the name is still selected and
-      // copied as one exact string.
-      s.fqdn.split(".").forEach((label, i, all) => {
-        name.append(document.createTextNode(i < all.length - 1 ? `${label}.` : label));
-        if (i < all.length - 1) name.append(document.createElement("wbr"));
-      });
-      rows.push(fact("Name", name));
-    }
+    if (verified === true && s.fqdn) rows.push(fact("Name", nameNode(s.fqdn)));
     if (verified === true && s.rdapUrl) {
       const a = el("a", undefined, "RDAP record, anyone can check ") as HTMLAnchorElement;
       a.href = s.rdapUrl;

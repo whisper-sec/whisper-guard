@@ -43,7 +43,7 @@ import {
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
-import { describeFit, measureBrowserTab } from "./helpers/popup-fit";
+import { expectBrowserTabFits, expectRoutedCardLayout } from "./helpers/popup-fit";
 import { CONSOLE_URL } from "../src/shared/config";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -410,10 +410,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
         await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible({ timeout: 15_000 });
       }
       await expect(popup.locator("#browser-strip svg")).toBeVisible();
-      const fit = await measureBrowserTab(popup);
-      test.info().annotations.push({ type: `signed-out-${scheme}`, description: describeFit(fit) });
-      expect(fit.over, `${scheme}: the tab runs ${fit.over}px past the region`).toBeLessThanOrEqual(0);
-      expect(fit.fade, `${scheme}: the fade shows`).toBe(false);
+      await expectBrowserTabFits(popup, `signed-out-${scheme}`);
     }
     await popup.close();
     await page.close();
@@ -435,10 +432,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
         await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible();
       }
       await expect(popup.locator("#browser-strip svg")).toBeVisible();
-      const fit = await measureBrowserTab(popup);
-      test.info().annotations.push({ type: `refused-${scheme}`, description: describeFit(fit) });
-      expect(fit.over, `${scheme}: the tab runs ${fit.over}px past the region`).toBeLessThanOrEqual(0);
-      expect(fit.fade, `${scheme}: the fade shows`).toBe(false);
+      await expectBrowserTabFits(popup, `refused-${scheme}`);
     }
     await popup.close();
     await page.close();
@@ -613,6 +607,80 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
     await dash.close();
   });
 
+  test("the dashboard draws the whole name, and only the popup keeps it to one line", async () => {
+    await setKey(ext, MOCK_KEY);
+    const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
+    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    await ensureRouted(popup);
+    await popup.close();
+    await page.close();
+    const stored = await ext.sw.evaluate(async () => {
+      const e = (await chrome.storage.local.get("egress"))["egress"] as { identity: { fqdn: string | null } };
+      return e.identity.fqdn;
+    });
+    expect(stored?.length ?? 0, "the stand-in's name is as long as a real one").toBeGreaterThanOrEqual(73);
+
+    const dash = await openDashboard(ext, "browser");
+    // Narrow enough that the whole name has to wrap.
+    await dash.setViewportSize({ width: 600, height: 900 });
+    await expect(dash.locator("#identity-control")).toHaveAttribute("data-state", "routed", { timeout: 25_000 });
+    const name = dash.locator("#identity-detail .pc-name");
+    await expect(name).toBeVisible({ timeout: 25_000 });
+    const drawn = await name.evaluate((n) => {
+      const cell = n.closest(".v")!;
+      const box = cell.getBoundingClientRect();
+      // Nothing between the name and the card clips it.
+      const clipped: string[] = [];
+      for (let a: Element | null = cell; a && a.id !== "identity-control"; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        const clips = cs.overflowX !== "visible" || cs.overflowY !== "visible";
+        if (clips && (a.scrollWidth > a.clientWidth || a.scrollHeight > a.clientHeight)) clipped.push(a.className || a.tagName.toLowerCase());
+      }
+      const outside = [...n.getClientRects()].filter(
+        (r) => r.width > 0 && (r.left < box.left - 0.5 || r.right > box.right + 0.5 || r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5),
+      ).length;
+      // Each label is drawn whole on one line, and the name takes more than one:
+      // so it wraps, and only at the breaks after the dots.
+      const texts: Text[] = [];
+      const walk = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+      for (let t = walk.nextNode(); t; t = walk.nextNode()) texts.push(t as Text);
+      const tops = new Set<number>();
+      let split = 0;
+      for (const t of texts) {
+        const r = document.createRange();
+        r.selectNodeContents(t);
+        const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+        if (rects.length !== 1) split++;
+        for (const x of rects) tops.add(Math.round(x.top));
+      }
+      return {
+        text: n.textContent,
+        title: (n as HTMLElement).title,
+        clipped,
+        outside,
+        split,
+        lines: tops.size,
+        held: [n, ...n.querySelectorAll("*")]
+          .filter((e) => {
+            const cs = getComputedStyle(e);
+            return cs.overflowX !== "visible" || cs.textOverflow === "ellipsis" || cs.whiteSpace === "nowrap";
+          })
+          .map((e) => e.className || e.tagName.toLowerCase()),
+        breaks: [...n.querySelectorAll("wbr")].filter((w) => getComputedStyle(w).display !== "none").length,
+        dots: (n.textContent ?? "").split(".").length - 1,
+      };
+    });
+    expect(drawn.text, "the dashboard draws the stored name").toBe(stored);
+    expect(drawn.title, "its title is the stored name").toBe(stored);
+    expect(drawn.held, "no part of the dashboard's name is clipped or kept to one line").toEqual([]);
+    expect(drawn.clipped, "nothing around the name clips it").toEqual([]);
+    expect(drawn.outside, "every line of the name is inside its cell").toBe(0);
+    expect(drawn.breaks, "the dashboard keeps a break after each dot").toBe(drawn.dots);
+    expect(drawn.lines, "at 600 px the name wraps").toBeGreaterThan(1);
+    expect(drawn.split, "it wraps only after a dot: no label is split").toBe(0);
+    await dash.close();
+  });
+
   test("the address and the name can be selected and copied", async () => {
     await setKey(ext, MOCK_KEY);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
@@ -665,7 +733,9 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
     expect(copied, "the copied name is the exact name").toBe(stored.fqdn);
     expect(copied, "no zero-width space").not.toMatch(/[\u200b\u200c\u200d\ufeff]/);
     expect(copied, "no line break").not.toMatch(/[\r\n]/);
-    // The name allows a break after each dot, and the breaks are not text.
+    // The name's markup keeps a <wbr> after each dot: an element, not a
+    // character, so a copy stays exact. The popup hides them and keeps the Name
+    // to one line; the dashboard test checks that they still break there.
     const breaks = await popup.evaluate((fqdn) => {
       const row = [...document.querySelectorAll("#identity-detail .w-kv")].find((r) => r.querySelector(".k")?.textContent === "Name");
       return { wbrs: row?.querySelectorAll("wbr").length ?? -1, dots: fqdn.split(".").length - 1 };
@@ -721,10 +791,8 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
           await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible();
         }
         await expect(popup.locator("#browser-strip svg")).toBeVisible();
-        const fit = await measureBrowserTab(popup);
-        test.info().annotations.push({ type: `routed-${name}-${scheme}`, description: describeFit(fit) });
-        expect(fit.over, `${name} ${scheme}: the tab runs ${fit.over}px past the region`).toBeLessThanOrEqual(0);
-        expect(fit.fade, `${name} ${scheme}: the fade shows`).toBe(false);
+        await expectRoutedCardLayout(popup, `routed-${name}-${scheme}`);
+        await expectBrowserTabFits(popup, `routed-${name}-${scheme}`);
       }
       await popup.close();
     }
@@ -862,10 +930,7 @@ test.describe("This browser, held by another extension", () => {
         await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible();
       }
       await expect(popup.locator("#browser-strip svg")).toBeVisible();
-      const fit = await measureBrowserTab(popup);
-      test.info().annotations.push({ type: `held-${scheme}`, description: describeFit(fit) });
-      expect(fit.over, `${scheme}: the tab runs ${fit.over}px past the region`).toBeLessThanOrEqual(0);
-      expect(fit.fade, `${scheme}: the fade shows`).toBe(false);
+      await expectBrowserTabFits(popup, `held-${scheme}`);
     }
     await popup.close();
     await page.close();

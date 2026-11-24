@@ -591,21 +591,54 @@ button.pp-link { background: none; border: 0; padding: 0; text-align: left; curs
   padding: 2px 7px;
 }
 
-/* The facts: a label column and a value column. */
-.pp-identity .pc-detail { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 4px 8px; }
+/* The facts: a label column as wide as its longest label, and the value column
+   takes the rest, so a long name keeps room on a renderer that draws each
+   glyph a little wider. */
+.pp-identity .pc-detail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 8px; }
 .pp-identity .pc-detail .w-kv { display: contents; }
 .pp-identity .w-kv .k { font: 400 12px/1.2 var(--w-font-sans); color: var(--w-on-grad-2); }
 .pp-identity .w-kv .v { font: 400 12px/1.2 var(--w-mono); color: var(--w-text); overflow-wrap: anywhere; word-break: normal; }
 .pp-identity .w-addr-prefix { color: var(--w-on-grad-2); }
 .pp-identity .pc-name { font-size: 11px; line-height: 1.2; }
+/* The name keeps to one line. Its zone (agents.whisper.online) stays in view
+   and the start of a long name is trimmed with an ellipsis; the whole name is
+   still in the page, so a selection or a copy is exact, and it is the title.
+   The start is an inline block, not a flex or grid item, which would put a
+   line break into a copy. --pc-name-zone is the zone's drawn width, set by
+   the control. */
+.pp-identity .pc-name { display: block; white-space: nowrap; overflow: hidden; }
+/* Blink still breaks at a <wbr> inside nowrap; here the breaks are not wanted. */
+.pp-identity .pc-name wbr { display: none; }
+.pp-identity .pc-name-start {
+  display: inline-block;
+  max-width: calc(100% - var(--pc-name-zone, 0px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+/* A box of its own, so the control can read its drawn width. */
+.pp-identity .pc-name-zone { display: inline-block; vertical-align: top; }
 .pp-identity .pc-detail a { font: 400 12px/1.2 var(--w-font-sans); color: var(--w-accent); text-decoration: none; }
 .pp-identity .pc-detail a:hover { color: var(--w-accent-hover); }
 
 /* The sentence and, under it, the limits. */
-.pp-identity .pc-route { gap: 8px; font: 400 12px/1.35 var(--w-font-sans); color: var(--w-text-2); }
-.pp-identity .pc-route .w-dot { width: 8px; height: 8px; margin-top: 4px; }
+.pp-identity .pc-route {
+  --pc-dot: 8px;
+  --pc-dot-gap: 8px;
+  gap: var(--pc-dot-gap);
+  font: 400 12px/1.35 var(--w-font-sans);
+  color: var(--w-text-2);
+}
+/* The 4px top centres an 8px dot on the sentence's first 16.2px line: a new
+   --pc-dot needs a new top. */
+.pp-identity .pc-route .w-dot { width: var(--pc-dot); height: var(--pc-dot); margin-top: 4px; }
 .pp-identity .pc-route .w-dot.off { border-color: var(--w-on-grad-2); }
-.pp-identity .pc-route-more { margin-top: 0; color: var(--w-on-grad-2); }
+/* The limits run back under the dot and its gap, so the smaller line has the
+   card's whole width. */
+.pp-identity .pc-route-more {
+  margin: 0 0 0 calc(-1 * (var(--pc-dot) + var(--pc-dot-gap)));
+  color: var(--w-on-grad-2);
+}
 
 /* The one button, full width. */
 .pp-identity .pc-actions { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 8px; }
@@ -656,7 +689,10 @@ button.pp-link { background: none; border: 0; padding: 0; text-align: left; curs
 /* Every line sets its own line-height. */
 .pp-activity { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-color: var(--w-line); }
 .pp-activity > .w-label { font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; }
-.pp-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+/* Three equal columns, but the third is never narrower than its label, the
+   longest, so the label keeps to one line where glyphs are drawn wider. While
+   that figure is not yet read its column is empty and the three stay equal. */
+.pp-figures { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(max-content, 1fr); gap: 8px; }
 .pp-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 /* A figure not yet read stays out of view and keeps its column. */
 #fig-destinations { grid-column: 1; }

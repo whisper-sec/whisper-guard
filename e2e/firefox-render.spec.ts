@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectPopupTab } from "./helpers/extension";
-import { describeFit, measureBrowserTab } from "./helpers/popup-fit";
+import { expectBrowserTabFits, expectRoutedCardLayout } from "./helpers/popup-fit";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/firefox");
@@ -452,6 +452,10 @@ test("the interstitial's drawn evidence renders the same in Gecko and Blink", as
 /**
  * A second reply set: signed in, routed, verified, with the destinations seen
  * inside the last day so the strip is drawn. The address and name are fictional.
+ * The name has a real one's shape and length: "a" and 16 hex digits, "t" and
+ * 32 hex digits for the account, then a stand-in zone as long as the agents
+ * zone (agents.guard-e2e.test), 73 characters in all.
+ * The popup draws it on one line, the start trimmed and the zone in view.
  * The categories argument is how many of today's three tallies are above zero.
  */
 function routedShim(categories: 1 | 3): string {
@@ -462,7 +466,8 @@ function routedShim(categories: 1 | 3): string {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return `${SHIM}
 const ADDRESS = "2001:db8:aa:bb:cc:dd:ee:ff";
-const FQDN = "agent-render-guard-e2e.agents.example.test";
+const AGENT = "a5e7a1c0d9b2f4301";
+const FQDN = AGENT + ".t0123456789abcdef0123456789abcdef.agents.guard-e2e.test";
 Object.assign(REPLIES, {
   getTabState: { ok: true, tabState: { ...REPLIES.getTabState.tabState, signedIn: true } },
   getSettings: { ...REPLIES.getSettings, signedIn: true },
@@ -475,7 +480,7 @@ Object.assign(REPLIES, {
     totals: { destinations: 4, companies: 1, countries: 1, networks: 1, lookups: 10, flagged: 0 },
     generatedAt: Date.now() } },
   egressStatus: { ok: true, egress: {
-    on: true, enrolled: true, agent: "agent-render-guard-e2e", address: ADDRESS,
+    on: true, enrolled: true, agent: AGENT, address: ADDRESS,
     label: "This browser (Whisper Guard)", fqdn: FQDN,
     rdapUrl: "https://rdap.example.test/ip/" + ADDRESS,
     controlledByOther: false, webrtcHardened: null, privateWindowsRouted: false,
@@ -486,7 +491,7 @@ Object.assign(REPLIES, {
 }
 
 for (const categories of [1, 3] as const) {
-  test(`This browser, signed in and routed with ${categories} categor${categories === 1 ? "y" : "ies"} today, is measured at 400 x 600 in Gecko and Blink`, async ({}, testInfo) => {
+  test(`This browser, signed in and routed with ${categories} categor${categories === 1 ? "y" : "ies"} today, is measured at 400 x 600 in Gecko and Blink`, async () => {
     test.setTimeout(120_000);
     const ff = await firefox.launch();
     const cr = await chromium.launch();
@@ -507,10 +512,8 @@ for (const categories of [1, 3] as const) {
           await expect(page.locator("#identity-detail .w-kv .k"), engine).toHaveText(["Address", "Name", "Proof"]);
           await expect(page.locator("#browser-strip svg"), engine).toBeVisible();
           await expect(page.locator("#today-row"), engine).toBeVisible();
-          const m = await measureBrowserTab(page);
-          testInfo.annotations.push({ type: `${engine}-${scheme}-${categories}`, description: describeFit(m) });
-          expect(m.over, `${engine} ${scheme}: the tab runs ${m.over}px past the region`).toBeLessThanOrEqual(0);
-          expect(m.fade, `${engine} ${scheme}: the fade shows`).toBe(false);
+          await expectRoutedCardLayout(page, `${engine}-${scheme}-${categories}`);
+          await expectBrowserTabFits(page, `${engine}-${scheme}-${categories}`);
           await page.close();
         }
       }
