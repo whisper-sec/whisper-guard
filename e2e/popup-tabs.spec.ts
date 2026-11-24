@@ -229,6 +229,7 @@ const HOMES: Record<string, string | null> = {
   "linkscan-card": "panel-page",
   "iocscan-card": "panel-page",
   "page-empty": "panel-page",
+  "cookie-line": "panel-page",
   "identity-card": "panel-browser",
   "signin-pitch": "panel-browser",
   "tier-meter": "panel-browser",

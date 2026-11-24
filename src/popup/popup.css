@@ -12,9 +12,9 @@
       headline: a round mark, the name and one pill in a card of its own,
       tinted by the verdict. The facts behind the name sit in a second card.
       A look-alike and a session block are popup cards of their own (.pp-card
-      with a modifier). The shared .w-card is still used for the quiet notices
-      (a failed read, a page that cannot be checked) and for this browser's
-      identity and sign-in cards.
+      with a modifier), and so are the two cards on This page (.pp-scan). The
+      shared .w-card is still used for the quiet notices (a failed read, a page
+      that cannot be checked) and for this browser's identity and sign-in cards.
       Everything else is a .panel: a quiet group separated by one hairline.
    2. ONE TYPE SCALE, and it is the shared one (theme.css): 9 / 9.5
       (eyebrow), 10.5 (mono metadata), 11 (caption), 11.5-12 (mono rows),
@@ -444,7 +444,73 @@ body {
 }
 .pp-link:hover { color: var(--w-accent-hover); }
 
-/* ------------------------------------------------ page-link pre-verdicts */
+/* ---------------------------------------------- this page: the two cards */
+
+/* Every line sets its own line-height. The link card's result is drawn here;
+   the indicator results below it keep their own, older rows. */
+.pp-scan { display: flex; flex-direction: column; gap: 10px; border-color: var(--w-line); }
+#iocscan-card { gap: 8px; }
+.pp-scan-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; min-height: 32px; }
+.pp-scan-head .w-label { margin-right: auto; font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; }
+.pp-scan-age { font: 400 11.5px/1.2 var(--w-font-sans); color: var(--w-muted); white-space: nowrap; }
+.pp-btn.compact { flex: none; min-height: 32px; padding: 0 14px; }
+.pp-scan .pp-note, .pp-scan .pp-link { margin-top: 0; }
+button.pp-link { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.pp-scan-note { margin: 0; font: 400 12px/1.45 var(--w-font-sans); color: var(--w-muted); }
+
+.pp-headline { display: flex; align-items: baseline; gap: 8px; }
+.pp-headline-n { font: 700 24px/1.1 var(--w-mono); color: var(--w-text); }
+.pp-headline-words { font: 400 13px/1.3 var(--w-font-sans); color: var(--w-text-2); }
+.pp-headline.hot .pp-headline-words { color: var(--w-v-high); }
+
+/* The proportional bar: one segment per kind, as wide as its count. */
+.pp-bar { display: flex; gap: 2px; height: 8px; border-radius: 999px; overflow: hidden; }
+.pp-seg { flex: 0 1 0; min-width: 3px; }
+.pp-counts { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 400 11.5px/1.3 var(--w-font-sans); color: var(--w-text-2); }
+.pp-count { display: inline-flex; align-items: center; gap: 5px; }
+.pp-swatch { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.pp-seg.clean, .pp-swatch.clean { background: var(--w-ok); }
+.pp-seg.unknown, .pp-swatch.unknown { background: var(--w-fill-neutral); }
+.pp-seg.suspicious, .pp-swatch.suspicious { background: var(--w-v-low-fill); }
+.pp-seg.malicious, .pp-swatch.malicious { background: var(--w-v-high-fill); }
+
+/* The destinations: host on the left, its word on the right. A host wraps and
+   is never cut, so a look-alike name cannot hide behind an ellipsis. */
+.pp-rows { display: flex; flex-direction: column; border-top: 1px solid var(--w-line); }
+.pp-rows .link-row { justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--w-line); }
+.pp-rows .link-row:last-child { border-bottom: 0; }
+.pp-rows .link-host {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font: 400 12px/1.3 var(--w-mono);
+  color: var(--w-text);
+}
+.pp-rows .pp-pill { flex: none; }
+.pp-rows .link-row.bad {
+  margin: 4px 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--w-v-high-fill) 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--w-v-high-fill) 8%, transparent);
+}
+
+/* The line that says Guard declined a cookie prompt on this page. */
+.pp-cookie {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--w-accent-line) 8%, transparent);
+  font: 400 12.5px/1.35 var(--w-font-sans);
+  color: var(--w-text-2);
+}
+.pp-cookie svg { flex: none; color: var(--w-accent-stroke); }
+
+/* ------------------------------------------ this page: the indicator results */
 
 .linkscan-summary { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--w-muted); }
 .linkscan-summary.hot { color: var(--w-v-high); }
@@ -452,13 +518,11 @@ body {
   margin-top: 6px; display: flex; flex-direction: column; gap: 2px;
   max-height: 190px; overflow-y: auto;
 }
-#linkscan-note { margin-top: 8px; }
 .link-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; min-width: 0; }
 .link-row .w-chip { flex: none; min-width: 74px; text-align: center; }
 /* "Not assessed" is wider than the band words; one width keeps the value column aligned. */
 #iocscan-list .link-row .w-chip { min-width: 96px; }
 .link-host { font-family: var(--w-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-n { margin-left: auto; color: var(--w-muted); font-family: var(--w-mono); font-size: 10.5px; }
 
 /* --------------------------------------------- 4. this browser (protect)
 
