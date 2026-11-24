@@ -11,9 +11,11 @@
    1. HIERARCHY IS STRUCTURAL, not decorative. The site verdict is the
       headline: a round mark, the name and one pill in a card of its own,
       tinted by the verdict. The facts behind the name sit in a second card.
-      A .w-card is spent only on something that demands a decision (a
-      look-alike, a session block, this browser's routing). Everything else
-      is a .panel: a quiet group separated by one hairline.
+      A look-alike and a session block are popup cards of their own (.pp-card
+      with a modifier). The shared .w-card is still used for the quiet notices
+      (a failed read, a page that cannot be checked) and for this browser's
+      identity and sign-in cards.
+      Everything else is a .panel: a quiet group separated by one hairline.
    2. ONE TYPE SCALE, and it is the shared one (theme.css): 9 / 9.5
       (eyebrow), 10.5 (mono metadata), 11 (caption), 11.5-12 (mono rows),
       12.5 (body), 15 (the hostname), 26 (the one hero number). Nothing
@@ -121,6 +123,7 @@ body {
   border-bottom: 1px solid var(--w-line);
 }
 .pp-tab {
+  position: relative;
   flex: 1;
   display: flex;
   justify-content: center;
@@ -136,6 +139,10 @@ body {
   cursor: pointer;
 }
 .pp-tab:hover { color: var(--w-text); }
+/* The red dot beside a tab's label: a mark, never the only carrier of the
+   meaning, since its words ride in the tab's name. */
+.pp-tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--w-v-high-fill); }
+
 .pp-tab[aria-selected="true"] {
   font-weight: 700;
   color: var(--w-text);
@@ -181,6 +188,38 @@ body {
 
 .mini-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
 
+/* Shared popup surfaces. Each use sets its own border colour. They sit ahead
+   of every card and button modifier below so that a modifier, at the same
+   specificity, wins over this base. */
+.pp-card {
+  background: var(--w-card);
+  border-radius: 12px;
+  padding: 14px;
+  border: 1px solid;
+}
+.pp-btn {
+  min-height: 36px;
+  border-radius: 8px;
+  font: 700 12.5px/1 var(--w-font-sans);
+  color: var(--w-text);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--w-accent-line) 35%, transparent);
+  cursor: pointer;
+}
+.pp-btn.primary { background: var(--w-accent-line); color: #fff; border: 0; }
+.pp-btn.large { min-height: 42px; font-size: 14px; line-height: 1.2; }
+.pp-btn.warn { background: var(--w-v-low-fill); color: var(--w-on-warn); border: 0; }
+.pp-btn.warn-line {
+  background: transparent;
+  color: var(--w-v-low);
+  border-color: color-mix(in srgb, var(--w-v-low-fill) 50%, transparent);
+}
+.pp-btn:hover:not(:disabled) { filter: brightness(0.92); }
+/* The amber fill lightens on hover instead of darkening, so its dark ink keeps
+   4.5:1 in both schemes (the shared hover would take the light scheme under it). */
+.pp-btn.warn:hover:not(:disabled) { filter: none; background: var(--w-v-low-fill-hover); }
+.pp-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ------------------------------------------------- 1. the site verdict */
 
 /* The card is tinted by --pp-base, set per state below. Every line sets its
@@ -194,7 +233,13 @@ body {
   border-color: color-mix(in srgb, var(--pp-base) 35%, transparent);
 }
 .pp-verdict.ok { --pp-base: var(--w-ok-fill); }
-.pp-verdict.med { --pp-base: var(--w-v-med); }
+/* Suspicious is amber: the card is tinted by the fill, and the mark and pill
+   draw in the readable amber. */
+.pp-verdict.med {
+  --pp-base: var(--w-v-low-fill);
+  background: color-mix(in srgb, var(--w-v-low-fill) 7%, var(--w-card));
+  border-color: color-mix(in srgb, var(--w-v-low-fill) 40%, transparent);
+}
 .pp-verdict.high { --pp-base: var(--w-v-high); }
 .pp-verdict.crit { --pp-base: var(--w-v-crit); }
 .pp-verdict.unknown { --pp-base: var(--w-line-strong); border-style: dashed; }
@@ -221,7 +266,7 @@ body {
   to { transform: scale(1); opacity: 1; }
 }
 .pp-verdict.ok .pp-disc { color: var(--w-ok); }
-.pp-verdict.med .pp-disc { color: var(--w-v-med); }
+.pp-verdict.med .pp-disc { color: var(--w-v-low); }
 .pp-verdict.high .pp-disc { color: var(--w-v-high); }
 .pp-verdict.crit .pp-disc { color: #fff; background: var(--w-v-crit); }
 .pp-verdict.unknown .pp-disc, .pp-verdict.off .pp-disc { background: var(--w-elev); }
@@ -247,7 +292,11 @@ body {
   color: var(--w-muted);
 }
 .pp-pill.ok { color: var(--w-ok); background: color-mix(in srgb, var(--w-ok-fill) 12%, transparent); }
-.pp-pill.med { color: var(--w-v-med); background: color-mix(in srgb, var(--w-v-med) 12%, transparent); }
+.pp-pill.med {
+  color: var(--w-v-low);
+  background: color-mix(in srgb, var(--w-v-low-fill) 12%, transparent);
+  border-color: color-mix(in srgb, var(--w-v-low-fill) 55%, transparent);
+}
 .pp-pill.high { color: var(--w-v-high); background: color-mix(in srgb, var(--w-v-high) 12%, transparent); }
 .pp-pill.crit { color: #fff; background: var(--w-v-crit); }
 .pp-pill.unknown { color: var(--w-muted); border: 1px dashed var(--w-line-strong); }
@@ -272,21 +321,31 @@ body {
 
 /* ------------------------------------------------------- evidence block */
 
-.w-card.warn { border-color: var(--w-v-low); }
 .w-card.muted { color: var(--w-muted); font-size: 12px; }
 .w-card p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--w-muted); }
 
 .why-chips { display: flex; flex-direction: column; gap: 3px; }
 .why-chips:not(:empty) { margin-top: 8px; }
-.why-line { font-size: 11px; line-height: 1.5; color: var(--w-muted); }
+.why-line { font: 400 11px/1.5 var(--w-font-sans); color: var(--w-muted); }
 /* When the graph gave no structured factors, the first cited line IS the
    evidence and carries the weight the factor rows otherwise would. */
 .why-line.threat { color: var(--w-v-med); }
 
+/* Why this verdict: the score in the head, then one row per factor. */
+.pp-why { border-color: var(--w-line); padding: 10px 14px; }
 #why-panel { margin-top: 0; }
 .why-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pp-why .why-head .w-label { font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; }
+.pp-score {
+  border: 1px solid var(--w-line-strong);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font: 400 11px/1.2 var(--w-mono);
+  color: var(--w-text-2);
+  white-space: nowrap;
+}
 .why-factors { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
-.why-factor { display: flex; align-items: center; gap: 7px; font-size: 11px; min-width: 0; }
+.why-factor { display: flex; align-items: center; gap: 7px; font: 400 11px/1.35 var(--w-font-sans); min-width: 0; }
 .why-factor .w-dot { width: 6px; height: 6px; }
 .why-factor.threat .w-dot { background: var(--w-v-high); }
 .why-factor.good .w-dot { background: var(--w-ok); }
@@ -295,7 +354,32 @@ body {
 .why-factor .wf-meta { color: var(--w-muted); white-space: nowrap; margin-left: auto; }
 .why-factor.more { color: var(--w-muted); }
 
-.chip-muted { color: var(--w-muted); letter-spacing: 0; }
+/* Weights and bars: only when the weights add up to the score shown. */
+.why-factors.weighted { gap: 8px; margin-top: 8px; }
+.why-factor.weighted { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.wf-line { display: flex; justify-content: space-between; gap: 8px; }
+.why-factor.weighted .wf-name {
+  font: 400 12.5px/1.2 var(--w-font-sans);
+  color: var(--w-text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.wf-weight { font: 400 12.5px/1.2 var(--w-mono); color: var(--w-v-low); white-space: nowrap; }
+.wf-bar { height: 4px; border-radius: 4px; background: var(--w-line); overflow: hidden; }
+.wf-fill { display: block; height: 4px; border-radius: 4px; background: var(--w-v-low-fill); }
+.pp-why.hot .wf-weight { color: var(--w-v-high); }
+.pp-why.hot .wf-fill { background: var(--w-v-high-fill); }
+.why-factor.good .wf-weight { color: var(--w-ok); }
+.why-factor.good .wf-fill { background: var(--w-ok); }
+
+/* What partial coverage means, said once under the factors. */
+.pp-why-cov {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-line);
+  font: 400 11.5px/1.45 var(--w-font-sans);
+  color: var(--w-muted);
+}
 
 /* -------------------------------------------------------- 2. the facts
 
@@ -307,7 +391,12 @@ body {
 .pp-facts .ch-head { margin-bottom: 0; padding-bottom: 4px; align-items: baseline; }
 .pp-facts .ch-head .w-label { font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; }
 .pp-facts .ch-count { font: 400 11.5px/1.2 var(--w-font-sans); color: var(--w-muted); }
-.pp-facts .ch-count .pp-count-n { font: 400 11.5px/1.2 var(--w-mono); color: var(--w-ok); }
+/* The figure is green only on a clean verdict, takes the verdict's amber on a
+   suspicious one, and is secondary text everywhere else. An unread fact turns
+   it amber whatever the verdict. */
+.pp-facts .ch-count .pp-count-n { font: 400 11.5px/1.2 var(--w-mono); color: var(--w-text-2); }
+.pp-facts[data-tone="ok"] .ch-count .pp-count-n { color: var(--w-ok); }
+.pp-facts[data-tone="med"] .ch-count .pp-count-n { color: var(--w-v-low); }
 .pp-facts .ch-count.ch-count-lost .pp-count-n { color: var(--w-v-low); }
 
 .pp-facts .ch-rung { gap: 8px; }
@@ -423,23 +512,34 @@ details[open] summary { color: var(--w-text); }
 
 /* --------------------------------------- the session block ledger + banner */
 
-.w-card.crit { border-color: var(--w-v-high); }
-.blocked-title {
-  font: 600 9.5px/1.4 var(--w-font-sans);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--w-muted);
-  margin-bottom: 6px;
+.pp-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--w-v-high-fill) 6%, var(--w-card));
+  border-color: color-mix(in srgb, var(--w-v-high-fill) 35%, transparent);
 }
-.blocked-banner { color: var(--w-v-high); font-size: 12px; line-height: 1.45; margin-bottom: 8px; font-weight: 600; }
+.blocked-title {
+  font: 700 10.5px/1.2 var(--w-font-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-v-high);
+}
+.blocked-banner { font: 700 12px/1.45 var(--w-font-sans); color: var(--w-v-high); }
 .blocked-body { display: flex; flex-direction: column; gap: 4px; }
-.blocked-item { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.blocked-item.blocked-active .blocked-host { color: var(--w-v-high); font-weight: 600; }
-.blocked-host { flex: 1; word-break: break-all; color: var(--w-text); font-family: var(--w-mono); font-size: 11px; }
+.blocked-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.blocked-item.blocked-active .blocked-host { color: var(--w-v-high); font-weight: 700; }
+.blocked-host { flex: 1; font: 400 12px/1.2 var(--w-mono); color: var(--w-text); word-break: break-all; }
 .blocked-clear {
-  border: 1px solid var(--w-line-strong); background: var(--w-elev); color: var(--w-muted);
-  font: 500 11px/1.4 var(--w-font-sans); padding: 3px 10px; border-radius: 6px;
-  cursor: pointer; white-space: nowrap;
+  font: 700 12px/1.2 var(--w-font-sans);
+  color: var(--w-text-2);
+  background: transparent;
+  border: 1px solid var(--w-line-strong);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 .blocked-clear:hover { border-color: var(--w-v-high); color: var(--w-v-high); }
 .blocked-clear:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -467,27 +567,6 @@ details[open] summary { color: var(--w-text); }
 .pp-privacy svg { flex: none; margin-top: 2px; }
 
 /* --------------------------- the waiting and not-yet-checked views (This site) */
-
-/* Shared popup surfaces. Each use sets its own border colour. */
-.pp-card {
-  background: var(--w-card);
-  border-radius: 12px;
-  padding: 14px;
-  border: 1px solid;
-}
-.pp-btn {
-  min-height: 36px;
-  border-radius: 8px;
-  font: 700 12.5px/1 var(--w-font-sans);
-  color: var(--w-text);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--w-accent-line) 35%, transparent);
-  cursor: pointer;
-}
-.pp-btn.primary { background: var(--w-accent-line); color: #fff; border: 0; }
-.pp-btn.large { min-height: 42px; font-size: 14px; line-height: 1.2; }
-.pp-btn:hover:not(:disabled) { filter: brightness(0.92); }
-.pp-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* While a check runs: a card with a ring and the name, then placeholders the
    verdict replaces. Both animations are waiting marks, so they are not in the
@@ -567,3 +646,50 @@ details[open] summary { color: var(--w-text); }
 .pp-notchecked-text { margin: 0; font: 400 13.5px/1.5 var(--w-font-sans); color: var(--w-text-2); }
 .pp-notchecked .pp-btn { width: 100%; }
 .pp-notchecked-note { margin: 0; font: 400 12px/1.5 var(--w-font-sans); color: var(--w-muted); }
+
+/* ------------------------------------------------- the look-alike card */
+
+.pp-lookalike {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-color: color-mix(in srgb, var(--w-v-low-fill) 50%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--w-v-low-fill) 14%, var(--w-card)),
+    color-mix(in srgb, var(--w-v-low-fill) 5%, var(--w-card))
+  );
+}
+.pp-la-head { display: flex; align-items: center; gap: 8px; color: var(--w-v-low); }
+.pp-la-head svg { flex: none; }
+#lookalike-head { font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; text-transform: uppercase; }
+.pp-la-text { margin: 0; font: 700 15px/1.3 var(--w-font-sans); color: var(--w-text); }
+.pp-la-cells { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pp-la-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--w-bg) 30%, transparent);
+}
+.pp-la-label { font: 400 10px/1.2 var(--w-mono); color: var(--w-muted); }
+.pp-la-value { font: 400 12px/1.2 var(--w-mono); color: var(--w-text); word-break: break-all; }
+/* The swapped character, in amber; underlined as well on the verdict card's
+   name, so it is not marked by colour alone. */
+.pp-swap { color: var(--w-v-low); }
+.pp-host .pp-swap { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.pp-la-trick { font: 400 12px/1.35 var(--w-font-sans); color: var(--w-text-2); }
+.pp-la-actions { display: flex; gap: 8px; }
+.pp-la-actions .pp-btn { min-height: 40px; }
+#btn-goto {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font: 700 14px/1.2 var(--w-font-sans);
+}
+#btn-report { padding: 0 16px; font: 700 13px/1.2 var(--w-font-sans); }

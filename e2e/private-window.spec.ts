@@ -194,7 +194,7 @@ test("pressing Check this site now on a private-window tab writes no saved state
     const popup = await openPopup(own, p.tabId);
     await expect(popup.locator("#not-checked-view")).toBeVisible();
     await popup.locator("#btn-check-now").click();
-    await expect(popup.locator("#band-chip")).toHaveText("SUSPICIOUS");
+    await expect(popup.locator("#band-chip")).toHaveText("SUSPICIOUS · MEDIUM");
     // The check asked the graph (nothing was kept for the private tab, so the
     // popup's protection read may ask again).
     expect(asked(priv)).toBeGreaterThan(asksBefore);

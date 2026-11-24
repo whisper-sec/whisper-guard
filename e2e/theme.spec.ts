@@ -301,10 +301,17 @@ test("a populated panel and dashboard clear AA in both schemes", async () => {
     verdict: "CRITICAL", prefix: "192.0.2.0/24",
   });
   net.setIdentify(BAD, [{ host: BAD, canonical_name: "Bad Hosting", category: "unresolved", roles: [] }]);
+  // A suspicious look-alike with weighted factors that add up to its score: the
+  // amber pill and advice, the weights and bars, and the look-alike card.
+  const LOOK = "www.yah0o.com";
+  net.setVerdict(LOOK, { band: "MEDIUM", coverage: "partial", label: "suspicious" });
+  net.setExplain(LOOK, [
+    { score: 47.5, sources: [{ feedId: "e2e-newreg-feed", weight: 10 }, { feedId: "e2e-typo-feed", weight: 20 }, { feedId: "e2e-young-feed", weight: 17.5 }] },
+  ]);
   await setKey(ext, MOCK_KEY);
 
   const checked: [string, import("@playwright/test").Page][] = [];
-  for (const host of [CLEAN, BAD]) {
+  for (const host of [CLEAN, BAD, LOOK]) {
     const { tabId } = await visit(ext, `https://${host}/`);
     await waitForIcon(ext, tabId, ["benign", "malicious", "suspicious", "unknown"]);
     const popup = await openPopup(ext, tabId);
