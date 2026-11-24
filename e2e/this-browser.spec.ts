@@ -283,7 +283,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
     }
     expect(sent.size, "something was enriched").toBeGreaterThan(0);
     expect(sent.size).toBeLessThanOrEqual(200);
-    expect([...sent].includes(FLAGGED)).toBe(false);
+    expect(sent.has(FLAGGED)).toBe(false);
 
     const dash = await openDashboard(ext, "browser");
     const tile = (label: string): ReturnType<Page["locator"]> =>
