@@ -234,6 +234,12 @@ const HOMES: Record<string, string | null> = {
   "signin-pitch": "panel-browser",
   "tier-meter": "panel-browser",
   "btn-dashboard": "panel-browser",
+  "activity-card": "panel-browser",
+  "activity-destinations": "panel-browser",
+  "activity-flagged": "panel-browser",
+  "today-row": "panel-browser",
+  "shield-readout": null,
+  "browser-console": null,
   "footer-actions": null,
   "privacy-line": null,
   "scale": null,
@@ -390,7 +396,9 @@ test("with the live check on, This page shows both cards and its own footer line
   await expect(popup.locator("#footer-page-line")).toBeVisible();
   await expect(popup.locator("#footer-page-line")).toHaveText("Link check sends link hostnames only, never paths or the page.");
   await selectPopupTab(popup, "browser");
-  await expect(popup.locator(".pp-footer")).toBeHidden();
+  // The page's line never leaks into another tab, and this tab's own footer shows.
+  await expect(popup.locator("#footer-page-line")).toBeHidden();
+  await expect(popup.locator("#shield-readout")).toBeVisible();
   await selectPopupTab(popup, "site");
   await expect(popup.locator("#privacy-line")).toBeVisible();
   await popup.close();
@@ -444,6 +452,8 @@ test("the frame holds in the dark and the light scheme, on every tab", async () 
     const first = await frame(popup);
     for (const tab of tabs) {
       await selectPopupTab(popup, tab);
+      // The footer shows on every tab; This browser's is drawn after an asynchronous read.
+      await expect(popup.locator(".pp-footer"), `${tab} footer`).toBeVisible();
       const f = await frame(popup);
       boxes[`${scheme}-${tab}`] = f;
       expect([f.body.width, f.body.height]).toEqual([400, 600]);
@@ -452,10 +462,7 @@ test("the frame holds in the dark and the light scheme, on every tab", async () 
       expect(f.tabs.y).toBe(f.header.bottom);
       expect(f.tabs).toEqual((await frame(popup)).tabs);
       expect(f.tabs).toEqual(first.tabs);
-      const footerShown = await popup.locator(".pp-footer").isVisible();
-      expect(footerShown, `${tab} footer`).toBe(tab !== "browser");
-      if (footerShown) expect(f.footer.bottom).toBe(600);
-      else expect(f.region.bottom).toBe(600);
+      expect(f.footer.bottom, `${tab} footer is pinned to the frame`).toBe(600);
     }
 
     await selectPopupTab(popup, "site");

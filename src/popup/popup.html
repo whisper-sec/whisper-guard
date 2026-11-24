@@ -245,23 +245,21 @@
     <!-- THIS BROWSER (tab 3). One control does the whole thing: reserve the
          identity AND route through it, asking for the permission it needs
          at the moment it needs it. No second step, no hand-off. -->
-    <section id="identity-card" class="w-card" hidden>
+    <section id="identity-card" class="pp-card pp-identity" hidden>
       <!-- Filled by shared/protect-control.ts, the one implementation of
            this control; the dashboard mounts exactly the same thing. -->
       <div id="identity-control"></div>
     </section>
 
-    <!-- The signed-out tier. Not a pitch: the reader's real, measured
-         position on the keyless tier, read from the graph, and exactly
-         what an account changes about it. -->
-    <section id="signin-pitch" class="w-card" hidden>
+    <!-- The signed-out tier: the reader's real, measured position on the
+         keyless tier, read from the graph, and exactly what an account
+         changes about it. Same card as the identity card, without a state
+         chip: there is no identity state to name. -->
+    <section id="signin-pitch" class="pp-card pp-identity" hidden>
       <div class="pc-head">
         <span class="w-label">This browser</span>
-        <span class="w-chip unknown">NOT ON THE NETWORK</span>
       </div>
-      <p>Everything above ran without an account. Sign in to give this
-      browser its own routable Whisper address and send its traffic out
-      through it.</p>
+      <p class="pp-signin-text">Sign in to give this browser its own routable Whisper address and send its traffic out through it.</p>
       <div id="tier-meter" class="tier" hidden>
         <div class="tier-head">
           <span id="tier-label" class="tier-label"></span>
@@ -270,32 +268,39 @@
         <div class="tier-track"><span id="tier-fill" class="tier-fill"></span></div>
         <div id="tier-note" class="w-note"></div>
       </div>
-      <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
+      <button id="btn-signin" class="pp-btn primary">Sign in with Whisper</button>
       <div id="device-status" class="w-note" hidden></div>
     </section>
 
-    <!-- WHAT IT HAS DONE (tab 3). Lines, not tiles: a count nobody can act on is
-         not worth a card, and a zero is not worth a number. -->
-    <section class="panel">
-      <div class="mini-head">
-        <span class="w-label">Activity</span>
-        <button id="btn-dashboard" class="w-btn small">Open dashboard</button>
+    <!-- THE LAST 24 HOURS (tab 3), signed in or not. Three figures, each shown
+         only once the read behind it has answered (a zero is a figure here), then
+         the 24 hour strip drawn from the same report, one caption for today's
+         tally and the way to the full view. -->
+    <section id="activity-card" class="pp-card pp-activity">
+      <span class="w-label">Last 24 hours</span>
+      <div class="pp-figures">
+        <div id="fig-destinations" class="pp-fig" hidden>
+          <span id="activity-destinations" class="pp-fig-n"></span>
+          <span class="pp-fig-l">destinations</span>
+        </div>
+        <div id="fig-flagged" class="pp-fig" hidden>
+          <span id="activity-flagged" class="pp-fig-n"></span>
+          <span class="pp-fig-l">flagged</span>
+        </div>
+        <div id="today-row" class="pp-fig" hidden>
+          <span id="today-hero" class="pp-fig-n">0</span>
+          <span class="pp-fig-l">handled quietly today</span>
+        </div>
       </div>
-      <div id="today-row" class="today-row" hidden>
-        <span id="today-hero" class="today-hero">0</span>
-        <span class="today-caption">handled quietly today</span>
-      </div>
-      <div id="today-breakdown" class="today-breakdown"></div>
-      <!-- The last 24 hours on a real time axis. The sentence underneath is
-           the same sentence as before and is now the caption for a picture:
-           a ledger sorted busiest-first cannot show that everything
+      <!-- Drawn from the report the figures come from, so it costs nothing
+           more: a ledger sorted busiest-first cannot show that everything
            happened inside four minutes, and the clustering is often the
            only visible difference between a person browsing and something
-           running on its own. Drawn from the report this section already
-           fetches, so it costs nothing. -->
+           running on its own. Drawn only when a destination has a time. -->
       <div id="browser-strip" class="browser-strip"></div>
-      <div id="browser-24h" class="w-note"></div>
-      <div id="today-note" class="w-note"></div>
+      <div id="browser-24h" class="pp-none" hidden></div>
+      <p id="today-caption" class="pp-caption" hidden><span id="today-lead">Today: </span><span id="today-breakdown"></span><span id="today-stop">. </span><span id="today-note"></span></p>
+      <a id="btn-dashboard" class="pp-link" href="dashboard.html">Open dashboard <span aria-hidden="true">&rarr;</span></a>
     </section>
 
     </section>
@@ -316,7 +321,13 @@
     <div id="footer-page" class="pp-foot-slot" hidden>
       <div id="footer-page-line" class="w-privacy" hidden>Link check sends link hostnames only, never paths or the page.</div>
     </div>
-    <div id="footer-browser" class="pp-foot-slot" hidden></div>
+    <!-- This browser: Active Shield read live, and the console link when signed
+         in. Both are direct children, hidden until their read lands, so the
+         footer takes no space while it has nothing to show. -->
+    <div id="footer-browser" class="pp-foot-slot" hidden>
+      <span id="shield-readout" class="pp-shield" hidden><span id="shield-dot" class="pp-shield-dot" aria-hidden="true"></span><span id="shield-text"></span></span>
+      <a id="browser-console" class="pp-foot-link" hidden>Open console <span aria-hidden="true">&#8599;</span></a>
+    </div>
   </footer>
 
   <script src="popup.js"></script>

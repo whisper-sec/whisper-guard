@@ -28,6 +28,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectPopupTab } from "./helpers/extension";
+import { describeFit, measureBrowserTab } from "./helpers/popup-fit";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/firefox");
@@ -445,6 +446,80 @@ test("the interstitial's drawn evidence renders the same in Gecko and Blink", as
     await cr.close();
   }
 });
+
+// ------------------------------------------- This browser, signed in and routed
+
+/**
+ * A second reply set: signed in, routed, verified, with the destinations seen
+ * inside the last day so the strip is drawn. The address and name are fictional.
+ * The categories argument is how many of today's three tallies are above zero.
+ */
+function routedShim(categories: 1 | 3): string {
+  const counts =
+    categories === 1
+      ? { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 }
+      : { preemptBlock: 2, identityVerified: 1, cookieDecline: 3 };
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  return `${SHIM}
+const ADDRESS = "2001:db8:aa:bb:cc:dd:ee:ff";
+const FQDN = "agent-render-guard-e2e.agents.example.test";
+Object.assign(REPLIES, {
+  getTabState: { ok: true, tabState: { ...REPLIES.getTabState.tabState, signedIn: true } },
+  getSettings: { ...REPLIES.getSettings, signedIn: true },
+  getWins: { ok: true, wins: { date: "2026-09-02", total: ${total}, counts: ${JSON.stringify(counts)} } },
+  getBrowserReport: { ok: true, report: {
+    hosts: [1, 2, 3, 4].map((n) => ({
+      host: "dest-" + n + "-guard-e2e.com", owner: "MediaCo", category: "work", verdict: "NONE",
+      q: n, lastAt: Date.now() - n * 3_600_000,
+    })),
+    totals: { destinations: 4, companies: 1, countries: 1, networks: 1, lookups: 10, flagged: 0 },
+    generatedAt: Date.now() } },
+  egressStatus: { ok: true, egress: {
+    on: true, enrolled: true, agent: "agent-render-guard-e2e", address: ADDRESS,
+    label: "This browser (Whisper Guard)", fqdn: FQDN,
+    rdapUrl: "https://rdap.example.test/ip/" + ADDRESS,
+    controlledByOther: false, webrtcHardened: null, privateWindowsRouted: false,
+    error: null, reserving: null, reserveFailed: false } },
+  verifyIdentity: { ok: true, verification: { isWhisperAgent: true, fqdn: FQDN, daneOk: true, jwsOk: true, posture: null, detail: null } },
+});
+`;
+}
+
+for (const categories of [1, 3] as const) {
+  test(`This browser, signed in and routed with ${categories} categor${categories === 1 ? "y" : "ies"} today, is measured at 400 x 600 in Gecko and Blink`, async ({}, testInfo) => {
+    test.setTimeout(120_000);
+    const ff = await firefox.launch();
+    const cr = await chromium.launch();
+    try {
+      for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
+        for (const scheme of ["dark", "light"] as const) {
+          const page = await browser.newPage({
+            viewport: { width: 400, height: 600 },
+            colorScheme: scheme,
+            reducedMotion: "reduce",
+          });
+          await page.addInitScript(routedShim(categories));
+          await page.goto(`file://${join(DIST, "popup.html")}`);
+          await selectPopupTab(page, "browser");
+          await expect(page.locator("#identity-control"), engine).toHaveAttribute("data-state", "routed");
+          // The card is complete before it is measured: verified, with all three rows.
+          await expect(page.locator("#identity-state"), engine).toHaveText("VERIFIED");
+          await expect(page.locator("#identity-detail .w-kv .k"), engine).toHaveText(["Address", "Name", "Proof"]);
+          await expect(page.locator("#browser-strip svg"), engine).toBeVisible();
+          await expect(page.locator("#today-row"), engine).toBeVisible();
+          const m = await measureBrowserTab(page);
+          testInfo.annotations.push({ type: `${engine}-${scheme}-${categories}`, description: describeFit(m) });
+          expect(m.over, `${engine} ${scheme}: the tab runs ${m.over}px past the region`).toBeLessThanOrEqual(0);
+          expect(m.fade, `${engine} ${scheme}: the fade shows`).toBe(false);
+          await page.close();
+        }
+      }
+    } finally {
+      await ff.close();
+      await cr.close();
+    }
+  });
+}
 
 test("the built Firefox manifest is the one under test", () => {
   // The shim renders dist/firefox, so this pins that the tree it renders is

@@ -168,6 +168,11 @@
   /* A link's hover colour: one step lighter than --w-accent. */
   --w-accent-hover: #d4c6fb;
   --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 14%, transparent);
+  /* The identity card's ground: a violet gradient from --w-grad-a to --w-grad-b,
+     and the ink of its labels and facts (6.1:1 on --w-grad-a, the lower of the two). */
+  --w-grad-a: #291560;
+  --w-grad-b: #180b3a;
+  --w-on-grad-2: #a99bd6;
 
   /* Verdict scale - RESERVED for safety meaning only. */
   --w-ok: #34d399;
@@ -243,6 +248,10 @@
     /* A link's hover colour: one step darker than --w-accent. */
     --w-accent-hover: #432d96;
     --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 12%, transparent);
+    /* Daylight: a pale violet stop to near-white; --w-on-grad-2 is 6.7:1 on --w-grad-a. */
+    --w-grad-a: #f3f0fd;
+    --w-grad-b: #fbfaff;
+    --w-on-grad-2: #5a4c86;
 
     /* The status hues, each dark enough to clear 4.5:1 on --w-elev
        (#ececf3) and on --w-hover (#e9e9f1), the lowest-contrast grounds a
@@ -509,6 +518,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .pc-route .w-dot.off { border: 1px solid var(--w-line-strong); }
 .pc-route-text { min-width: 0; }
 .pc-route-lead { color: var(--w-text); font-weight: 600; }
+/* The limits under the sentence: the same words, a size smaller. */
+.pc-route-more { display: block; margin-top: 2px; font-size: 11px; line-height: 1.35; color: var(--w-muted); }
 
 .pc-detail { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
 .pc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
@@ -896,6 +907,3 @@ a.w-note, .w-note a, .w-privacy a { color: var(--w-accent); }
 /* The popup's own drawn marks. */
 .browser-strip { margin: 8px 0 6px; line-height: 0; }
 .browser-strip svg { display: block; width: 100%; height: auto; }
-.today-line { display: flex; align-items: center; gap: 8px; }
-.today-marks { line-height: 0; flex: none; }
-.today-marks svg { display: block; }

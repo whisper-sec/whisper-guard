@@ -112,35 +112,36 @@
   carries traffic through the egress endpoint, and the two refusals really keep the identity.</p>
   <div class="grid">
     <figure>
-      <img src="popup-protect-offer.png" alt="The panel offering to protect this browser">
-      <figcaption><strong>Offered.</strong> One control, and it is the only primary action on
-      the panel. The chip says what this browser is on the network; the line says what it is
-      doing.</figcaption>
+      <img src="popup-protect-offer.png" alt="The This browser tab offering to protect this browser, with the chip NOT ENROLLED">
+      <figcaption><strong>Offered.</strong> One chip, one sentence and one button, and it is the only
+      primary action on the tab. The chip says what this browser is on the network (NOT ENROLLED);
+      the sentence says there is no Whisper identity yet.</figcaption>
     </figure>
     <figure>
-      <img src="popup-protected.png" alt="The panel with this browser routed through its Whisper identity">
+      <img src="popup-protected.png" alt="The This browser tab with this browser routed through its Whisper identity, the chip VERIFIED">
       <figcaption><strong>Protected.</strong> Address, reverse-DNS name, and the public RDAP
-      registration anyone can check. The /128 is drawn the way the Whisper console draws every
+      record anyone can check, then the routing sentence with its limits (private windows, WebRTC)
+      on a smaller line under it. The /128 is drawn the way the Whisper console draws every
       identity: the /32 every Whisper endpoint shares recedes, and the part that is only this
-      browser's stays in full ink. WebRTC is hardened to proxied-only on Chromium, and the same
-      button turns it off.</figcaption>
+      browser's stays in full ink. The same button turns routing off.</figcaption>
     </figure>
     <figure>
-      <img src="popup-protect-refused.png" alt="The panel after the routing permission was refused">
-      <figcaption><strong>Permission refused.</strong> The identity still stands, verified,
-      with its proof link. The refusal cost the routing and only the routing, and the panel
-      names it instead of failing quietly.</figcaption>
+      <img src="popup-protect-refused.png" alt="The This browser tab after the routing permission was refused">
+      <figcaption><strong>Permission refused.</strong> The identity still stands, VERIFIED,
+      with its proof link. The refusal cost the routing and only the routing, and the sentence
+      names it instead of failing quietly; the one button asks for the permission again.</figcaption>
     </figure>
     <figure>
-      <img src="popup-protect-conflict.png" alt="The panel when another extension owns the proxy setting">
+      <img src="popup-protect-conflict.png" alt="The This browser tab when another extension owns the proxy setting">
       <figcaption><strong>Proxy taken.</strong> A VPN or proxy manager holds the browser's
-      single-owner proxy setting. Named in plain words, with the page that fixes it one click
-      away, and the identity untouched.</figcaption>
+      single-owner proxy setting. Named in one sentence, with an amber outline on the card and on
+      the one button, which opens the page that fixes it. The identity is untouched.</figcaption>
     </figure>
     <figure>
-      <img src="popup-signedout.png" alt="The panel signed out">
-      <figcaption><strong>Signed out.</strong> One action, and an honest sentence about what it
-      unlocks. Everything on the other two tabs already works without an account.</figcaption>
+      <img src="popup-signedout.png" alt="The This browser tab signed out: the sign-in card, the last 24 hours and the Active Shield readout">
+      <figcaption><strong>Signed out.</strong> One action, with your real position on the keyless
+      tier and an honest sentence about what an account unlocks. The last 24 hours and the
+      Active Shield state in the footer work without one.</figcaption>
     </figure>
   </div>
 
@@ -156,16 +157,16 @@
   4.49:1 on the interstitial's tinted ground, one hundredth under the floor.</p>
   <div class="grid">
     <figure>
-      <img src="popup-signedout-light.png" alt="The panel signed out, light colour scheme">
-      <figcaption><strong>The panel, signed out.</strong></figcaption>
+      <img src="popup-signedout-light.png" alt="The This browser tab signed out, light colour scheme">
+      <figcaption><strong>This browser, signed out.</strong></figcaption>
     </figure>
     <figure>
-      <img src="popup-protect-offer-light.png" alt="The panel offering to protect this browser, light colour scheme">
-      <figcaption><strong>The panel, offering the one control.</strong></figcaption>
+      <img src="popup-protect-offer-light.png" alt="The This browser tab offering to protect this browser, light colour scheme">
+      <figcaption><strong>This browser, offering the one control.</strong></figcaption>
     </figure>
     <figure>
-      <img src="popup-protected-light.png" alt="The panel with this browser routed, light colour scheme">
-      <figcaption><strong>The panel, protected.</strong></figcaption>
+      <img src="popup-protected-light.png" alt="The This browser tab with this browser routed, light colour scheme">
+      <figcaption><strong>This browser, protected.</strong></figcaption>
     </figure>
     <figure class="wide">
       <img src="dashboard-this-browser-light.png" alt="This-browser dashboard, light colour scheme">
@@ -232,24 +233,26 @@
     </figure>
     <figure>
       <img src="dashboard-egress.png" alt="Protect this browser: the one control, on the dashboard">
-      <figcaption><strong>Protect this browser (opt-in, off by default).</strong> The dashboard
-      mounts the SAME control as the panel, from the same module: same words, same states, same
-      failures, plus the one affordance that belongs to this surface, because the browser is a
-      fleet endpoint like any other. WebRTC hardened to proxied-only; the honest limits are
-      stated in place.</figcaption>
+      <figcaption><strong>Protect this browser (opt-in, off by default).</strong> The offered
+      state: no Whisper identity yet, one button. The dashboard mounts the SAME control as the
+      popup, from the same module: same state names (NOT ENROLLED, ENROLLED, VERIFIED), same words,
+      same failures. Once this browser is enrolled the verified facts appear, and once it is routed
+      the limits of routing are stated in place.</figcaption>
     </figure>
     <figure>
       <img src="dashboard-egress-light.png" alt="Protect this browser: the one control, light colour scheme">
       <figcaption><strong>The same control, in daylight.</strong> Offered, not yet taken: this
       browser has no Whisper identity in either capture, which is what a signed-in reader sees
-      before the one click. The enrolled state, with its address and RDAP proof, is in the panel
-      captures above.</figcaption>
+      before the one click. The enrolled and routed states, with the address, the RDAP record and
+      the limits, are in the tab captures above.</figcaption>
     </figure>
     <figure>
-      <img src="popup-activity.png" alt="The popup's activity line">
-      <figcaption><strong>The panel's activity line.</strong> The four-tile summary became one
-      sentence: the only number on it a reader can act on is how many destinations were flagged,
-      and the full view is one click away.</figcaption>
+      <img src="popup-activity.png" alt="The popup's last 24 hours card">
+      <figcaption><strong>The last 24 hours.</strong> How many destinations this browser reached
+      and how many were flagged, counted over the whole log the way the dashboard counts them
+      (past the 200 busiest, a flag counts only from what the browser already holds); today's
+      quiet tally beside them, labelled as today's; the busiest destinations' last sightings on
+      a time strip; and the full view one click away.</figcaption>
     </figure>
   </div>
 
@@ -294,7 +297,7 @@
     <figure>
       <img src="popup-today.png" alt="The This browser tab showing today's quiet tally">
       <figcaption><strong>Counted, never announced.</strong> Held clicks, verified identities and
-      declined cookie prompts land in one calm line in the panel, shown on your own click. There is
+      declined cookie prompts land in one figure and one calm caption on the This browser tab, shown on your own click. There is
       no toast anywhere: the extension holds no notifications permission at all. The record is a
       category and a count, keyed by today's date, so it resets on its own and can never learn a
       site you visited. The host whose click was just held is listed, with a one-click clear, on

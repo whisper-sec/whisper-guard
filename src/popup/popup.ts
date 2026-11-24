@@ -12,9 +12,12 @@
 //                              it, asking for the permission routing needs
 //                              at the moment it is needed. There is no
 //                              second step and no hand-off to another page.
-//   3. what has it done?       lines, not tiles. A count nobody can act on
-//                              is not worth a card and a zero is not worth
-//                              a number.
+//   3. what has it done?       the last 24 hours: how many destinations
+//                              and how many flagged (counted over the
+//                              whole log as the dashboard counts them),
+//                              today's quiet tally beside them, a time strip
+//                              and one caption. A figure shows only once the
+//                              read behind it has answered.
 //
 // UNKNOWN is the honest common state and reads as "not confirmed either
 // way", never as green. The answers sit under three tabs (tabs.ts): This site
@@ -50,7 +53,8 @@ import { renderChain, renderChainPending } from "../shared/chain-view";
 import { cookieDeclinedKey } from "../shared/tab-flags";
 import { initTabs, setPageFlagCount } from "./tabs";
 import { compact, countUp, sparkline } from "../shared/spark";
-import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
+import { timeStrip, type TimeEvent } from "../shared/viz";
+import { shieldActive, shieldGranted } from "../shared/shield-state";
 import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
 import { CANVAS_MONO, onThemeChange, redrawWhenMonoLoads, themeColor } from "../shared/theme";
@@ -902,8 +906,8 @@ function wireLinkScan(): void {
 // ------------------------------------------------------------- activity
 
 // One label per category, in both numbers: a tally that reads "1 risky
-// clicks" is a small lie about its own arithmetic, and this line is the
-// one place the count is ever shown.
+// clicks" is a small lie about its own arithmetic, and this caption is the
+// one place the count is ever broken down.
 const WIN_LABEL: Record<WinCategory, { one: string; many: string }> = {
   preemptBlock: {
     one: "risky click stopped before anything loaded",
@@ -914,61 +918,77 @@ const WIN_LABEL: Record<WinCategory, { one: string; many: string }> = {
 };
 
 /**
- * What Guard did today. Counted as categories only, never which sites, and
- * shown only here, on the reader's own click. A zero gets a sentence rather
- * than a number: a big 0 on a card is a stat about nothing.
+ * What Guard did today, as the third figure and the caption under the strip.
+ * Counted as categories only, never which sites, and shown only here, on the
+ * reader's own click. A zero is a figure like any other (the read answered),
+ * and its caption says so in words instead of naming categories.
  */
+let todayWins: WinsToday | null = null;
+/** How many destinations the report flags; null until the report has answered. */
+let flaggedToday: number | null = null;
+
 async function loadToday(): Promise<void> {
   const res = await send<{ ok: true; wins: WinsToday }>({ kind: "getWins" });
   if (!res.ok) return;
   const w = res.wins;
+  todayWins = w;
   $("today-hero").textContent = String(w.total);
-  $("today-row").hidden = w.total === 0;
-  const rows: HTMLElement[] = [];
+  $("today-row").hidden = false;
+  const parts: string[] = [];
   for (const c of WIN_CATEGORIES) {
     const n = w.counts[c];
     if (n <= 0) continue;
-    rows.push(winLine(n, n === 1 ? WIN_LABEL[c].one : WIN_LABEL[c].many));
+    parts.push(`${n} ${n === 1 ? WIN_LABEL[c].one : WIN_LABEL[c].many}`);
   }
-  $("today-breakdown").replaceChildren(...rows);
-  $("today-note").textContent =
-    w.total === 0
-      ? "Nothing needed your attention today; checks ran on every site."
-      : "Counted by category only, never which sites.";
+  $("today-breakdown").textContent = parts.join(", ");
+  drawDayLine();
 }
 
-/** One category of today's work: the count drawn as that many marks, then
- *  the words. Three interruptions is a quantity a reader sees; the number
- *  three in a sentence is one they skim. */
-function winLine(n: number, words: string): HTMLElement {
-  const line = document.createElement("div");
-  line.className = "today-line";
-  // Decorative: the words for this count are the next node along.
-  const marks = countMarks(n, { perRow: 20, size: 4, gap: 2, tone: "accent" });
-  if (marks) {
-    const wrap = document.createElement("span");
-    wrap.className = "today-marks";
-    wrap.appendChild(marks);
-    line.appendChild(wrap);
-  }
-  const text = document.createElement("span");
-  text.textContent = `${n} ${words}`;
-  line.appendChild(text);
-  return line;
+/**
+ * The caption under the strip. With something handled it names the categories.
+ * With nothing handled it says nothing needed attention, which is only true
+ * beside a figure of no flagged destinations: with one flagged (or before the
+ * report has said) the caption is left out rather than contradict the figures.
+ */
+function drawDayLine(): void {
+  const w = todayWins;
+  if (!w) return;
+  const any = w.total > 0;
+  $("today-lead").hidden = !any;
+  $("today-stop").hidden = !any;
+  $("today-note").textContent = any
+    ? "Counted by category only, never which sites."
+    : "Nothing needed your attention today; checks ran on every site.";
+  $("today-caption").hidden = !any && flaggedToday !== 0;
 }
 
-/** The last 24h in one line. The only number worth a reader's attention is
- *  the flagged one, so that is the only one that gets emphasis. */
+/** The destination and flagged figures and the strip. The counts cover every
+ *  destination in the log, the way the dashboard counts them. The background
+ *  enriches only the busiest ones; for the rest it counts a flagged host only
+ *  from what the browser already holds (a verdict it has cached or an
+ *  enrichment it kept), so a host past the busiest 200 whose flag only a fresh
+ *  enrichment would show is counted as not flagged here. */
 async function loadBrowser24h(): Promise<void> {
   const res = await send<{ ok: true; report: BrowserReport }>({ kind: "getBrowserReport", limit: 200 });
   if (!res.ok) return;
   const t = res.report.totals;
-  const el = $("browser-24h");
+  $("activity-destinations").textContent = String(t.destinations);
+  $("fig-destinations").hidden = false;
+  const flagged = $("activity-flagged");
+  flagged.textContent = String(t.flagged);
+  flaggedToday = t.flagged;
+  drawDayLine();
+  flagged.className = t.flagged > 0 ? "pp-fig-n hot" : "pp-fig-n ok";
+  $("fig-flagged").hidden = false;
+
+  const none = $("browser-24h");
   if (t.destinations === 0) {
-    el.className = "w-note";
-    el.textContent = "No destinations recorded in this browser yet.";
+    none.textContent = "No destinations recorded in this browser yet.";
+    none.hidden = false;
+    $("browser-strip").replaceChildren();
     return;
   }
+  none.hidden = true;
 
   // The same report, drawn. Nothing extra is fetched and nothing extra is
   // sent: these timestamps are already on this device, which is why the
@@ -987,21 +1007,52 @@ async function loadBrowser24h(): Promise<void> {
       label: h.host,
     }));
   const strip = timeStrip(events, {
-    width: 368,
-    height: 40,
+    width: 350,
+    height: 35,
     hours: 24,
-    title: `${events.length} sightings in the last 24 hours`,
+    // Worded from what is drawn: every destination, or only the busiest that have a
+    // time (then at least two are logged, so "out of" is always plural).
+    title: stripTitle(events.length, t.destinations),
   });
   // No strip when there is nothing timed to put on it. An axis with no
   // marks says "we watched and saw nothing", which is not what an empty
   // timestamp list means.
   $("browser-strip").replaceChildren(...(strip ? [strip] : []));
-  const d = `${t.destinations} destination${t.destinations === 1 ? "" : "s"}`;
-  el.className = t.flagged > 0 ? "w-note hot" : "w-note";
-  el.textContent =
-    t.flagged > 0
-      ? `${t.flagged} of ${d} flagged in the last 24h.`
-      : `${d} in the last 24h, none flagged.`;
+}
+
+/** What the strip draws, in words that are true for every count. `drawn` is how many
+ *  destinations have a mark; `logged` is how many the log holds (never fewer). */
+function stripTitle(drawn: number, logged: number): string {
+  const when = "in the last 24 hours";
+  if (drawn === logged) {
+    return drawn === 1
+      ? `The last sighting of the one destination ${when}`
+      : `The last sighting of each of the ${drawn} destinations ${when}`;
+  }
+  const these = drawn === 1 ? "the 1 destination" : `each of the ${drawn} destinations`;
+  return `The last sighting of ${these} drawn here, out of ${logged}, ${when}`;
+}
+
+/** The footer's Active Shield readout: the setting AND the browser's all-sites
+ *  grant, read now. The tab's own flag is not used, because it is stale the
+ *  moment a grant is revoked. Shown only once both reads have answered. */
+async function loadShield(): Promise<void> {
+  if (!settings) return;
+  const on = shieldActive(settings, await shieldGranted());
+  $("shield-text").textContent = on ? "Active Shield on" : "Active Shield off";
+  $("shield-dot").className = on ? "pp-shield-dot on" : "pp-shield-dot";
+  $("shield-readout").hidden = false;
+}
+
+/** The console link in the footer, for a signed-in reader. */
+function wireConsoleLink(): void {
+  const link = $("browser-console") as HTMLAnchorElement;
+  link.href = CONSOLE_URL;
+  link.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    chrome.tabs.create({ url: CONSOLE_URL });
+  });
+  link.hidden = false;
 }
 
 // ---------------------------------------------------------- sign-in tier
@@ -1264,9 +1315,12 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
   void loadScale();
   void loadToday();
   void loadBrowser24h();
-  $("btn-dashboard").addEventListener("click", () => {
+  $("btn-dashboard").addEventListener("click", (ev) => {
+    ev.preventDefault();
     void send({ kind: "openDashboard" }).then(() => window.close());
   });
+  void loadShield();
+  if (signedIn) wireConsoleLink();
 
   // This browser's protection is on every page, signed in or not: keyed
   // readers get the one control, keyless readers get the one thing that

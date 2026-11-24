@@ -1712,26 +1712,28 @@ async function refreshEgress(): Promise<void> {
 
 /**
  * The topbar chip: the same identity fact the control states, said once
- * more where a reader who has scrolled away can still see it. It reads
- * from the control's own status rather than making its own RDAP call, so
- * the two can never disagree about what this browser is.
+ * more where a reader who has scrolled away can still see it, in the same
+ * three words (NOT ENROLLED, ENROLLED, VERIFIED). It reads from the
+ * control's own status rather than making its own RDAP call, so the two can
+ * never disagree about what this browser is. "VERIFYING…" is the moment
+ * before the public record has answered, and is its own transient text.
  */
 function renderIdentityChip(s: EgressStatus, verified: boolean | null): void {
   const chip = $("identity-chip");
   if (!s.enrolled || !s.address) {
     chip.className = "w-chip unknown";
-    chip.textContent = "NOT ON THE WHISPER NETWORK";
+    chip.textContent = "NOT ENROLLED";
     chip.title = "Protect this browser below to give it its own verifiable Whisper identity.";
     return;
   }
   const routed = s.on ? "routed through it" : "identity reserved; routing off";
   if (verified === true) {
     chip.className = "w-chip ok";
-    chip.textContent = "VERIFIED WHISPER ENDPOINT";
+    chip.textContent = "VERIFIED";
     chip.title = `${s.fqdn ?? s.address} (${routed})`;
   } else if (verified === false) {
-    chip.className = "w-chip unknown";
-    chip.textContent = "IDENTITY NOT VERIFIED";
+    chip.className = "w-chip accent";
+    chip.textContent = "ENROLLED";
     chip.title = `${s.address} (${routed})`;
   } else {
     chip.className = "w-chip accent";

@@ -114,7 +114,7 @@ test.describe("the routing permission is refused", () => {
     await expect(popup.locator("#identity-state")).toHaveText("NOT ENROLLED", { timeout: 10_000 });
     await expect(popup.locator("#btn-protect")).toHaveText("Protect this browser");
     await expect(popup.locator("#btn-protect")).toHaveClass(/primary/);
-    await expect(popup.locator("#route-line")).toContainText("Not protected");
+    await expect(popup.locator("#route-line")).toHaveText("No Whisper identity yet.");
     await shot(popup, "popup-protect-offer.png");
     await shot(popup, "popup-protect-offer-light.png", "light");
 
@@ -230,7 +230,10 @@ test.describe("the routing permission is granted", () => {
     // The same button turns it back off, and traffic goes direct again.
     await expect(popup.locator("#btn-protect")).toHaveText("Turn routing off");
     await popup.locator("#btn-protect").click();
-    await expect(popup.locator("#route-line")).toContainText("Identity reserved", { timeout: 15_000 });
+    // Routing is off again: no sentence, the address is the line, and the one button turns it on.
+    await expect(popup.locator("#btn-protect")).toHaveText("Turn routing on", { timeout: 15_000 });
+    await expect(popup.locator("#route-line")).toBeHidden();
+    await expect(popup.locator("#identity-detail")).toContainText(registered!.address);
     net.clearEgressLog();
     net.clearLog();
     const direct = await ext.context.newPage();
@@ -309,10 +312,13 @@ test.describe("another extension owns the proxy setting", () => {
     expect(registered, "the browser enrolled despite the proxy conflict").toBeTruthy();
     await expect(popup.locator("#identity-detail")).toContainText(registered!.address);
 
-    await expect(popup.locator("#route-line")).toContainText("Another extension");
-    await expect(popup.locator("#route-line")).toContainText("keep working");
+    await expect(popup.locator("#route-line")).toHaveText(
+      "Another extension controls the proxy setting. Your identity and verdicts still work.",
+    );
     await expect(popup.locator("#btn-route-fix")).toHaveText("Open the extensions page");
-    await expect(popup.locator("#btn-protect")).toHaveText("Try again");
+    // One button, and it is the way out: the retry is the next status read.
+    await expect(popup.locator("#btn-protect")).toBeHidden();
+    await expect(popup.locator("#identity-control button:visible")).toHaveCount(1);
     await shot(popup, "popup-protect-conflict.png");
     await popup.close();
     await page.close();

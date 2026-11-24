@@ -73,12 +73,18 @@ async function popupOnASite(): Promise<{ popup: Page; page: Page; tabId: number 
  * what the route line says once the routing attempt has settled (a headless
  * browser never answers the permission prompt, so routing stays off).
  */
-async function expectEnrolledAndQuiet(page: Page, routeSays = "Not routed"): Promise<void> {
+async function expectEnrolledAndQuiet(page: Page, routeSays: string | null = "Not routed"): Promise<void> {
   await expect(page.locator("#protect-progress")).toBeHidden({ timeout: 30_000 });
   await expect(page.locator("#identity-state")).toHaveText(/ENROLLED|VERIFIED/);
   await expect(page.locator("#identity-detail")).toContainText(/2a04:2a01:[0-9a-f:]+/i);
   await expect(page.locator("#identity-note")).toBeHidden();
-  await expect(page.locator("#route-line")).toContainText(routeSays);
+  if (routeSays === null) {
+    // Enrolled with routing off and nothing wrong: no sentence, the address is the line.
+    await expect(page.locator("#route-line")).toBeHidden();
+    await expect(page.locator("#btn-protect")).toHaveText("Turn routing on");
+  } else {
+    await expect(page.locator("#route-line")).toContainText(routeSays);
+  }
   const text = (await page.locator("#route-line").textContent()) ?? "";
   expect(text).not.toMatch(/no identity|couldn’t reserve|error/i);
 }
@@ -165,8 +171,8 @@ test("after three tries with the device never listed: the fallback, one registra
   const { popup, page } = await popupOnASite();
   await popup.locator("#btn-protect").click();
 
-  await expect(popup.locator("#route-line")).toContainText("Not protected.", { timeout: 30_000 });
-  await expect(popup.locator("#route-line")).toContainText(FALLBACK);
+  await expect(popup.locator("#identity-state")).toHaveText("NOT ENROLLED", { timeout: 30_000 });
+  await expect(popup.locator("#route-line")).toHaveText(FALLBACK);
   await expect(popup.locator("#route-line .w-dot")).toHaveClass(/blocked/);
   await expect(popup.locator("#btn-protect")).toHaveText("Try again");
   await expect(popup.locator("#protect-steps")).toBeHidden();
@@ -257,7 +263,7 @@ test("closing the popup part-way does not cancel the reservation", async () => {
   await expect.poll(browserDevices, { timeout: 15_000 }).toBe(1);
 
   const again = await openPopup(ext, tabId, { popupTab: "browser" });
-  await expectEnrolledAndQuiet(again, "Identity reserved.");
+  await expectEnrolledAndQuiet(again, null);
   expect(net.registerCalls).toBe(1);
   await again.close();
   await page.close();
@@ -278,7 +284,7 @@ test("a popup opened while the answer is still held shows the steps and the curr
   expect(net.registerCalls).toBe(1);
 
   held.release();
-  await expectEnrolledAndQuiet(second, "Identity reserved.");
+  await expectEnrolledAndQuiet(second, null);
   expect(net.registerCalls).toBe(1);
   expect(browserDevices()).toBe(1);
   await second.close();

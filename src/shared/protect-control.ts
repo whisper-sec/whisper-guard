@@ -62,14 +62,30 @@ export const ROUTE_LINE_BASE =
  * would otherwise overstate.
  */
 export function routeLineText(s: Pick<EgressStatus, "webrtcHardened" | "privateWindowsRouted">): string {
+  return `${ROUTE_LINE_BASE}${routeLimitsText(s)}`;
+}
+
+/**
+ * The limits half of the route line (the private-window clause, then the WebRTC
+ * clause), each with its leading space. The surfaces draw it as a second,
+ * smaller line under the sentence; building the whole line from this keeps the
+ * two from drifting.
+ */
+export function routeLimitsText(s: Pick<EgressStatus, "webrtcHardened" | "privateWindowsRouted">): string {
   const priv =
     s.privateWindowsRouted === true ? "" : " Private windows are not routed unless Whisper Guard is allowed in them.";
   const webrtc =
     s.webrtcHardened === true
       ? " WebRTC is hardened to proxied-only."
       : " WebRTC is not pinned to this address, so a page can still learn your real address through a peer connection.";
-  return `${ROUTE_LINE_BASE}${priv}${webrtc}`;
+  return `${priv}${webrtc}`;
 }
+
+/** What the route line says while this browser has no identity and nothing went wrong. */
+const NO_IDENTITY_TEXT = "No Whisper identity yet.";
+
+/** What the route line says while another extension holds the proxy setting. */
+const HELD_TEXT = "Another extension controls the proxy setting. Your identity and verdicts still work.";
 
 /** What the route line says once every try at reserving an address is used. */
 export const RESERVE_FAILED_TEXT = "We couldn’t reserve an address yet. Your verdicts still work.";
@@ -220,7 +236,14 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   const hint = el("div", "pc-progress-hint");
   progress.append(el("div", "pc-progress-title", "Protecting this browser…"), steps, hint);
 
-  root.replaceChildren(head, progress, routeLine, detail, actions, note);
+  // Words for assistive technology only (no visible text): said when routing is
+  // turned off, a state with no sentence of its own. Live from the start and
+  // empty, so the first paint says nothing.
+  const announce = el("div", "pc-sr");
+  announce.id = "route-announce";
+  announce.setAttribute("aria-live", "polite");
+
+  root.replaceChildren(head, progress, routeLine, detail, actions, note, announce);
 
   /** RDAP verification of the enrolled address; null until it lands. */
   let verified: boolean | null = null;
@@ -238,17 +261,53 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   }
 
   let routeKey = "";
-  function setRoute(dot: "on" | "blocked" | "off", lead: string, rest: string): void {
+  /**
+   * Write the route line: the dot, an optional lead word, the sentence and an
+   * optional second, smaller line. The whole line is always written with one
+   * replaceChildren. The first words are written before the region is live (so
+   * opening a surface never reads them out) and the region is made live right
+   * after; every later change is announced.
+   */
+  function setRoute(dot: "on" | "blocked" | "off", lead: string, sentence: string, more?: string): void {
     // Same words, same dot: leave the line alone so it is not announced again.
-    const key = `${dot}|${lead}|${rest}`;
+    const key = `${dot}|${lead}|${sentence}|${more ?? ""}`;
     if (key === routeKey) return;
     routeKey = key;
-    const first = routeLine.childNodes.length === 0;
     const d = el("span", `w-dot ${dot}`);
     const text = el("span", "pc-route-text");
-    text.append(el("span", "pc-route-lead", lead), document.createTextNode(` ${rest}`));
+    if (lead) text.append(el("span", "pc-route-lead", lead), document.createTextNode(" "));
+    text.append(document.createTextNode(more ? `${sentence} ` : sentence));
+    if (more) text.append(el("span", "pc-route-more", more));
     routeLine.replaceChildren(d, text);
-    if (first) routeLine.setAttribute("aria-live", "polite");
+    if (!routeLine.hasAttribute("aria-live")) routeLine.setAttribute("aria-live", "polite");
+  }
+
+  /**
+   * A state with no sentence: the address row is its line, so the route line
+   * holds nothing. It writes nothing worth announcing, but it still makes the
+   * region live, so the outcome of the next press (routed, refused, held) is
+   * announced like any later change.
+   */
+  function clearRoute(): void {
+    if (routeKey === "none") return;
+    routeKey = "none";
+    routeLine.replaceChildren();
+    if (!routeLine.hasAttribute("aria-live")) routeLine.setAttribute("aria-live", "polite");
+  }
+
+  /** Whether the status has a sentence for the route line (see paint, which writes it). */
+  function hasLine(s: EgressStatus): boolean {
+    return !(s.enrolled && s.address && !s.on && !s.controlledByOther && !s.error);
+  }
+
+  /** The state the control is in, for the surface that tints itself by it and for tests. */
+  function setState(state: "busy" | "failed" | "none" | "routed" | "held" | "error" | "enrolled"): void {
+    const before = root.dataset["state"];
+    root.dataset["state"] = state;
+    // Reaching "enrolled" from "routed" is the one change with no sentence to
+    // announce it. Any other change of state clears the words, so a later
+    // turn-off is said again; a repaint that keeps the state leaves them alone.
+    if (state !== before) announce.textContent = state === "enrolled" && before === "routed" ? "Routing is off." : "";
   }
 
   function fact(label: string, value: Node): HTMLElement {
@@ -268,16 +327,27 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     }
     detail.hidden = false;
     const rows: HTMLElement[] = [fact("Address", addressNode(s.address))];
-    if (s.fqdn) {
-      const name = el("span", "w-mono");
-      name.textContent = s.fqdn;
+    // The name and the proof are the public record's answer, so they show once
+    // it has said yes. The address does not wait for it.
+    if (verified === true && s.fqdn) {
+      const name = el("span", "w-mono pc-name");
+      // A break is preferred after each dot (a label too long for the column can
+      // still be split), and none of it is text: the name is still selected and
+      // copied as one exact string.
+      s.fqdn.split(".").forEach((label, i, all) => {
+        name.append(document.createTextNode(i < all.length - 1 ? `${label}.` : label));
+        if (i < all.length - 1) name.append(document.createElement("wbr"));
+      });
       rows.push(fact("Name", name));
     }
-    if (s.rdapUrl) {
-      const a = el("a", undefined, "RDAP registration (anyone can check)") as HTMLAnchorElement;
+    if (verified === true && s.rdapUrl) {
+      const a = el("a", undefined, "RDAP record, anyone can check ") as HTMLAnchorElement;
       a.href = s.rdapUrl;
       a.target = "_blank";
       a.rel = "noopener";
+      const arrow = el("span", undefined, "↗");
+      arrow.setAttribute("aria-hidden", "true");
+      a.append(arrow);
       rows.push(fact("Proof", a));
     }
     detail.replaceChildren(...rows);
@@ -320,7 +390,7 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   function showRegions(s: EgressStatus): "reserving" | "routing" | null {
     const busy = s.reserving ? "reserving" : pending;
     progress.hidden = busy === null;
-    routeLine.hidden = busy !== null;
+    routeLine.hidden = busy !== null || !hasLine(s);
     actions.hidden = busy !== null;
     return busy;
   }
@@ -329,17 +399,24 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   function finishRegions(
     s: EgressStatus,
     busy: "reserving" | "routing" | null,
-    hadFocus: boolean,
+    focused: HTMLElement | null,
     progressHadFocus: boolean,
   ): void {
     if (busy === null) {
       drawn = "";
-      if (progressHadFocus) btn.focus();
+      // The held state hides the retry button and offers the way out instead.
+      const action = (): HTMLElement => (btn.hidden && !fix.hidden ? fix : btn);
+      if (progressHadFocus) action().focus();
+      else if (focused && (focused === btn || focused === fix) && document.activeElement !== focused) {
+        // Repainting the actions drops the focus of the button that had it.
+        (focused.hidden ? action() : focused).focus();
+      }
       return;
     }
+    setState("busy");
     note.hidden = true;
     drawSteps(busy, s.reserving?.attempt ?? 1, s.reserving?.of ?? 3);
-    if (hadFocus) progress.focus();
+    if (focused) progress.focus();
   }
 
   /** While a reservation runs, on this surface or any other, keep its status fresh. */
@@ -374,18 +451,20 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   /**
    * One status, one control, and never a dead end. The chip is what this
    * browser IS on the network (an identity fact, which survives every
-   * routing failure); the line and the button are what it is DOING (a
-   * routing fact). Both are always shown, because collapsing them would
-   * hide a real state.
+   * routing failure); the sentence and the button are what it is DOING (a
+   * routing fact). The chip is always shown. The sentence is shown whenever
+   * there is something to say (a browser that holds its address and is not
+   * routed has the address row for it), and the button is the one next thing
+   * to press, never two competing ones.
    */
   function render(s: EgressStatus): void {
     // Focus follows the button that is replaced by the steps, and returns to
     // it. Read before painting: repainting the actions can drop the focus.
-    const hadFocus = actions.contains(document.activeElement);
+    const focused = actions.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
     const progressHadFocus = document.activeElement === progress;
     const busy = showRegions(s);
     paint(s);
-    finishRegions(s, busy, hadFocus, progressHadFocus);
+    finishRegions(s, busy, focused, progressHadFocus);
     syncPolling(s);
   }
 
@@ -406,23 +485,21 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
       if (s.reserveFailed) {
         // Every try is used. Said once, in the control's own words, and the
         // raw error is not shown; the verdicts do not depend on any of this.
-        setRoute("blocked", "Not protected.", RESERVE_FAILED_TEXT);
+        setRoute("blocked", "", RESERVE_FAILED_TEXT);
         btn.className = "w-btn primary";
         btn.textContent = "Try again";
         btn.onclick = protect;
         setNote(null);
+        setState("failed");
         opts.onStatus?.(s, verified);
         return;
       }
-      setRoute(
-        "off",
-        "Not protected.",
-        "One click gives this browser its own routable Whisper IPv6 address and sends its traffic out through it. Anyone can check that address by RDAP.",
-      );
+      setRoute("off", "", NO_IDENTITY_TEXT);
       btn.className = "w-btn primary";
       btn.textContent = "Protect this browser";
       btn.onclick = protect;
       setNote(s.error);
+      setState("none");
       opts.onStatus?.(s, verified);
       return;
     }
@@ -440,11 +517,12 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     renderDetail(s);
 
     if (s.on) {
-      setRoute("on", "Protected.", routeLineText(s));
+      setRoute("on", "Protected.", ROUTE_LINE_BASE, routeLimitsText(s).trimStart());
       btn.className = "w-btn small";
       btn.textContent = "Turn routing off";
       btn.onclick = unprotect;
       setNote(s.error);
+      setState("routed");
       opts.onStatus?.(s, verified);
       return;
     }
@@ -452,16 +530,16 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
     btn.className = "w-btn primary";
     btn.onclick = protect;
     if (s.controlledByOther) {
-      // Named, not a bare "cannot": the identity is real, the verdicts
-      // still run, and the one thing that would let routing engage is
-      // spelled out.
-      setRoute(
-        "blocked",
-        "Not routed.",
-        "Another extension (a VPN or proxy manager) holds this browser's proxy setting. Your identity and site verdicts keep working. Turn that extension's proxy control off, then try again.",
-      );
-      btn.textContent = "Try again";
-      if (!IS_FIREFOX) {
+      // Named, not a bare "cannot": the identity is real, the verdicts still
+      // run, and the way out is the extensions page. The next status read
+      // shows "Turn routing on" once the other extension lets go.
+      setRoute("blocked", "", HELD_TEXT);
+      if (IS_FIREFOX) {
+        // Not reachable there (the status never reports another extension),
+        // but the control is never left with no button.
+        btn.textContent = "Turn routing on";
+      } else {
+        btn.hidden = true;
         fix.hidden = false;
         fix.textContent = "Open the extensions page";
         fix.onclick = () => {
@@ -469,6 +547,7 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
         };
       }
       setNote(null);
+      setState("held");
       opts.onStatus?.(s, verified);
       return;
     }
@@ -476,12 +555,14 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
       setRoute("blocked", "Not routed.", asSentence(s.error));
       btn.textContent = "Turn routing on";
       setNote(null);
+      setState("error");
       opts.onStatus?.(s, verified);
       return;
     }
-    setRoute("off", "Identity reserved.", "This browser holds its address but does not route through it yet.");
+    clearRoute();
     btn.textContent = "Turn routing on";
     setNote(null);
+    setState("enrolled");
     opts.onStatus?.(s, verified);
   }
 
@@ -595,11 +676,18 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
   }
 
   function unprotect(): void {
+    // Disabling the button takes its focus; remember it and give it back to the
+    // visible action once the new state is drawn.
+    const hadFocus = document.activeElement === btn;
     btn.disabled = true;
     btn.textContent = "Turning off...";
     void send<{ ok: true; egress: EgressStatus }>({ kind: "egressDisable" }).then(async (res) => {
       if (res.ok) await apply(res.egress);
       else render(await currentEgress());
+      // Only when the focus is still where the press left it: nowhere, or the
+      // button. A reader who moved on while the identity was re-verified keeps it.
+      const now = document.activeElement;
+      if (hadFocus && (now === null || now === document.body || now === btn)) (btn.hidden && !fix.hidden ? fix : btn).focus();
     });
   }
 

@@ -59,7 +59,7 @@ test.describe("identity without routing", () => {
     const dash = await openDashboard(ext, "browser");
     await expect(dash.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
     await expect(dash.locator("#identity-state")).toHaveText("NOT ENROLLED");
-    await expect(dash.locator("#identity-chip")).toHaveText("NOT ON THE WHISPER NETWORK");
+    await expect(dash.locator("#identity-chip")).toHaveText("NOT ENROLLED");
     // There is exactly ONE control here. The two-step idiom this replaced is
     // gone, and its absence is asserted so it cannot quietly come back.
     await expect(dash.locator("#enroll-btn")).toHaveCount(0);
@@ -78,7 +78,7 @@ test.describe("identity without routing", () => {
     await expect(dash.locator("#identity-detail").locator("a")).toContainText("RDAP");
 
     // The header chip verifies the fresh /128 against keyless rdap.
-    await expect(dash.locator("#identity-chip")).toHaveText("VERIFIED WHISPER ENDPOINT", {
+    await expect(dash.locator("#identity-chip")).toHaveText("VERIFIED", {
       timeout: 25_000,
     });
     await expect(dash.locator("#identity-state")).toHaveText("VERIFIED");
@@ -172,15 +172,18 @@ test.describe("proxy conflict is not a dead end", () => {
 
     // Honest conflict message + an actionable way out, not a bare failure.
     await expect(dash.locator("#route-line")).toContainText("Another extension", { timeout: 25_000 });
-    await expect(dash.locator("#route-line")).toContainText("verdicts keep working");
+    await expect(dash.locator("#route-line")).toHaveText(
+      "Another extension controls the proxy setting. Your identity and verdicts still work.",
+    );
     await expect(dash.locator("#btn-route-fix")).toHaveText("Open the extensions page");
-    await expect(dash.locator("#btn-protect")).toHaveText("Try again");
+    // The way out is the one button here; the dashboard's own "Govern this browser" sits beside it.
+    await expect(dash.locator("#btn-protect")).toBeHidden();
 
     // ENROLLMENT SURVIVED: the conflict blocked routing, never the identity.
     const registered = net.endpoints.find((e) => e.label.includes("This browser"));
     expect(registered, "the browser enrolled despite the proxy conflict").toBeTruthy();
     await expect(dash.locator("#identity-detail")).toContainText(registered!.address);
-    await expect(dash.locator("#identity-chip")).toHaveText("VERIFIED WHISPER ENDPOINT", {
+    await expect(dash.locator("#identity-chip")).toHaveText("VERIFIED", {
       timeout: 25_000,
     });
     await dash.close();
