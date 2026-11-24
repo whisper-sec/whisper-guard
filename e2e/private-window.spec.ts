@@ -209,7 +209,7 @@ test("pressing Check this site now on a private-window tab writes no saved state
       .poll(
         async () => {
           const s = await stores();
-          return s.navlog.includes(norm) && s.verdicts.includes(norm) && s.risks.includes(norm);
+          return [s.navlog, s.verdicts, s.risks].every((list) => list.some((h) => h === norm));
         },
         { message: "the normal-window host in all three stores", timeout: 10_000 },
       )
@@ -257,7 +257,7 @@ test("a check request for a private-window tab writes no verdict, destination, r
       .poll(
         async () => {
           const s = await stores();
-          return s.navlog.includes(norm) && s.verdicts.includes(norm) && s.risks.includes(norm);
+          return [s.navlog, s.verdicts, s.risks].every((list) => list.some((h) => h === norm));
         },
         { message: "the normal-window host in all three stores", timeout: 10_000 },
       )

@@ -46,6 +46,22 @@ const BUTTON = "Check this site now";
 const NOTE = "No reload needed. Only the site name is sent.";
 const CHECKING = "Checking this site… usually under a second";
 
+/** True when the text holds the hostname as a whole token, never as part of a longer name. */
+function namesHost(text: string, host: string): boolean {
+  return text.split(/[^a-z0-9.-]+/i).some((token) => token === host);
+}
+
+/** True for a whisper.assess request whose host list holds exactly this hostname. */
+function assessesHost(body: string, host: string): boolean {
+  try {
+    const q = JSON.parse(body) as { query?: string; parameters?: { hs?: unknown } };
+    const hs = q.parameters?.hs;
+    return (q.query ?? "").includes("whisper.assess") && Array.isArray(hs) && hs.some((h) => h === host);
+  } catch {
+    return false;
+  }
+}
+
 const stateKey = (tabId: number) => `tabState:${tabId}`;
 
 async function sessionStore(): Promise<Record<string, unknown>> {
@@ -132,7 +148,7 @@ test("a tab Guard has not checked shows the not-yet-checked card and sends nothi
     await popup.locator("#not-checked-view").isVisible();
     await new Promise((r) => setTimeout(r, 100));
   }
-  const naming = net.log.filter((r) => `${r.host}${r.path}${r.body}`.includes(host));
+  const naming = net.log.filter((r) => namesHost(`${r.host} ${r.path} ${r.body}`, host));
   expect(naming).toHaveLength(0);
 
   // Positive control: the press sends exactly one assess, naming the site.
@@ -339,7 +355,7 @@ test("pressing during a check that is already running does not start a second ch
   const res = await via.evaluate((id) => chrome.runtime.sendMessage({ kind: "checkTab", tabId: id }), tabId);
   expect(res.ok).toBe(true);
   expect(res.tabState.icon).toBe("benign");
-  const assessed = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.body.includes("whisper.assess") && r.body.includes(host));
+  const assessed = net.requestsTo(GRAPH_READ_HOST).filter((r) => assessesHost(r.body, host));
   expect(assessed).toHaveLength(1);
   await page.close();
 });
