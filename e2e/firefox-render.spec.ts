@@ -28,6 +28,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectPopupTab } from "./helpers/extension";
+import { expectBrowserTabFits, expectRoutedCardLayout } from "./helpers/popup-fit";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/firefox");
@@ -445,6 +446,83 @@ test("the interstitial's drawn evidence renders the same in Gecko and Blink", as
     await cr.close();
   }
 });
+
+// ------------------------------------------- This browser, signed in and routed
+
+/**
+ * A second reply set: signed in, routed, verified, with the destinations seen
+ * inside the last day so the strip is drawn. The address and name are fictional.
+ * The name has a real one's shape and length: "a" and 16 hex digits, "t" and
+ * 32 hex digits for the account, then a stand-in zone as long as the agents
+ * zone (agents.guard-e2e.test), 73 characters in all.
+ * The popup draws it on one line, the start trimmed and the zone in view.
+ * The categories argument is how many of today's three tallies are above zero.
+ */
+function routedShim(categories: 1 | 3): string {
+  const counts =
+    categories === 1
+      ? { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 }
+      : { preemptBlock: 2, identityVerified: 1, cookieDecline: 3 };
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  return `${SHIM}
+const ADDRESS = "2001:db8:aa:bb:cc:dd:ee:ff";
+const AGENT = "a5e7a1c0d9b2f4301";
+const FQDN = AGENT + ".t0123456789abcdef0123456789abcdef.agents.guard-e2e.test";
+Object.assign(REPLIES, {
+  getTabState: { ok: true, tabState: { ...REPLIES.getTabState.tabState, signedIn: true } },
+  getSettings: { ...REPLIES.getSettings, signedIn: true },
+  getWins: { ok: true, wins: { date: "2026-09-02", total: ${total}, counts: ${JSON.stringify(counts)} } },
+  getBrowserReport: { ok: true, report: {
+    hosts: [1, 2, 3, 4].map((n) => ({
+      host: "dest-" + n + "-guard-e2e.com", owner: "MediaCo", category: "work", verdict: "NONE",
+      q: n, lastAt: Date.now() - n * 3_600_000,
+    })),
+    totals: { destinations: 4, companies: 1, countries: 1, networks: 1, lookups: 10, flagged: 0 },
+    generatedAt: Date.now() } },
+  egressStatus: { ok: true, egress: {
+    on: true, enrolled: true, agent: AGENT, address: ADDRESS,
+    label: "This browser (Whisper Guard)", fqdn: FQDN,
+    rdapUrl: "https://rdap.example.test/ip/" + ADDRESS,
+    controlledByOther: false, webrtcHardened: null, privateWindowsRouted: false,
+    error: null, reserving: null, reserveFailed: false } },
+  verifyIdentity: { ok: true, verification: { isWhisperAgent: true, fqdn: FQDN, daneOk: true, jwsOk: true, posture: null, detail: null } },
+});
+`;
+}
+
+for (const categories of [1, 3] as const) {
+  test(`This browser, signed in and routed with ${categories} categor${categories === 1 ? "y" : "ies"} today, is measured at 400 x 600 in Gecko and Blink`, async () => {
+    test.setTimeout(120_000);
+    const ff = await firefox.launch();
+    const cr = await chromium.launch();
+    try {
+      for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
+        for (const scheme of ["dark", "light"] as const) {
+          const page = await browser.newPage({
+            viewport: { width: 400, height: 600 },
+            colorScheme: scheme,
+            reducedMotion: "reduce",
+          });
+          await page.addInitScript(routedShim(categories));
+          await page.goto(`file://${join(DIST, "popup.html")}`);
+          await selectPopupTab(page, "browser");
+          await expect(page.locator("#identity-control"), engine).toHaveAttribute("data-state", "routed");
+          // The card is complete before it is measured: verified, with all three rows.
+          await expect(page.locator("#identity-state"), engine).toHaveText("VERIFIED");
+          await expect(page.locator("#identity-detail .w-kv .k"), engine).toHaveText(["Address", "Name", "Proof"]);
+          await expect(page.locator("#browser-strip svg"), engine).toBeVisible();
+          await expect(page.locator("#today-row"), engine).toBeVisible();
+          await expectRoutedCardLayout(page, `${engine}-${scheme}-${categories}`);
+          await expectBrowserTabFits(page, `${engine}-${scheme}-${categories}`);
+          await page.close();
+        }
+      }
+    } finally {
+      await ff.close();
+      await cr.close();
+    }
+  });
+}
 
 test("the built Firefox manifest is the one under test", () => {
   // The shim renders dist/firefox, so this pins that the tree it renders is

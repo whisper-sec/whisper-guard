@@ -575,17 +575,24 @@ test("dashboard: the ONE control, the same one the panel offers", async () => {
   await dash.close();
 });
 
-test("popup: the activity line for this browser", async () => {
+test("popup: the last 24 hours card for this browser", async () => {
   await setKey(ext, null);
   await setSettings(ext, { cloudCheck: true });
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
   await popupShot(tabId, "popup-activity.png", async (p) => {
-    // The four-tile grid became one line, and the only number in it that a
-    // reader can act on is the flagged one. Pin the line rather than merely
-    // capturing it, so a caption quoting it cannot go stale in silence.
-    await expect(p.locator("#browser-24h")).toContainText("in the last 24h");
-    await p.locator("#browser-24h").scrollIntoViewIfNeeded();
+    // The last 24 hours show the destination and flagged counts the dashboard
+    // shows. Pin the figures against the report the worker answers with, rather
+    // than merely capturing them, so a caption quoting them cannot go stale in silence.
+    const totals = await p.evaluate(async () => {
+      const res = (await chrome.runtime.sendMessage({ kind: "getBrowserReport", limit: 200 })) as {
+        report: { totals: { destinations: number; flagged: number } };
+      };
+      return res.report.totals;
+    });
+    await expect(p.locator("#activity-destinations")).toHaveText(String(totals.destinations));
+    await expect(p.locator("#activity-flagged")).toHaveText(String(totals.flagged));
+    await p.locator("#activity-card").scrollIntoViewIfNeeded();
   }, "browser");
   await page.close();
 });

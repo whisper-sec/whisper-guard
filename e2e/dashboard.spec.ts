@@ -391,6 +391,6 @@ test("endpoint identity chip verifies a routed address against keyless rdap", as
   const dash = await openDashboard(ext, "endpoint");
   // The identity chip in the header runs verify-identity for the browser's
   // own routed identity; while off it says so honestly.
-  await expect(dash.locator("#identity-chip")).toContainText("NOT ON THE WHISPER NETWORK");
+  await expect(dash.locator("#identity-chip")).toContainText("NOT ENROLLED");
   await dash.close();
 });

@@ -196,6 +196,23 @@ export async function enrichDestinations(entries: NavEntry[]): Promise<ReportHos
     }
   }
 
+  return shapeRows(wanted);
+}
+
+/**
+ * Rows for destinations that were NOT enriched, built only from what is
+ * already held: the last enrichment held for the host, whatever its age, or
+ * the name-derived fallback, with the verdict cache's band over both.
+ * Nothing is asked of the graph, so a caller that only needs the verdict
+ * counts of a long list never sends more hostnames than the ones it enriched.
+ * A host whose band only a fresh enrichment would know reads as unflagged here.
+ */
+export async function cachedDestinations(entries: NavEntry[]): Promise<ReportHost[]> {
+  return shapeRows(entries.map((e) => ({ ...e, host: e.host.replace(/\.$/, "").toLowerCase() })));
+}
+
+/** The one shaping of a destination into its row, for the enriched and the cache-only paths alike. */
+async function shapeRows(wanted: NavEntry[]): Promise<ReportHost[]> {
   const out: ReportHost[] = [];
   for (const w of wanted) {
     const cached = cache.get(w.host)?.row;

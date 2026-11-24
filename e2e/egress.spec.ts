@@ -22,7 +22,7 @@
 // (hermetic, with a fake `browser`); the web-ext load gate covers the install.
 // The routed-traffic assertion here is Chromium, where Playwright can drive it.
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { egressPacScript } from "../src/shared/direct-destinations";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import { launchExtension, makeEgressDist, openDashboard, setKey, type Extension } from "./helpers/extension";
@@ -65,6 +65,13 @@ test.afterAll(async () => {
   await net?.stop();
 });
 
+/** Routing is off again: no sentence, the address is the line, and the one button turns it on. */
+async function expectReservedNotRouted(dash: Page): Promise<void> {
+  await expect(dash.locator("#btn-protect")).toHaveText("Turn routing on", { timeout: 20_000 });
+  await expect(dash.locator("#route-line")).toBeHidden();
+  await expect(dash.locator("#identity-detail")).toContainText(/2a04:2a01:[0-9a-f:]+/i);
+}
+
 test("browser-as-endpoint: turning it on registers, routes, and verifies the browser's own identity", async () => {
   await setKey(ext, MOCK_KEY);
   net.clearEndpoints();
@@ -83,7 +90,7 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
   expect(registered, "the browser registered itself as a device").toBeTruthy();
 
   // (c) The identity chip verifies the routed /128 against keyless rdap.
-  await expect(dash.locator("#identity-chip")).toHaveText("VERIFIED WHISPER ENDPOINT", { timeout: 15_000 });
+  await expect(dash.locator("#identity-chip")).toHaveText("VERIFIED", { timeout: 15_000 });
 
   // (a) A fresh page's traffic is now carried through the Whisper egress
   // endpoint (authenticated CONNECT), i.e. the browser sources from its own
@@ -101,7 +108,7 @@ test("browser-as-endpoint: turning it on registers, routes, and verifies the bro
 
   // The same button turns it off and restores a direct route.
   await dash.locator("#btn-protect").click();
-  await expect(dash.locator("#route-line")).toContainText("Identity reserved", { timeout: 20_000 });
+  await expectReservedNotRouted(dash);
   net.clearEgressLog();
   net.clearLog(); // so the control below counts THIS navigation, not the routed one above
   const page2 = await ext.context.newPage();
@@ -269,7 +276,7 @@ test("browser-as-endpoint: tailnet names and private literals go direct, public 
   await page.close();
 
   await dash.locator("#btn-protect").click();
-  await expect(dash.locator("#route-line")).toContainText("Identity reserved", { timeout: 20_000 });
+  await expectReservedNotRouted(dash);
   await dash.close();
 });
 
@@ -291,6 +298,6 @@ test("browser-as-endpoint: the identity is register-once and reused, never dupli
   expect(after).toBe(before);
 
   await dash.locator("#btn-protect").click();
-  await expect(dash.locator("#route-line")).toContainText("Identity reserved", { timeout: 20_000 });
+  await expectReservedNotRouted(dash);
   await dash.close();
 });

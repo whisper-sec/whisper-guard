@@ -78,6 +78,14 @@ export const NIC_HOST = "nic.whisper.online";
  */
 export const MOCK_API_KEY = "e2e-mock-key-not-a-credential";
 
+/**
+ * The account label in the names the stand-in hands out: "t" and 32 hex
+ * digits, the length a real one has, so a name drawn in the popup is at least
+ * as long as a real one (75 characters with the stand-in's agent ids; a real
+ * one has 73).
+ */
+const MOCK_TENANT = `t${"e2e0".repeat(8)}`;
+
 interface DeviceFlowMockState {
   pollsUntilApproved: number;
   polls: number;
@@ -942,7 +950,7 @@ export class E2ENetwork {
           {
             agent: e.agent,
             address: e.address,
-            fqdn: e.fqdn ?? `${e.agent}.t-e2e.agents.whisper.online.`,
+            fqdn: e.fqdn ?? `${e.agent}.${MOCK_TENANT}.agents.whisper.online.`,
             label: e.label,
             device: e.device ? "true" : undefined,
             created: e.created ?? Date.now(),
@@ -1144,7 +1152,7 @@ export class E2ENetwork {
       const body = known
         ? {
             is_whisper_agent: true,
-            fqdn: known.fqdn ?? `${known.agent}.t-e2e.agents.whisper.online`,
+            fqdn: known.fqdn ?? `${known.agent}.${MOCK_TENANT}.agents.whisper.online`,
             dane_ok: true,
             jws_ok: true,
             evidence: { address: ip, posture: "tier1.5" },

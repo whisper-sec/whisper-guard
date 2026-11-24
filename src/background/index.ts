@@ -59,7 +59,7 @@ import { graphScale } from "./scale";
 import { graphQuota, resetQuotaCache } from "./quota";
 import { protectHost, variantNeighborhood } from "./protect";
 import { getDestinations, onNavRecorded, recordNav } from "./navlog";
-import { enrichDestinations } from "./enrich";
+import { cachedDestinations, enrichDestinations } from "./enrich";
 import { clearPolicyFacts, policyFacts } from "./policy-facts";
 import { COHOST_QUERY } from "../shared/config";
 import { graphQuery } from "./graph-client";
@@ -892,7 +892,10 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       const destinations = await getDestinations();
       const wanted = msg.limit ? destinations.slice(0, msg.limit) : destinations;
       const hosts = await enrichDestinations(wanted);
-      return { ok: true, report: { hosts, totals: reportTotals(hosts), generatedAt: Date.now() } };
+      // The totals count every logged destination. Past the limit, a row is
+      // built from what is already held and nothing more is asked of the graph.
+      const rest = msg.limit ? await cachedDestinations(destinations.slice(msg.limit)) : [];
+      return { ok: true, report: { hosts, totals: reportTotals([...hosts, ...rest]), generatedAt: Date.now() } };
     }
     case "getFleetReport": {
       try {

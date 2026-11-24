@@ -12,14 +12,18 @@
       headline: a round mark, the name and one pill in a card of its own,
       tinted by the verdict. The facts behind the name sit in a second card.
       A look-alike and a session block are popup cards of their own (.pp-card
-      with a modifier), and so are the two cards on This page (.pp-scan). The
-      shared .w-card is still used for the quiet notices (a failed read, a page
-      that cannot be checked) and for this browser's identity and sign-in cards.
-      Everything else is a .panel: a quiet group separated by one hairline.
+      with a modifier), and so are the two cards on This page (.pp-scan) and the
+      two on This browser (the identity or sign-in card, .pp-identity, and the
+      last 24 hours, .pp-activity). The shared .w-card is still used for the
+      quiet notices (a failed read, a page that cannot be checked). Everything
+      else is a .panel: a quiet group separated by one hairline.
    2. ONE TYPE SCALE, and it is the shared one (theme.css): 9 / 9.5
-      (eyebrow), 10.5 (mono metadata), 11 (caption), 11.5-12 (mono rows),
-      12.5 (body), 15 (the hostname), 26 (the one hero number). Nothing
-      else. Spacing is 4 / 8 / 12 / 16 and nothing else.
+      (eyebrow), 10.5 (chips and card labels), 11 (caption), 11.5-12 (rows),
+      12.5 (body), 14 (a card's title), 15 (the hostname), 20 (a figure on
+      This browser), 26 (the one hero number). Nothing else. Spacing is
+      4 / 8 / 12 / 16, plus the small steps inside a card's own parts: 2 (a
+      figure over its label, and a dashed chip's vertical padding), 3 and 7 (a
+      chip's padding) and 6 (the meter's note and the footer readout's gap).
    3. COLOUR IS MEANING. The verdict scale is the only saturated colour on
       the panel; the accent carries identity and liveness. Everything else
       is ink.
@@ -186,7 +190,6 @@ body {
 .gap { gap: 8px; flex-wrap: wrap; }
 .spacer { flex: 1; }
 
-.mini-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
 
 /* Shared popup surfaces. Each use sets its own border colour. They sit ahead
    of every card and button modifier below so that a modifier, at the same
@@ -524,27 +527,198 @@ button.pp-link { background: none; border: 0; padding: 0; text-align: left; curs
 #iocscan-list .link-row .w-chip { min-width: 96px; }
 .link-host { font-family: var(--w-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* --------------------------------------------- 4. this browser (protect)
+/* ------------------------------------- 4. this browser: the identity card
 
    The control's own layout is in theme.css beside the module that builds
    it, because the dashboard mounts the same thing - and so is the tier
-   meter under it, for the same reason. */
+   meter under it, for the same reason. What is here is only how the popup
+   dresses them: one violet card, scoped to .pp-identity so the dashboard
+   keeps its own look. The ground is set as a colour AND a gradient, so a
+   contrast check that reads the colour measures the real ground. */
 
-/* --------------------------------------------------------- 5. activity */
+.pp-identity {
+  padding: 12px;
+  background-color: var(--w-grad-a);
+  background-image: linear-gradient(160deg, var(--w-grad-a) 0%, var(--w-grad-b) 70%);
+  border-color: color-mix(in srgb, var(--w-accent-stroke) 35%, transparent);
+}
+/* A browser held by another extension, or with every try used, wears the amber. */
+.pp-identity:has(#identity-control[data-state="held"]),
+.pp-identity:has(#identity-control[data-state="failed"]) {
+  border-color: color-mix(in srgb, var(--w-v-low-fill) 45%, transparent);
+}
+#identity-control, #signin-pitch { display: flex; flex-direction: column; gap: 8px; }
+/* The card reads like the board: the title, the facts, then the sentence about
+   them, then the one button. The shared markup keeps the sentence first, so the
+   order is set here, for the popup only. */
+.pp-identity .pc-progress { order: 1; }
+.pp-identity .pc-detail { order: 2; }
+.pp-identity .pc-route { order: 3; }
+.pp-identity .pc-actions { order: 4; }
+.pp-identity .pc-note { order: 5; }
+.pp-identity .pc-route,
+.pp-identity .pc-detail,
+.pp-identity .pc-actions,
+.pp-identity .pc-note,
+.pp-identity .pc-progress { margin-top: 0; }
 
-.today-row { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
-.today-hero {
-  font: 300 26px/1 var(--w-mono);
-  font-variant-numeric: tabular-nums;
+.pp-identity .pc-head { min-height: 0; }
+.pp-identity .pc-head .w-label {
+  font: 900 14px/1.2 var(--w-font-sans);
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--w-text);
 }
-.today-caption { font-size: 12px; color: var(--w-muted); }
-.today-breakdown { display: flex; flex-direction: column; gap: 2px; }
-.today-breakdown:not(:empty) { margin-top: 4px; }
-.today-line { color: var(--w-muted); font-size: 11px; }
-#browser-24h { margin-top: 8px; font-size: 12px; }
-#browser-24h.hot { color: var(--w-v-high); }
-#today-note { margin-top: 6px; }
+
+/* The one chip: a word, never a colour alone. */
+.pp-identity .w-chip {
+  font: 700 10.5px/1.2 var(--w-font-sans);
+  letter-spacing: 0.06em;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.pp-identity .w-chip.ok { color: var(--w-ok); background: color-mix(in srgb, var(--w-ok-fill) 14%, transparent); }
+/* In daylight a lighter tint keeps the word above 4.5:1 on the pale ground. */
+@media (prefers-color-scheme: light) {
+  .pp-identity .w-chip.ok { background: color-mix(in srgb, var(--w-ok-fill) 8%, transparent); }
+}
+.pp-identity .w-chip.accent { color: var(--w-accent); background: var(--w-accent-soft); }
+.pp-identity .w-chip.unknown {
+  color: var(--w-text-2);
+  background: none;
+  border: 1px dashed var(--w-muted);
+  padding: 2px 7px;
+}
+
+/* The facts: a label column as wide as its longest label, and the value column
+   takes the rest, so a long name keeps room on a renderer that draws each
+   glyph a little wider. */
+.pp-identity .pc-detail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 8px; }
+.pp-identity .pc-detail .w-kv { display: contents; }
+.pp-identity .w-kv .k { font: 400 12px/1.2 var(--w-font-sans); color: var(--w-on-grad-2); }
+.pp-identity .w-kv .v { font: 400 12px/1.2 var(--w-mono); color: var(--w-text); overflow-wrap: anywhere; word-break: normal; }
+.pp-identity .w-addr-prefix { color: var(--w-on-grad-2); }
+.pp-identity .pc-name { font-size: 11px; line-height: 1.2; }
+/* The name keeps to one line. Its zone (agents.whisper.online) stays in view
+   and the start of a long name is trimmed with an ellipsis; the whole name is
+   still in the page, so a selection or a copy is exact, and it is the title.
+   The start is an inline block, not a flex or grid item, which would put a
+   line break into a copy. --pc-name-zone is the zone's drawn width, set by
+   the control. */
+.pp-identity .pc-name { display: block; white-space: nowrap; overflow: hidden; }
+/* Blink still breaks at a <wbr> inside nowrap; here the breaks are not wanted. */
+.pp-identity .pc-name wbr { display: none; }
+.pp-identity .pc-name-start {
+  display: inline-block;
+  max-width: calc(100% - var(--pc-name-zone, 0px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+/* A box of its own, so the control can read its drawn width. */
+.pp-identity .pc-name-zone { display: inline-block; vertical-align: top; }
+.pp-identity .pc-detail a { font: 400 12px/1.2 var(--w-font-sans); color: var(--w-accent); text-decoration: none; }
+.pp-identity .pc-detail a:hover { color: var(--w-accent-hover); }
+
+/* The sentence and, under it, the limits. */
+.pp-identity .pc-route {
+  --pc-dot: 8px;
+  --pc-dot-gap: 8px;
+  gap: var(--pc-dot-gap);
+  font: 400 12px/1.35 var(--w-font-sans);
+  color: var(--w-text-2);
+}
+/* The 4px top centres an 8px dot on the sentence's first 16.2px line: a new
+   --pc-dot needs a new top. */
+.pp-identity .pc-route .w-dot { width: var(--pc-dot); height: var(--pc-dot); margin-top: 4px; }
+.pp-identity .pc-route .w-dot.off { border-color: var(--w-on-grad-2); }
+/* The limits run back under the dot and its gap, so the smaller line has the
+   card's whole width. */
+.pp-identity .pc-route-more {
+  margin: 0 0 0 calc(-1 * (var(--pc-dot) + var(--pc-dot-gap)));
+  color: var(--w-on-grad-2);
+}
+
+/* The one button, full width. */
+.pp-identity .pc-actions { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 8px; }
+.pp-identity .w-btn,
+.pp-identity > .pp-btn {
+  justify-content: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font: 700 12.5px/1.2 var(--w-font-sans);
+}
+.pp-identity .w-btn.primary,
+.pp-identity .w-btn.primary:hover:not([disabled]) { background: var(--w-accent-line); color: #fff; border: 0; }
+.pp-identity .w-btn.primary:hover:not([disabled]) { filter: brightness(0.92); }
+.pp-identity .w-btn.small {
+  color: var(--w-text);
+  background: color-mix(in srgb, var(--w-text) 6%, transparent);
+  border: 1px solid var(--w-line-strong);
+}
+.pp-identity .w-btn.small:hover:not([disabled]) { background: color-mix(in srgb, var(--w-text) 12%, transparent); }
+.pp-identity #btn-route-fix,
+.pp-identity #btn-route-fix:hover:not([disabled]) {
+  background: transparent;
+  color: var(--w-v-low);
+  border: 1px solid color-mix(in srgb, var(--w-v-low-fill) 50%, transparent);
+}
+.pp-identity #btn-route-fix:hover:not([disabled]) { background: color-mix(in srgb, var(--w-v-low-fill) 10%, transparent); }
+
+/* The note and the steps: the label ink, each with its own line-height. */
+.pp-identity .w-note,
+.pp-identity .pc-step.todo,
+.pp-identity .pc-step-try,
+.pp-identity .pc-progress-hint { color: var(--w-on-grad-2); }
+.pp-identity .pc-progress-title { line-height: 1.3; }
+.pp-identity .pc-steps { line-height: 1.3; }
+
+/* Signed out: the same card, the paragraph, the meter and the sign-in button. */
+.pp-signin-text { margin: 0; font: 400 12.5px/1.45 var(--w-font-sans); color: var(--w-text-2); }
+.pp-identity .tier { margin: 0; }
+.pp-identity .tier-label { color: var(--w-on-grad-2); }
+.pp-identity .tier-track { background: color-mix(in srgb, var(--w-text) 12%, transparent); }
+.pp-identity #tier-note { margin-top: 6px; }
+#device-status { font-size: 11px; line-height: 1.45; }
+
+/* ------------------------------------------- 5. this browser: the last 24 hours */
+
+/* Every line sets its own line-height. */
+.pp-activity { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-color: var(--w-line); }
+.pp-activity > .w-label { font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; }
+/* Three equal columns, but the third is never narrower than its label, the
+   longest, so the label keeps to one line where glyphs are drawn wider. While
+   that figure is not yet read its column is empty and the three stay equal. */
+.pp-figures { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(max-content, 1fr); gap: 8px; }
+.pp-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* A figure not yet read stays out of view and keeps its column. */
+#fig-destinations { grid-column: 1; }
+#fig-flagged { grid-column: 2; }
+#today-row { grid-column: 3; }
+.pp-fig-n { font: 700 20px/1.2 var(--w-mono); font-variant-numeric: tabular-nums; color: var(--w-text); }
+.pp-fig-n.ok { color: var(--w-ok); }
+.pp-fig-n.hot { color: var(--w-v-high); }
+.pp-fig-l { font: 400 11.5px/1.2 var(--w-font-sans); color: var(--w-muted); }
+.pp-activity .browser-strip { margin: 0; }
+.pp-none { margin: 0; font: 400 12px/1.35 var(--w-font-sans); color: var(--w-muted); }
+.pp-caption { margin: 0; font: 400 11.5px/1.35 var(--w-font-sans); color: var(--w-muted); }
+.pp-activity .pp-link { margin-top: 0; font-size: 12.5px; }
+
+/* ----------------------------------------- the fit: this browser in 600 px
+
+   The routed state keeps its whole routing sentence and the limits under it,
+   and it is the tallest thing this tab draws, so the tab is tightened where
+   it can be without changing a word or setting type under the card sizes
+   above: the cards are 12px inside and 8px apart, the foot of the frame sits
+   closer to its readout, and the region's own padding is 8px top and bottom
+   while this tab shows. Nothing here reaches This site or This page. */
+
+#panel-browser { gap: 8px; }
+.pp-content:has(> #panel-browser:not([hidden])) { padding-top: 8px; padding-bottom: 8px; }
+.pp-footer:has(> #footer-browser:not([hidden])) { padding-top: 8px; padding-bottom: 8px; }
 
 /* ------------------------------------------------------------- drawers */
 
@@ -619,6 +793,20 @@ details[open] summary { color: var(--w-text); }
 /* A footer with nothing in the shown slot takes no space. */
 .pp-footer:not(:has(> .pp-foot-slot:not([hidden]) > :not([hidden]):not(:empty))) { display: none; }
 #footer-site { display: flex; flex-direction: column; gap: 6px; }
+/* This browser: the Active Shield readout on the left, the console link on the right. */
+#footer-browser {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: 400 11.5px/1.35 var(--w-font-sans);
+  color: var(--w-muted);
+}
+.pp-shield { display: inline-flex; align-items: center; gap: 6px; }
+.pp-shield-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--w-fill-neutral); }
+.pp-shield-dot.on { background: var(--w-ok); border-color: var(--w-ok); }
+.pp-foot-link { margin-left: auto; font: 700 11.5px/1.35 var(--w-font-sans); color: var(--w-accent); text-decoration: none; }
+.pp-foot-link:hover { color: var(--w-accent-hover); }
 .pp-actions { display: flex; gap: 8px; }
 .pp-actions .pp-btn { flex: 1; min-height: 32px; }
 .pp-privacy {
