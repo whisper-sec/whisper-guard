@@ -61,12 +61,11 @@ test("one click verdicts every linked destination before any visit, keyless", as
   await expect(popup.locator("#linkscan-summary")).toContainText("1 malicious", { timeout: 15_000 });
   const first = popup.locator("#linkscan-list .link-row").first();
   await expect(first).toContainText("evil-linked.com");
-  await expect(first.locator(".w-chip")).toHaveText("MALICIOUS");
+  await expect(first.locator(".pp-pill")).toHaveText("MALICIOUS");
   await expect(popup.locator("#linkscan-list")).not.toContainText("192.168.1.1");
   await expect(popup.locator("#linkscan-list")).not.toContainText("intranet");
   // Subdomain + apex + relative links reduce to registrable destinations.
-  const summary = (await popup.locator("#linkscan-summary").textContent()) ?? "";
-  expect(summary).toContain("3 destination(s)");
+  await expect(popup.locator("#linkscan-summary")).toHaveText("3 destinations, 1 malicious");
   await expect(popup.locator("#linkscan-note")).toContainText("never the page");
 
   // THE PRIVACY INVARIANT, asserted on the capture proxy's complete log:

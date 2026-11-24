@@ -46,8 +46,8 @@ test("link sweep without host access degrades to an honest 'allow this page', no
 
   // No opaque Chrome error; a plain-language ask, and the button becomes the
   // grant affordance for the next (gesture) click.
-  await expect(popup.locator("#linkscan-summary")).toContainText("needs your OK", { timeout: 15_000 });
-  await expect(popup.locator("#linkscan-summary")).not.toContainText("Cannot access contents");
+  await expect(popup.locator("#linkscan-msg")).toContainText("needs your OK", { timeout: 15_000 });
+  await expect(popup.locator("#linkscan-msg")).not.toContainText("Cannot access contents");
   await expect(popup.locator("#btn-linkscan")).toHaveText("Allow this page & check");
 
   // Nothing was navigated, and the privacy model held: no page content leaked.

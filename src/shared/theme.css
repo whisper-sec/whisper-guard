@@ -184,6 +184,8 @@
   --w-v-high: #f87171;
   /* The red as a FILL: the dot on a tab, and the base of red tints. Never text. */
   --w-v-high-fill: #ef4444;
+  /* The unknown share of a bar and its swatch: a neutral fill, 3:1 on a card. */
+  --w-fill-neutral: #5f5f70;
   /* Ink on the solid amber button. */
   --w-on-warn: #1c1917;
   /* The filled malicious plate. A fill carries white text, so it is a
@@ -263,6 +265,8 @@
     --w-v-high: #c53030;
     /* The red as a FILL: the dot on a tab, and the base of red tints. Never text. */
     --w-v-high-fill: #ef4444;
+    /* The unknown share of a bar and its swatch: a neutral fill, 3:1 on a card. */
+    --w-fill-neutral: #8a8aa0;
     /* Ink on the solid amber button. */
     --w-on-warn: #1c1917;
     --w-v-crit: #b02525;

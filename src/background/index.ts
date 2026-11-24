@@ -28,8 +28,10 @@ import { assessHost } from "./assess";
 import { cacheClear, cacheGet, cacheGetExact, cachePut } from "./cache";
 import {
   clearAllTabStates,
+  clearCookieDeclined,
   clearTabState,
   forgetTabState,
+  markCookieDeclined,
   mayKeepForTab,
   readTabState,
   saveTabState,
@@ -408,6 +410,8 @@ ext.webNavigation.onCommitted.addListener((details) => {
   tabs.delete(details.tabId);
   scheduleEvaluate(details.tabId, details.url);
   void clearTabState(details.tabId);
+  // A new page starts without a declined prompt.
+  void clearCookieDeclined(details.tabId);
 });
 
 ext.tabs.onActivated.addListener(({ tabId }) => {
@@ -1130,9 +1134,23 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       // handled from where the person is sitting. The page identity comes
       // from the background's own arming record, so nothing new is read from
       // the page and the message still carries neither host nor URL.
+      //
+      // The tab also gets one record that a prompt was declined on its current
+      // page (tab-flags.ts): the tab id and `true`, no host, never for a private
+      // window, dropped at the next committed page. It is written before the
+      // once-per-page check below, because a reload of the same address is not
+      // counted again in the tally but is still a page where a prompt was declined.
+      //
+      // Only the document the tab is showing may mark it: Chrome reports a
+      // prerendered or cached document's lifecycle, and Firefox sends none.
       const declTab = sender?.tab?.id;
       if (declTab !== undefined) {
         const page = consentArmedUrl.get(declTab);
+        const live = (sender as { documentLifecycle?: string } | undefined)?.documentLifecycle;
+        if (live === undefined || live === "active") {
+          const gen = navGen.get(declTab);
+          await markCookieDeclined(declTab, () => navGen.get(declTab) === gen);
+        }
         if (page !== undefined && consentCountedUrl.get(declTab) === page) {
           return { ok: true }; // a sibling frame already counted this page
         }

@@ -191,36 +191,54 @@
     </section>
 
     <section id="panel-page" class="pp-panel" role="tabpanel" aria-labelledby="tab-page" tabindex="0" hidden>
-    <section id="linkscan-card" class="panel" hidden>
-      <div class="mini-head">
+    <section id="linkscan-card" class="pp-card pp-scan" hidden>
+      <div class="pp-scan-head">
         <span class="w-label">Links on this page</span>
-        <button id="btn-linkscan" class="w-btn small"
+        <span id="linkscan-age" class="pp-scan-age" hidden></span>
+        <button id="btn-linkscan" class="pp-btn compact" type="button"
                 title="Verdict every destination this page links to, before you click one. Only the link hostnames are checked, never the page.">Check every link</button>
       </div>
-      <div id="linkscan-summary" class="linkscan-summary" hidden></div>
-      <div id="linkscan-list" class="linkscan-list" hidden></div>
-      <div id="linkscan-note" class="w-note" hidden></div>
+      <div id="linkscan-msg" class="pp-note" role="status" hidden></div>
+      <div id="linkscan-summary" class="pp-headline" hidden><span id="linkscan-count" class="pp-headline-n"></span> <span id="linkscan-words" class="pp-headline-words"></span></div>
+      <div id="linkscan-bar" class="pp-bar" aria-hidden="true" hidden></div>
+      <div id="linkscan-counts" class="pp-counts" hidden></div>
+      <div id="linkscan-list" class="pp-rows" hidden></div>
+      <div id="linkscan-cut" class="pp-note" hidden></div>
+      <button id="linkscan-all" class="pp-link" type="button" aria-expanded="false" aria-controls="linkscan-list" hidden></button>
+      <div id="linkscan-note" class="pp-note" hidden></div>
     </section>
 
-    <!-- INDICATORS ON THIS PAGE (tab 2). Deliberately a SEPARATE card from
-         the link scan above, and deliberately worded differently: the link scan
-         reads only href hostnames, this one reads the page's visible TEXT. They
-         make different promises, so they must not share a note. Shipping this
-         unreachable is what made the earlier privacy claim ambiguous; it is
-         reachable here, and the listing declares Website content to match. -->
-    <section id="iocscan-card" class="panel" hidden>
-      <div class="mini-head">
-        <span class="w-label">Indicators on this page</span>
-        <button id="btn-iocscan" class="w-btn small"
-                title="Read this page's visible text for indicators - addresses, domains, file hashes and CVE ids - and verdict each one against the Whisper graph.">Scan</button>
+    <!-- INDICATORS IN THE TEXT (tab 2). Deliberately a SEPARATE card from
+         the link check above, and deliberately worded differently: the link
+         check reads only href hostnames, this one reads the page's visible TEXT.
+         They make different promises, so they must not share a note. Shipping
+         this unreachable is what made the earlier privacy claim ambiguous; it
+         is reachable here, and the listing declares Website content to match. -->
+    <section id="iocscan-card" class="pp-card pp-scan" hidden>
+      <div class="pp-scan-head">
+        <span class="w-label">Indicators in the text</span>
+        <button id="btn-iocscan" class="pp-btn compact" type="button"
+                title="Read this page's visible text for indicators: addresses, domains, file hashes and CVE ids. Only the hostnames found are checked against the Whisper graph.">Scan page</button>
       </div>
+      <div id="iocscan-msg" class="pp-note" role="status" hidden></div>
+      <!-- Says what actually leaves the browser, MEASURED rather than intended:
+           only hostnames go to the graph. IP literals, hashes and CVE ids stay
+           on the device and are listed as Not assessed. e2e/page-scan.spec.ts
+           asserts the wire. It is there before a scan and after it. -->
+      <p id="iocscan-note" class="pp-scan-note">This reads the page's visible text. Only the hostnames found are checked against Whisper; IP addresses, file hashes and CVE ids are listed as Not assessed and are not sent. The page text itself never leaves your browser.</p>
       <div id="iocscan-summary" class="linkscan-summary" hidden></div>
       <div id="iocscan-list" class="linkscan-list" hidden></div>
-      <div id="iocscan-note" class="w-note" hidden></div>
     </section>
 
       <!-- Says why the tab has nothing to show; written only by syncPageNote. -->
       <p id="page-empty" class="pp-empty" hidden></p>
+
+      <!-- Shown only while the worker's record says Guard declined a cookie
+           prompt on this tab's current page; written only by watchCookieLine. -->
+      <section id="cookie-line" class="pp-cookie" hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+        <span>Cookie prompt on this page declined for you.</span>
+      </section>
     </section>
 
     <section id="panel-browser" class="pp-panel" role="tabpanel" aria-labelledby="tab-browser" tabindex="0" hidden>

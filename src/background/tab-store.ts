@@ -13,8 +13,15 @@
 // Nothing is written for a private-window tab: the answer comes from
 // tabs.get(...).incognito, which needs no "tabs" permission, and a lookup that
 // fails does not write (fail closed).
+//
+// A second, smaller record lives beside it: that Guard declined a cookie prompt
+// on the tab's current page (shared/tab-flags.ts). It is the value `true` under
+// a key made from the tab id alone, with no host and no URL. The same rules
+// hold: written only for a tab known to be in a normal window, dropped when the
+// tab commits a new page and when it closes. An account change leaves it be.
 
 import { ext } from "../shared/api";
+import { cookieDeclinedKey } from "../shared/tab-flags";
 import type { TabState } from "../shared/types";
 
 const key = (tabId: number): string => `tabState:${tabId}`;
@@ -96,8 +103,34 @@ export async function clearAllTabStates(): Promise<void> {
   }
 }
 
+/**
+ * Record that Guard declined a cookie prompt on this tab's current page. Like
+ * saveTabState it writes only for a tab known to be in a normal window, and only
+ * while `stillCurrent` holds, so a page that was already left is never marked.
+ */
+export async function markCookieDeclined(tabId: number, stillCurrent: () => boolean): Promise<void> {
+  const priv = await isPrivate(tabId);
+  if (priv !== false) return; // private, or unknown: never write
+  if (!stillCurrent()) return;
+  try {
+    await ext.storage.session.set({ [cookieDeclinedKey(tabId)]: true });
+  } catch {
+    // session storage unavailable: nothing is kept, and the popup shows no line.
+  }
+}
+
+/** Drop the declined-prompt record: a new page starts without one. */
+export async function clearCookieDeclined(tabId: number): Promise<void> {
+  try {
+    await ext.storage.session.remove(cookieDeclinedKey(tabId));
+  } catch {
+    // nothing to clear
+  }
+}
+
 /** The tab closed: drop the saved state and what was remembered about it. */
 export async function forgetTabState(tabId: number): Promise<void> {
   privateTab.delete(tabId);
   await clearTabState(tabId);
+  await clearCookieDeclined(tabId);
 }

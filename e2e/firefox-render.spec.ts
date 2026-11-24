@@ -237,6 +237,11 @@ test("the tabs expose their roles and answer the keyboard in both engines, and c
       await expect(page.getByRole("tab"), engine).toHaveCount(3);
       await expect(page.getByRole("tabpanel", { includeHidden: true }), engine).toHaveCount(3);
 
+      // The render has no session storage, so the cookie line's record is
+      // unknown and the line stays hidden, in both engines.
+      await expect(page.locator("#cookie-line"), engine).toHaveCount(1);
+      await expect(page.locator("#cookie-line"), engine).toBeHidden();
+
       // The count of messages the page has sent, once opening has settled:
       // equal on two reads in a row, no timer.
       const sent = (): Promise<number> =>

@@ -532,3 +532,49 @@ test("should reopen a held click from a normal-window tab as before", async () =
     await normal.page.close();
   }
 });
+
+test("should never record a declined cookie prompt for a private-window tab, and show no cookie line there", async () => {
+  const privSite = "private-line-guard-e2e.com";
+  const normSite = "normal-line-guard-e2e.com";
+  for (const h of [privSite, normSite]) net.setVerdict(h, CLEAN);
+  const keys = (): Promise<string[]> =>
+    own.sw.evaluate(async () => Object.keys(await chrome.storage.session.get(null)).filter((k) => k.startsWith("cookieDeclined:")));
+  // The worker's answer to the content module's report, sent from inside the tab.
+  const declinedFrom = (tabId: number): Promise<{ ok?: boolean } | undefined> =>
+    own.sw.evaluate(async (id: number) => {
+      const r = await chrome.scripting.executeScript({
+        target: { tabId: id },
+        func: () => chrome.runtime.sendMessage({ kind: "consentDeclined" }),
+      });
+      return r[0]?.result as { ok?: boolean } | undefined;
+    }, tabId);
+
+  const p = await openPrivate(`https://${privSite}/`);
+  try {
+    await waitForIcon(own, p.tabId, ["benign"]);
+    expect((await declinedFrom(p.tabId))?.ok).toBe(true);
+
+    // Positive control, after the private tab: the same report from a normal-window tab writes its key.
+    const normal = await visit(own, `https://${normSite}/`);
+    try {
+      await waitForIcon(own, normal.tabId, ["benign"]);
+      expect((await declinedFrom(normal.tabId))?.ok).toBe(true);
+      await expect.poll(keys, { timeout: 10_000, message: "the normal-window tab's record" }).toContain(`cookieDeclined:${normal.tabId}`);
+      expect(await keys()).not.toContain(`cookieDeclined:${p.tabId}`);
+
+      const privPopup = await openPopup(own, p.tabId, { popupTab: "page" });
+      await expect(privPopup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
+      await expect(privPopup.locator("#cookie-line")).toHaveCount(1);
+      await expect(privPopup.locator("#cookie-line")).toBeHidden();
+      await privPopup.close();
+
+      const normPopup = await openPopup(own, normal.tabId, { popupTab: "page" });
+      await expect(normPopup.locator("#cookie-line")).toBeVisible({ timeout: 10_000 });
+      await normPopup.close();
+    } finally {
+      await normal.page.close();
+    }
+  } finally {
+    await closePrivate(p.windowId);
+  }
+});

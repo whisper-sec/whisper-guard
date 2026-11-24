@@ -19,7 +19,8 @@
 // UNKNOWN is the honest common state and reads as "not confirmed either
 // way", never as green. The answers sit under three tabs (tabs.ts): This site
 // holds the verdict, the evidence and who is behind the name, This page the link check and
-// the indicator scan, This browser the identity and the activity. Every tab is
+// the indicator scan (and, when Guard declined a cookie prompt on the page, a line
+// saying so), This browser the identity and the activity. Every tab is
 // filled when the popup opens, and that holds while a check waits and on a tab
 // Guard has not checked yet: This site then shows a ring with placeholders, or a
 // card with a button, and the verdict replaces either in place. This site's
@@ -46,6 +47,7 @@ import {
 import type { PageScanResult } from "../background/page-scan";
 import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
+import { cookieDeclinedKey } from "../shared/tab-flags";
 import { initTabs, setPageFlagCount } from "./tabs";
 import { compact, countUp, sparkline } from "../shared/spark";
 import { countMarks, timeStrip, type TimeEvent } from "../shared/viz";
@@ -557,19 +559,40 @@ function chipClsForBand(band: string): string {
   return "ok";
 }
 
-function linkRow(host: string, band: string, links: number): HTMLElement {
+/** The four kinds a destination falls into, best first: the order of the bar. */
+type LinkKind = "clean" | "unknown" | "suspicious" | "malicious";
+const LINK_KINDS: readonly LinkKind[] = ["clean", "unknown", "suspicious", "malicious"];
+
+/** What a destination's band is called, drawn and counted: CRITICAL and HIGH
+ *  are malicious (as the link check counts them), MEDIUM suspicious, LOW, INFO
+ *  and NONE clean. */
+function kindOfBand(band: string): LinkKind {
+  const b = band.toUpperCase();
+  if (b === "CRITICAL" || b === "HIGH") return "malicious";
+  if (b === "MEDIUM") return "suspicious";
+  if (b === "UNKNOWN") return "unknown";
+  return "clean";
+}
+
+const LINK_PILL: Record<LinkKind, { tone: string; word: string }> = {
+  clean: { tone: "ok", word: "CLEAN" },
+  unknown: { tone: "unknown", word: "UNKNOWN" },
+  suspicious: { tone: "med", word: "SUSPICIOUS" },
+  malicious: { tone: "crit", word: "MALICIOUS" },
+};
+
+/** One destination: the host on the left, its word on the right. */
+function linkRow(host: string, band: string): HTMLElement {
+  const kind = kindOfBand(band);
   const row = document.createElement("div");
-  row.className = "link-row";
-  const chip = document.createElement("span");
-  chip.className = `w-chip ${chipClsForBand(band)}`;
-  chip.textContent = band.toUpperCase() === "CRITICAL" ? "MALICIOUS" : band.toUpperCase();
+  row.className = kind === "malicious" ? "link-row bad" : "link-row";
   const name = document.createElement("span");
   name.className = "link-host";
   name.textContent = host;
-  const n = document.createElement("span");
-  n.className = "link-n";
-  n.textContent = links > 1 ? `x${links}` : "";
-  row.append(chip, name, n);
+  const pill = document.createElement("span");
+  pill.className = `pp-pill ${LINK_PILL[kind].tone}`;
+  pill.textContent = LINK_PILL[kind].word;
+  row.append(name, pill);
   return row;
 }
 
@@ -594,25 +617,115 @@ function iocRow(r: PageScanResult["rows"][number]): HTMLElement {
   return row;
 }
 
+/** The destinations shown before "See all" is pressed. */
+const LINK_ROWS_FIRST = 3;
+
+let linkHosts: LinkScanResult["hosts"] = [];
+let linkAllOpen = false;
+
+/** Draw the rows of the current result: the first few, or all of them. */
+function drawLinkRows(): void {
+  const n = linkHosts.length;
+  const shown = linkAllOpen ? linkHosts : linkHosts.slice(0, LINK_ROWS_FIRST);
+  const list = $("linkscan-list");
+  list.hidden = n === 0;
+  list.replaceChildren(...shown.map((h) => linkRow(h.host, h.band)));
+  const all = $<HTMLButtonElement>("linkscan-all");
+  all.hidden = n <= LINK_ROWS_FIRST;
+  all.setAttribute("aria-expanded", String(linkAllOpen));
+  if (linkAllOpen) {
+    all.textContent = "Show fewer";
+  } else {
+    const arrow = document.createElement("span");
+    arrow.setAttribute("aria-hidden", "true");
+    arrow.textContent = "→";
+    all.replaceChildren(`See all ${n} `, arrow);
+  }
+}
+
+let linkCheckedAt = 0;
+let linkAgeShown = "";
+let linkAgeTimer: number | undefined;
+
+/** How long ago the result on screen arrived, in words. */
+function checkedWords(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 1) return "checked just now";
+  if (s < 60) return `checked ${s} s ago`;
+  return `checked ${Math.floor(s / 60)} min ago`;
+}
+
+/** Rewrite the age only when its words change. Reads the clock and nothing else. */
+function paintLinkAge(): void {
+  const words = checkedWords(Date.now() - linkCheckedAt);
+  if (words === linkAgeShown) return;
+  linkAgeShown = words;
+  $("linkscan-age").textContent = words;
+}
+
+/** A result has just been drawn: date it now (a re-check restamps) and keep it
+ *  current while the popup is open. A failed check never calls this. */
+function stampLinkAge(): void {
+  linkCheckedAt = Date.now();
+  linkAgeShown = "";
+  $("linkscan-age").hidden = false;
+  paintLinkAge();
+  linkAgeTimer ??= window.setInterval(paintLinkAge, 1000);
+}
+
 function renderLinkScan(scan: LinkScanResult): void {
+  const n = scan.hosts.length;
+  $("linkscan-msg").hidden = true;
+
   const summary = $("linkscan-summary");
   summary.hidden = false;
-  const bits: string[] = [];
-  if (scan.flagged > 0) bits.push(`${scan.flagged} malicious`);
-  if (scan.suspicious > 0) bits.push(`${scan.suspicious} suspicious`);
-  bits.push(`${scan.unknown} unknown`, `${scan.clean} clean`);
-  summary.textContent = `${scan.hosts.length} destination(s) across ${scan.totalLinks} link(s): ${bits.join(", ")}.${scan.truncated ? " Showing the busiest; the page had more." : ""}`;
-  summary.className = `linkscan-summary${scan.flagged > 0 ? " hot" : ""}`;
-  const list = $("linkscan-list");
-  list.hidden = scan.hosts.length === 0;
-  // Clean rows collapse into the count above once anything is flagged;
-  // otherwise show everything (short lists read better complete).
-  const risky = scan.hosts.filter((h) => h.band !== "NONE" && h.band !== "LOW" && h.band !== "INFO");
-  const rows = risky.length > 0 && scan.hosts.length > 24 ? risky : scan.hosts;
-  list.replaceChildren(...rows.slice(0, 80).map((h) => linkRow(h.host, h.band, h.links)));
+  summary.className = `pp-headline${scan.flagged > 0 ? " hot" : ""}`;
+  $("linkscan-count").textContent = String(n);
+  $("linkscan-words").textContent = `${n === 1 ? "destination" : "destinations"}, ${scan.flagged === 0 ? "none" : scan.flagged} malicious`;
+
+  // One segment and one count per kind that has any; a kind with none is left out.
+  const counts: Record<LinkKind, number> = {
+    clean: scan.clean,
+    unknown: scan.unknown,
+    suspicious: scan.suspicious,
+    malicious: scan.flagged,
+  };
+  const bar = $("linkscan-bar");
+  const tally = $("linkscan-counts");
+  bar.hidden = n === 0;
+  tally.hidden = n === 0;
+  const segs: HTMLElement[] = [];
+  const items: HTMLElement[] = [];
+  for (const kind of LINK_KINDS) {
+    const count = counts[kind];
+    if (count <= 0) continue;
+    const seg = document.createElement("span");
+    seg.className = `pp-seg ${kind}`;
+    seg.style.flexGrow = String(count);
+    segs.push(seg);
+    const item = document.createElement("span");
+    item.className = "pp-count";
+    const swatch = document.createElement("span");
+    swatch.className = `pp-swatch ${kind}`;
+    item.append(swatch, `${count} ${kind}`);
+    items.push(item);
+  }
+  bar.replaceChildren(...segs);
+  tally.replaceChildren(...items);
+
+  linkHosts = scan.hosts;
+  linkAllOpen = false;
+  drawLinkRows();
+
+  const cut = $("linkscan-cut");
+  cut.hidden = !scan.truncated;
+  cut.textContent = scan.truncated ? `Showing the ${n} busiest destinations; the page links to more.` : "";
+
   const note = $("linkscan-note");
   note.hidden = false;
   note.textContent = "Only the link hostnames were checked, never the page, its text, or your history.";
+
+  stampLinkAge();
   // The tab bar carries the count of malicious links this result holds.
   setPageFlagCount(scan.flagged);
 }
@@ -632,14 +745,15 @@ function linkScanOrigins(): string[] {
 async function runLinkScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Promise<void> {
   btn.disabled = true;
   btn.textContent = "Checking...";
-  const summary = $("linkscan-summary");
+  const msg = $("linkscan-msg");
+  msg.hidden = true;
   if (grant) {
     const ok = await grant.catch(() => false);
     if (!ok) {
       btn.disabled = false;
       btn.textContent = "Allow this page & check";
-      summary.hidden = false;
-      summary.textContent = "Whisper Guard needs your OK to read this page's link addresses. Nothing else is read.";
+      msg.hidden = false;
+      msg.textContent = "Whisper Guard needs your OK to read this page's link addresses. Nothing else is read.";
       return;
     }
     linkScanNeedsGrant = false;
@@ -662,8 +776,8 @@ async function runLinkScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Pr
   } else {
     btn.textContent = "Re-check";
   }
-  summary.hidden = false;
-  summary.textContent = res.error;
+  msg.hidden = false;
+  msg.textContent = res.error;
 }
 
 /* ------------------------------------------------------- indicators
@@ -705,13 +819,7 @@ function renderIocScan(scan: PageScanResult): void {
     .map((x) => x.r);
   list.replaceChildren(...rows.slice(0, 80).map(iocRow));
 
-  const note = $("iocscan-note");
-  note.hidden = false;
-  // Says what actually leaves the browser, MEASURED rather than intended: only
-  // hostnames go to the graph. IP literals, hashes and CVE ids stay on the
-  // device and are listed as Not assessed. e2e/page-scan.spec.ts asserts the wire.
-  note.textContent =
-    "This reads the page's visible text. Only the hostnames found are checked against Whisper; IP addresses, file hashes and CVE ids are listed as Not assessed and are not sent. The page text itself never leaves your browser.";
+  $("iocscan-msg").hidden = true;
 }
 
 let iocScanNeedsGrant = false;
@@ -720,6 +828,7 @@ async function runIocScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Pro
   if (tabId < 0) return;
   btn.disabled = true;
   btn.textContent = "Scanning…";
+  $("iocscan-msg").hidden = true;
   if (grant) {
     await grant;
     iocScanNeedsGrant = false;
@@ -739,15 +848,15 @@ async function runIocScan(btn: HTMLButtonElement, grant?: Promise<boolean>): Pro
     // arm the next click rather than prompting from this consumed one.
     iocScanNeedsGrant = true;
     btn.textContent = "Allow & scan";
-    const note = $("iocscan-note");
-    note.hidden = false;
-    note.textContent = "Guard needs access to this site to read its text. Click again to allow it for this site only.";
+    const msg = $("iocscan-msg");
+    msg.hidden = false;
+    msg.textContent = "Guard needs access to this site to read its text. Click again to allow it for this site only.";
     return;
   }
-  btn.textContent = "Scan";
-  const note = $("iocscan-note");
-  note.hidden = false;
-  note.textContent = `Could not scan this page: ${res.error}`;
+  btn.textContent = "Scan page";
+  const msg = $("iocscan-msg");
+  msg.hidden = false;
+  msg.textContent = `Could not scan this page: ${res.error}`;
 }
 
 function wireIocScan(): void {
@@ -768,6 +877,12 @@ function wireIocScan(): void {
 
 function wireLinkScan(): void {
   $("linkscan-card").hidden = false;
+  // "See all" opens the whole list in place and goes back; it sends nothing and
+  // keeps focus on itself.
+  $("linkscan-all").addEventListener("click", () => {
+    linkAllOpen = !linkAllOpen;
+    drawLinkRows();
+  });
   const btn = $<HTMLButtonElement>("btn-linkscan");
   btn.addEventListener("click", () => {
     // If the reader was blocked, ask for this-site host access FIRST (no await
@@ -1115,6 +1230,34 @@ async function loadTier(): Promise<void> {
 
 // ---------------------------------------------------------------- render
 
+/** The cookie line on This page: shown only while the worker's record says
+ *  Guard declined a cookie prompt on this tab's current page. Reads storage
+ *  only and sends nothing; anything unknown keeps the line hidden, and so does
+ *  a live check that is turned off (This page then has nothing to say but why). */
+function watchCookieLine(): void {
+  if (tabId < 0) return;
+  const key = cookieDeclinedKey(tabId);
+  // Unknown settings keep the line hidden, like any other unknown.
+  const live = settings?.cloudCheck === true;
+  const show = (v: unknown): void => {
+    $("cookie-line").hidden = !live || v !== true;
+  };
+  // Without Active Shield, opening the popup arms the page, so a decline can
+  // land after the first read: follow the record for as long as the popup is open.
+  let changed = false;
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== "session" || !(key in changes)) return;
+    changed = true;
+    show(changes[key]?.newValue);
+  });
+  chrome.storage?.session?.get(key).then(
+    (got) => {
+      if (!changed) show(got[key]);
+    },
+    () => undefined,
+  );
+}
+
 /** Everything that does not depend on this site's check: drawn once at open,
  *  in every case, so every tab is filled while a check waits or a press is due. */
 function renderShell(signedIn: boolean, activeHost: string, first: TabState | null): void {
@@ -1141,6 +1284,8 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
   // gate: even on an ineligible tab (a browser page, or the block page itself)
   // a session block stays visible and clearable, never a silent dead end.
   void loadBlocked(activeHost);
+
+  watchCookieLine();
 
   // The on-device look-alike catch needs no check and sends nothing.
   if (first) drawLookalike(first);
