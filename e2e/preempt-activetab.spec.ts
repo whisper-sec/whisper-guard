@@ -210,7 +210,7 @@ test("the quiet win was counted, keyless, as a category only", async () => {
   expect(await readWins()).not.toContain("e2e.com"); // no host, ever
 
   const { page, tabId } = await visit(ext, `https://${START}/`);
-  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+  const popup = await openPopup(ext, tabId, { section: "browser" });
   await expect(popup.locator("#today-hero")).toHaveText("1");
   await popup.close();
   await page.close();

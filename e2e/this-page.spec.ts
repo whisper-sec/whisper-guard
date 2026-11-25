@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// e2e: THE THIS PAGE TAB. Two cards, each started only by the reader's click:
+// e2e: THE THIS PAGE PART. Two cards, each started only by the reader's click:
 // the link check (headline, proportional bar, counts, the three worst
 // destinations, "See all") and the indicator scan (its privacy sentence is
 // there before and after a scan). With the live check off neither is offered
 // and nothing about the page's links or text is sent. After a check the whole
-// tab clears the contrast floor in both colour schemes.
+// part clears the contrast floor in both colour schemes.
 
 import { test, expect, type Page } from "@playwright/test";
 import { E2ENetwork, GRAPH_READ_HOST } from "./helpers/servers";
@@ -56,6 +56,7 @@ const OFF_TEXT = "off-text-guard-e2e.com";
 const C_COUNT = 165;
 const C_HOSTS = Array.from({ length: C_COUNT }, (_, i) => `h${String(i + 1).padStart(3, "0")}-c-guard-e2e.com`);
 
+const LINK_NOTE_BEFORE = "Link check sends link hostnames only, never paths or the page.";
 const LINK_NOTE = "Only the link hostnames were checked, never the page, its text, or your history.";
 const IOC_NOTE =
   "This reads the page's visible text. Only the hostnames found are checked against Whisper; IP addresses, file hashes and CVE ids are listed as Not assessed and are not sent. The page text itself never leaves your browser.";
@@ -141,11 +142,11 @@ test.afterAll(async () => {
   await net?.stop();
 });
 
-/** Open a fixture page, wait for its own check, and open This page on it. */
+/** Open a fixture page, wait for its own check, and scroll to This page on it. */
 async function openOn(host: string): Promise<{ popup: Page; page: Page; tabId: number }> {
   const { page, tabId } = await visit(ext, `https://${host}/`);
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await expect(popup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
   return { popup, page, tabId };
 }
@@ -165,6 +166,10 @@ test("before a link check the card offers the check button and shows no result",
     await expect(popup.locator(`#${id}`), `#${id} exists`).toHaveCount(1);
     await expect(popup.locator(`#${id}`), `#${id} is hidden`).toBeHidden();
   }
+  // Before the press the card says what the check sends, in the place its after-check note takes.
+  await expect(popup.locator("#linkscan-note")).toHaveText(LINK_NOTE_BEFORE);
+  await expect(popup.locator("#linkscan-note")).toBeVisible();
+  await expect(popup.locator("#panel-page")).not.toContainText(LINK_NOTE);
   // Nothing about the page's links has left the browser yet, once opening has settled.
   await openingSettled();
   expect(graphBodies().length, "control: the page's own check reached the graph").toBeGreaterThan(0);
@@ -207,9 +212,9 @@ test("after a link check the card shows the headline, the bar, the counts and th
   await expect(popup.locator("#linkscan-all")).toHaveText("See all 6 →");
   await expect(popup.locator("#linkscan-all")).toHaveAccessibleName("See all 6");
   await expect(popup.locator("#linkscan-cut")).toBeHidden();
+  // The after-check note replaces the one that was there before the press.
   await expect(popup.locator("#linkscan-note")).toHaveText(LINK_NOTE);
-  // The tab's red dot is still fed by the same result.
-  await expect(popup.locator("#tab-page")).toHaveAccessibleName("This page 2 malicious links on this page");
+  await expect(popup.locator("#panel-page")).not.toContainText(LINK_NOTE_BEFORE);
 
   await popup.close();
   await page.close();
@@ -312,11 +317,13 @@ test("with the live check off neither check is offered and nothing about the pag
   await setSettings(ext, { cloudCheck: false });
   try {
     const { page, tabId } = await visit(ext, `https://${SOURCE.off}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "page" });
+    const popup = await openPopup(ext, tabId, { section: "page" });
     await expect(popup.locator("#page-empty")).toHaveText(NEEDS_LIVE_CHECK);
     await expect(popup.locator("#linkscan-card")).toBeHidden();
     await expect(popup.locator("#iocscan-card")).toBeHidden();
-    await expect(popup.locator(".pp-footer")).toBeHidden();
+    // Neither the card's note nor any sentence about the link check is on the popup.
+    await expect(popup.locator("#linkscan-note")).toBeHidden();
+    expect(await popup.locator("body").innerText()).not.toContain(LINK_NOTE_BEFORE);
     await popup.evaluate(() => chrome.runtime.sendMessage({ kind: "getSession" }));
     for (const host of [OFF_LINK, OFF_TEXT, SOURCE.off]) {
       expect(graphNames(host), `${host} was sent with the live check off`).toBe(false);
@@ -379,7 +386,7 @@ async function measurePage(popup: Page): Promise<{ text: Sample[]; marks: Sample
       }>`;
 
     const text: { what: string; ratio: number; floor: number }[] = [];
-    const roots = [document.getElementById("panel-page"), document.getElementById("footer-page")];
+    const roots = [document.getElementById("panel-page")];
     for (const root of roots) {
       if (!root) continue;
       for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
@@ -426,7 +433,7 @@ async function measurePage(popup: Page): Promise<{ text: Sample[]; marks: Sample
 test("This page after a link check clears the contrast floor in the dark and the light scheme", async () => {
   const { popup, page, tabId } = await openOn(SOURCE.a);
   await check(popup);
-  // The cookie line is part of the tab: have Guard record a declined prompt on this page.
+  // The cookie line is part of this page: have Guard record a declined prompt on this page.
   await ext.sw.evaluate(async (id: number) => {
     await chrome.scripting.executeScript({
       target: { tabId: id },

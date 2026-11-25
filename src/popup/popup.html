@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <!-- The masthead is the same on all three tabs. It carries the product
+  <!-- The masthead never scrolls. It carries the product
        AND the live size of the graph the verdicts come from, read from the
        public stats endpoint on every open. A number about our own coverage
        is never written into this build: it would be stale the day after it
@@ -32,20 +32,15 @@
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M10.43 5.18 L10.66 2.49 L13.34 2.49 L13.57 5.18 A7 7 0 0 1 15.71 6.06 L17.78 4.33 L19.67 6.22 L17.94 8.29 A7 7 0 0 1 18.82 10.43 L21.51 10.66 L21.51 13.34 L18.82 13.57 A7 7 0 0 1 17.94 15.71 L19.67 17.78 L17.78 19.67 L15.71 17.94 A7 7 0 0 1 13.57 18.82 L13.34 21.51 L10.66 21.51 L10.43 18.82 A7 7 0 0 1 8.29 17.94 L6.22 19.67 L4.33 17.78 L6.06 15.71 A7 7 0 0 1 5.18 13.57 L2.49 13.34 L2.49 10.66 L5.18 10.43 A7 7 0 0 1 6.06 8.29 L4.33 6.22 L6.22 4.33 L8.29 6.06 A7 7 0 0 1 10.43 5.18 Z"/><circle cx="12" cy="12" r="3"/></svg></button>
   </header>
 
-  <!-- Three tabs, one panel each. Every panel is filled when the popup opens,
-       so choosing a tab only shows what is already drawn and sends nothing.
-       The popup always opens on This site. -->
-  <div id="tab-bar" class="pp-tabs" role="tablist" aria-label="Popup sections">
-    <button id="tab-site" class="pp-tab" type="button" role="tab" aria-selected="true" aria-controls="panel-site" tabindex="0"><span class="pp-tab-label">This site</span></button>
-    <button id="tab-page" class="pp-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-page" tabindex="-1"><span class="pp-tab-label">This page</span> <span id="tab-page-dot" class="pp-tab-dot" aria-hidden="true" hidden></span><span id="tab-page-flags" class="pc-sr" hidden></span></button>
-    <button id="tab-browser" class="pp-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-browser" tabindex="-1"><span class="pp-tab-label">This browser</span></button>
-  </div>
-
-  <!-- The one scrolling region. The fade above the footer is drawn over its
-       bottom edge, outside the scroller, so it stays put while content moves. -->
+  <!-- One scrolling region holds three parts, one after the other: This site,
+       This page and This browser. Every part is filled when the popup opens,
+       so scrolling only moves what is already drawn and sends nothing. The
+       popup always opens at the top. The fade over the region's foot is drawn
+       outside the scroller, so it stays put while content moves. -->
   <div class="pp-stage">
-  <main id="tab-content" class="pp-content">
-    <section id="panel-site" class="pp-panel" role="tabpanel" aria-labelledby="tab-site" tabindex="0">
+  <main id="popup-scroll" class="pp-content">
+    <section id="panel-site" class="pp-panel" aria-labelledby="heading-site" tabindex="-1">
+    <h2 id="heading-site" class="pc-sr">This site</h2>
     <!-- WHILE A CHECK RUNS: the site's name, one sentence, and placeholders
          that the verdict replaces in place. The shapes carry nothing the
          sentence does not. -->
@@ -67,7 +62,7 @@
       </div>
     </section>
 
-    <!-- A TAB GUARD HAS NOT CHECKED: opened before Guard started, or its
+    <!-- A PAGE GUARD HAS NOT CHECKED: opened before Guard started, or its
          answer was dropped. Nothing about the site is sent until the button
          is pressed. -->
     <section id="not-checked-view" class="pp-notchecked" hidden>
@@ -78,7 +73,7 @@
       <p id="not-checked-note" class="pp-notchecked-note">No reload needed. Only the site name is sent.</p>
     </section>
 
-    <!-- 1. THE VERDICT (tab 1). A round mark, the name, one pill and one
+    <!-- 1. THE VERDICT. A round mark, the name, one pill and one
          reason. The reason never restates the pill; the age of the name
          joins it only once the graph has said it. -->
     <section id="host-row" class="pp-card pp-verdict" hidden>
@@ -190,7 +185,8 @@
     </section>
     </section>
 
-    <section id="panel-page" class="pp-panel" role="tabpanel" aria-labelledby="tab-page" tabindex="0" hidden>
+    <section id="panel-page" class="pp-panel" aria-labelledby="heading-page">
+    <h2 id="heading-page" class="pc-sr">This page</h2>
     <section id="linkscan-card" class="pp-card pp-scan" hidden>
       <div class="pp-scan-head">
         <span class="w-label">Links on this page</span>
@@ -205,10 +201,12 @@
       <div id="linkscan-list" class="pp-rows" hidden></div>
       <div id="linkscan-cut" class="pp-note" hidden></div>
       <button id="linkscan-all" class="pp-link" type="button" aria-expanded="false" aria-controls="linkscan-list" hidden></button>
+      <!-- Before a check this says what the check sends; after one, what it did.
+           Written only by syncLinkNote and renderLinkScan. -->
       <div id="linkscan-note" class="pp-note" hidden></div>
     </section>
 
-    <!-- INDICATORS IN THE TEXT (tab 2). Deliberately a SEPARATE card from
+    <!-- INDICATORS IN THE TEXT. Deliberately a SEPARATE card from
          the link check above, and deliberately worded differently: the link
          check reads only href hostnames, this one reads the page's visible TEXT.
          They make different promises, so they must not share a note. Shipping
@@ -230,7 +228,9 @@
       <div id="iocscan-list" class="linkscan-list" hidden></div>
     </section>
 
-      <!-- Says why the tab has nothing to show; written only by syncPageNote. -->
+      <!-- Says why This page has no card, when the live check is off; written
+           only by syncPageNote. The part is not shown at all while a check runs,
+           before one was made, or on a page that cannot be checked. -->
       <p id="page-empty" class="pp-empty" hidden></p>
 
       <!-- Shown only while the worker's record says Guard declined a cookie
@@ -241,8 +241,9 @@
       </section>
     </section>
 
-    <section id="panel-browser" class="pp-panel" role="tabpanel" aria-labelledby="tab-browser" tabindex="0" hidden>
-    <!-- THIS BROWSER (tab 3). One control does the whole thing: reserve the
+    <section id="panel-browser" class="pp-panel" aria-labelledby="heading-browser">
+    <h2 id="heading-browser" class="pc-sr">This browser</h2>
+    <!-- THIS BROWSER. One control does the whole thing: reserve the
          identity AND route through it, asking for the permission it needs
          at the moment it needs it. No second step, no hand-off. -->
     <section id="identity-card" class="pp-card pp-identity" hidden>
@@ -272,7 +273,7 @@
       <div id="device-status" class="w-note" hidden></div>
     </section>
 
-    <!-- THE LAST 24 HOURS (tab 3), signed in or not. Three figures, each shown
+    <!-- THE LAST 24 HOURS, signed in or not. Three figures, each shown
          only once the read behind it has answered (a zero is a figure here), then
          the 24 hour strip drawn from the same report, one caption for today's
          tally and the way to the full view. -->
@@ -305,29 +306,17 @@
 
     </section>
   </main>
-  <div id="tab-fade" class="pp-fade" aria-hidden="true" hidden></div>
+  <div id="popup-fade" class="pp-fade" aria-hidden="true" hidden></div>
   </div>
 
-  <!-- One footer, one slot per tab; the frame shows the selected tab's slot
-       and takes no space when it has nothing to show. -->
-  <footer class="pp-footer">
-    <div id="footer-site" class="pp-foot-slot">
-      <div id="footer-actions" class="pp-actions" hidden>
-        <button id="btn-console" class="pp-btn primary" hidden>Open in console</button>
-        <button id="btn-dossier" class="pp-btn" hidden>Copy dossier</button>
-      </div>
-      <div id="privacy-line" class="pp-privacy" hidden><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="privacy-text"></span></div>
+  <!-- One footer for the whole popup, the same wherever the reader has
+       scrolled. It takes no space while it holds nothing visible. -->
+  <footer id="footer-site" class="pp-footer">
+    <div id="footer-actions" class="pp-actions" hidden>
+      <button id="btn-console" class="pp-btn primary" hidden>Open in console</button>
+      <button id="btn-dossier" class="pp-btn" hidden>Copy dossier</button>
     </div>
-    <div id="footer-page" class="pp-foot-slot" hidden>
-      <div id="footer-page-line" class="w-privacy" hidden>Link check sends link hostnames only, never paths or the page.</div>
-    </div>
-    <!-- This browser: Active Shield read live, and the console link when signed
-         in. Both are direct children, hidden until their read lands, so the
-         footer takes no space while it has nothing to show. -->
-    <div id="footer-browser" class="pp-foot-slot" hidden>
-      <span id="shield-readout" class="pp-shield" hidden><span id="shield-dot" class="pp-shield-dot" aria-hidden="true"></span><span id="shield-text"></span></span>
-      <a id="browser-console" class="pp-foot-link" hidden>Open console <span aria-hidden="true">&#8599;</span></a>
-    </div>
+    <div id="privacy-line" class="pp-privacy" hidden><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="privacy-text"></span></div>
   </footer>
 
   <script src="popup.js"></script>

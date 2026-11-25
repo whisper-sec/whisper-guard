@@ -113,13 +113,13 @@
   carries traffic through the egress endpoint, and the two refusals really keep the identity.</p>
   <div class="grid">
     <figure>
-      <img src="popup-protect-offer.png" alt="The This browser tab offering to protect this browser, with the chip NOT ENROLLED">
+      <img src="popup-protect-offer.png" alt="The popup scrolled to This browser, offering to protect this browser, with the chip NOT ENROLLED">
       <figcaption><strong>Offered.</strong> One chip, one sentence and one button, and it is the only
-      primary action on the tab. The chip says what this browser is on the network (NOT ENROLLED);
+      primary action in that part of the popup. The chip says what this browser is on the network (NOT ENROLLED);
       the sentence says there is no Whisper identity yet.</figcaption>
     </figure>
     <figure>
-      <img src="popup-protected.png" alt="The This browser tab with this browser routed through its Whisper identity, the chip VERIFIED">
+      <img src="popup-protected.png" alt="The popup scrolled to This browser, with this browser routed through its Whisper identity, the chip VERIFIED">
       <figcaption><strong>Protected.</strong> Address, reverse-DNS name, and the public RDAP
       record anyone can check, then the routing sentence with its limits (private windows, WebRTC)
       on a smaller line under it. A name too long for its line keeps its zone in view and
@@ -128,22 +128,22 @@
       browser's stays in full ink. The same button turns routing off.</figcaption>
     </figure>
     <figure>
-      <img src="popup-protect-refused.png" alt="The This browser tab after the routing permission was refused">
+      <img src="popup-protect-refused.png" alt="The popup scrolled to This browser, after the routing permission was refused">
       <figcaption><strong>Permission refused.</strong> The identity still stands, VERIFIED,
       with its proof link. The refusal cost the routing and only the routing, and the sentence
       names it instead of failing quietly; the one button asks for the permission again.</figcaption>
     </figure>
     <figure>
-      <img src="popup-protect-conflict.png" alt="The This browser tab when another extension owns the proxy setting">
+      <img src="popup-protect-conflict.png" alt="The popup scrolled to This browser, when another extension owns the proxy setting">
       <figcaption><strong>Proxy taken.</strong> A VPN or proxy manager holds the browser's
       single-owner proxy setting. Named in one sentence, with an amber outline on the card and on
       the one button, which opens the page that fixes it. The identity is untouched.</figcaption>
     </figure>
     <figure>
-      <img src="popup-signedout.png" alt="The This browser tab signed out: the sign-in card, the last 24 hours and the Active Shield readout">
+      <img src="popup-signedout.png" alt="The popup scrolled to This browser, signed out: the sign-in card and the last 24 hours">
       <figcaption><strong>Signed out.</strong> One action, with your real position on the keyless
-      tier and an honest sentence about what an account unlocks. The last 24 hours and the
-      Active Shield state in the footer work without one.</figcaption>
+      tier and an honest sentence about what an account unlocks. The last 24 hours works
+      without one.</figcaption>
     </figure>
   </div>
 
@@ -159,15 +159,15 @@
   4.49:1 on the interstitial's tinted ground, one hundredth under the floor.</p>
   <div class="grid">
     <figure>
-      <img src="popup-signedout-light.png" alt="The This browser tab signed out, light colour scheme">
+      <img src="popup-signedout-light.png" alt="The popup scrolled to This browser, signed out, light colour scheme">
       <figcaption><strong>This browser, signed out.</strong></figcaption>
     </figure>
     <figure>
-      <img src="popup-protect-offer-light.png" alt="The This browser tab offering to protect this browser, light colour scheme">
+      <img src="popup-protect-offer-light.png" alt="The popup scrolled to This browser, offering to protect this browser, light colour scheme">
       <figcaption><strong>This browser, offering the one control.</strong></figcaption>
     </figure>
     <figure>
-      <img src="popup-protected-light.png" alt="The This browser tab with this browser routed, light colour scheme">
+      <img src="popup-protected-light.png" alt="The popup scrolled to This browser, with this browser routed, light colour scheme">
       <figcaption><strong>This browser, protected.</strong></figcaption>
     </figure>
     <figure class="wide">
@@ -246,7 +246,7 @@
       <figcaption><strong>The same control, in daylight.</strong> Offered, not yet taken: this
       browser has no Whisper identity in either capture, which is what a signed-in reader sees
       before the one click. The enrolled and routed states, with the address, the RDAP record and
-      the limits, are in the tab captures above.</figcaption>
+      the limits, are in the popup captures above.</figcaption>
     </figure>
     <figure>
       <img src="popup-activity.png" alt="The popup's last 24 hours card">
@@ -297,13 +297,13 @@
   <h2>What it handled, quietly</h2>
   <div class="grid">
     <figure>
-      <img src="popup-today.png" alt="The This browser tab showing today's quiet tally">
+      <img src="popup-today.png" alt="The popup scrolled to This browser, showing today's quiet tally">
       <figcaption><strong>Counted, never announced.</strong> Held clicks, verified identities and
-      declined cookie prompts land in one figure and one calm caption on the This browser tab, shown on your own click. There is
+      declined cookie prompts land in one figure and one calm caption in the This browser part of the popup, shown on your own click. There is
       no toast anywhere: the extension holds no notifications permission at all. The record is a
       category and a count, keyed by today's date, so it resets on its own and can never learn a
       site you visited. The host whose click was just held is listed, with a one-click clear, on
-      the This site tab, so a session block is never a dead end.</figcaption>
+      the This site part of the popup, so a session block is never a dead end.</figcaption>
     </figure>
   </div>
 

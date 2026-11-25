@@ -16,16 +16,15 @@
 // not exercised here.
 
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
-import { E2ENetwork, GRAPH_READ_HOST } from "./helpers/servers";
+import { E2ENetwork, GRAPH_READ_HOST, MOCK_API_KEY } from "./helpers/servers";
 import {
   badgeText,
   extensionPage,
   iconState,
   launchExtension,
   openPopup,
-  otherPopupTabsText,
   rebindWorker,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
   setSettings,
   stopWorker,
@@ -163,24 +162,86 @@ test("a tab Guard has not checked shows the not-yet-checked card and sends nothi
   await rebindWorker(ext);
 });
 
-test("the other two tabs are never empty on a tab Guard has not checked", async () => {
-  const { page, tabId } = await visitUnchecked("unchecked-tabs-guard-e2e.com");
+test("on a page Guard has not checked the card leads, This page is not shown and This browser waits below", async () => {
+  const { page, tabId } = await visitUnchecked("unchecked-parts-guard-e2e.com");
   const popup = await openPopup(ext, tabId);
   await expect(popup.locator("#not-checked-view")).toBeVisible();
 
-  await selectPopupTab(popup, "page");
-  await expect(popup.locator("#page-empty")).toBeVisible();
-  await expect(popup.locator("#page-empty")).toHaveText(HEADING);
+  // The card says it all once: This page does not repeat its heading.
+  await expect(popup.locator("#panel-page")).toBeHidden();
+  await expect(popup.locator("#page-empty")).toBeHidden();
+  const heading = (await popup.locator("body").innerText()).split(HEADING).length - 1;
+  expect(heading, "the card's heading is repeated").toBe(1);
 
-  await selectPopupTab(popup, "browser");
+  // The card fills the first screen; This browser is below it, never empty.
+  const where = await popup.evaluate(() => {
+    const region = document.getElementById("popup-scroll")!.getBoundingClientRect();
+    return {
+      siteBottom: document.getElementById("panel-site")!.getBoundingClientRect().bottom,
+      browserTop: document.getElementById("panel-browser")!.getBoundingClientRect().top,
+      regionBottom: region.bottom,
+    };
+  });
+  expect(where.browserTop, "This browser starts above the first screen's foot").toBeGreaterThanOrEqual(where.regionBottom);
+  expect(where.browserTop).toBeGreaterThanOrEqual(where.siteBottom);
+  await scrollPopupTo(popup, "browser");
   await expect(popup.locator("#btn-dashboard")).toBeVisible();
   await expect(popup.locator("#signin-pitch")).toBeVisible();
-  expect((await otherPopupTabsText(popup)).every((t) => t.trim().length > 0)).toBe(true);
 
   await popup.close();
   await page.close();
   await rebindWorker(ext);
 });
+
+test("the console button is there for a signed-in reader on a page Guard has not checked, and the dossier is not", async () => {
+  const { page, tabId } = await visitUnchecked("unchecked-console-guard-e2e.com");
+  await rebindWorker(ext);
+  await setKey(ext, MOCK_API_KEY);
+  try {
+    const popup = await openPopup(ext, tabId);
+    await expect(popup.locator("#not-checked-view")).toBeVisible();
+    await expect(popup.locator("#btn-console")).toBeVisible({ timeout: 10_000 });
+    await expect(popup.locator("#btn-console")).toHaveText("Open in console");
+    await expect(popup.locator("#btn-dossier")).toBeHidden();
+    // Nothing was sent about the site, so there is no sent-line.
+    await expect(popup.locator("#privacy-line")).toBeHidden();
+    await popup.close();
+  } finally {
+    await setKey(ext, null);
+  }
+  await page.close();
+  await rebindWorker(ext);
+});
+
+for (const how of ["key", "click"] as const) {
+  test(`after Check this site now by ${how === "key" ? "a key press" : "a mouse click"}, focus stays inside This site`, async () => {
+    const { page, tabId } = await visitUnchecked(`unchecked-focus-${how}-guard-e2e.com`);
+    const popup = await openPopup(ext, tabId);
+    await expect(popup.locator("#not-checked-view")).toBeVisible();
+    await rebindWorker(ext);
+    if (how === "key") {
+      await popup.locator("#btn-check-now").focus();
+      await popup.keyboard.press("Enter");
+    } else {
+      // Not focused first: a click does not focus a button in every browser.
+      await popup.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await popup.locator("#btn-check-now").dispatchEvent("click");
+    }
+    await expect(popup.locator("#band-chip")).toHaveText("NO KNOWN THREAT");
+    await expect(popup.locator("#btn-check-now")).toBeHidden();
+    const focus = await popup.evaluate(() => {
+      const a = document.activeElement as HTMLElement | null;
+      return { id: a?.id ?? "", inside: !!a?.closest("#panel-site"), tabindex: document.getElementById("panel-site")!.tabIndex };
+    });
+    expect(focus.inside, `focus is on #${focus.id || "body"}, outside This site`).toBe(true);
+    expect(focus.id).toBe("panel-site");
+    // It is a place for focus to rest, never a stop of the Tab key.
+    expect(focus.tabindex).toBe(-1);
+    await popup.close();
+    await page.close();
+    await rebindWorker(ext);
+  });
+}
 
 test("Check this site now draws the verdict in place without reloading, and the toolbar follows", async () => {
   const host = "press-check-guard-e2e.com";

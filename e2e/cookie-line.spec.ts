@@ -114,7 +114,7 @@ test("the cookie line shows once Guard declined a prompt on the page, and its re
   const { page, tabId } = await declineOnBannerPage();
   await expect.poll(records, { timeout: 10_000 }).toEqual({ [`${PREFIX}${tabId}`]: true });
 
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await expect(popup.locator("#cookie-line")).toBeVisible();
   await expect(popup.locator("#cookie-line")).toHaveText(LINE);
   const below = await popup.evaluate(() => {
@@ -139,7 +139,7 @@ test("a reload of the same address, where the prompt is declined again, is recor
   await expect.poll(() => clicks(page), { timeout: 15_000 }).toEqual(["btn-reject"]);
   await expect.poll(records, { timeout: 10_000 }).toEqual({ [`${PREFIX}${tabId}`]: true });
 
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await expect(popup.locator("#cookie-line")).toBeVisible();
   await popup.close();
   await page.close();
@@ -153,7 +153,7 @@ test("no cookie line on a page where nothing was declined", async () => {
   await waitConsentArmed(tabId);
   expect(Object.keys(await records())).not.toContain(`${PREFIX}${tabId}`);
 
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await expect(popup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
   await expect(popup.locator("#cookie-line")).toHaveCount(1);
   await expect(popup.locator("#cookie-line")).toBeHidden();
@@ -171,7 +171,7 @@ test("a new page in the same tab drops the cookie line", async () => {
   await page.goto(`https://${SITE.plain}/`, { waitUntil: "domcontentloaded" });
   await expect.poll(async () => Object.keys(await records()), { timeout: 10_000 }).toEqual([]);
 
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await expect(popup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
   await expect(popup.locator("#cookie-line")).toHaveCount(1);
   await expect(popup.locator("#cookie-line")).toBeHidden();
@@ -189,7 +189,7 @@ test("a prompt declined while the popup is open brings the line in without reope
     expect(Object.keys(await records())).not.toContain(`${PREFIX}${tabId}`);
 
     // Without Active Shield, opening the popup is what arms the page.
-    const popup = await openPopup(ext, tabId, { popupTab: "page" });
+    const popup = await openPopup(ext, tabId, { section: "page" });
     await waitConsentArmed(tabId);
     await expect(popup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
     await expect(popup.locator("#cookie-line")).toHaveCount(1);
@@ -217,11 +217,12 @@ test("with the live check off the cookie line is not shown, though the record is
   await expect.poll(records, { timeout: 10_000 }).toEqual({ [`${PREFIX}${tabId}`]: true });
   await setSettings(ext, { cloudCheck: false });
   try {
-    const popup = await openPopup(ext, tabId, { popupTab: "page" });
+    const popup = await openPopup(ext, tabId, { section: "page" });
     await expect(popup.locator("#page-empty")).toBeVisible({ timeout: 10_000 });
     await expect(popup.locator("#cookie-line")).toHaveCount(1);
     await expect(popup.locator("#cookie-line")).toBeHidden();
-    await expect(popup.locator(".pp-footer")).toBeHidden();
+    // With no link check to describe, the footer says only what was sent: nothing.
+    await expect(popup.locator("#privacy-line")).toContainText("nothing was sent");
     await popup.close();
   } finally {
     await setSettings(ext, { cloudCheck: true });

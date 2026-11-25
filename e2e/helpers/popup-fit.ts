@@ -1,98 +1,26 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// How much of the popup's 600 px the This browser tab uses, measured on any
-// page that renders it (the real extension, or the shimmed file in Gecko).
+// What the popup's layout checks share: the second, wider-glyph measure and the
+// routed card's lines, which hold on any page that renders the popup (the real
+// extension, or the shimmed file in Gecko).
 
 import { expect, test, type Page } from "@playwright/test";
-
-export interface TabFit {
-  /** scrollHeight - clientHeight of the content region: above 0 the tab scrolls. */
-  over: number;
-  /** Pixels left under the last block inside the region's padding (negative when it scrolls). */
-  spare: number;
-  scroll: number;
-  client: number;
-  width: number;
-  identity: number;
-  activity: number;
-  footer: number;
-  sentenceLines: number;
-  moreLines: number;
-  fade: boolean;
-}
-
-/**
- * Measured only once everything the tab holds has been drawn: the fonts are
- * loaded and the footer's readout is on screen (it is drawn after an
- * asynchronous permission read and takes part of the region, so a read before
- * it would pass for the wrong reason). A caller measuring the routed state
- * also waits for the card to be complete (the chip VERIFIED and its three
- * rows) before calling.
- */
-export async function measureBrowserTab(page: Page): Promise<TabFit> {
-  await page.evaluate(() => document.fonts.ready);
-  await expect
-    .poll(() => page.evaluate(() => document.fonts.check("12.5px Lato") && document.fonts.check("12px 'JetBrains Mono'")))
-    .toBe(true);
-  await expect(page.locator("#shield-readout")).toBeVisible();
-  const m = await page.locator("#tab-content").evaluate((r) => {
-    const box = (id: string): number => document.getElementById(id)?.getBoundingClientRect().height ?? 0;
-    const last = [...document.getElementById("panel-browser")!.children].filter((e) => !(e as HTMLElement).hidden).pop()!;
-    const end = last.getBoundingClientRect().bottom - r.getBoundingClientRect().top;
-    const text = document.querySelector("#route-line .pc-route-text") as HTMLElement | null;
-    const more = document.querySelector("#route-line .pc-route-more") as HTMLElement | null;
-    const lh = (e: HTMLElement): number => parseFloat(getComputedStyle(e).lineHeight);
-    const moreBox = more?.getBoundingClientRect().height ?? 0;
-    return {
-      s: r.scrollHeight,
-      c: r.clientHeight,
-      w: r.clientWidth,
-      spare: r.clientHeight - end - parseFloat(getComputedStyle(r).paddingBottom),
-      identity: box("identity-card") || box("signin-pitch"),
-      activity: box("activity-card"),
-      footer: document.querySelector(".pp-footer")?.getBoundingClientRect().height ?? 0,
-      sentenceLines: text ? Math.round((text.getBoundingClientRect().height - moreBox) / lh(text)) : 0,
-      moreLines: more ? Math.round(moreBox / lh(more)) : 0,
-    };
-  });
-  return {
-    over: m.s - m.c,
-    spare: m.spare,
-    scroll: m.s,
-    client: m.c,
-    width: m.w,
-    identity: m.identity,
-    activity: m.activity,
-    footer: m.footer,
-    sentenceLines: m.sentenceLines,
-    moreLines: m.moreLines,
-    fade: await page.locator("#tab-fade").isVisible(),
-  };
-}
-
-export function describeFit(f: TabFit): string {
-  return (
-    `over ${f.over} spare ${f.spare.toFixed(1)} scroll ${f.scroll} client ${f.client} width ${f.width} ` +
-    `identity ${f.identity.toFixed(1)} activity ${f.activity.toFixed(1)} footer ${f.footer.toFixed(1)} ` +
-    `sentence-lines ${f.sentenceLines} second-line-lines ${f.moreLines}`
-  );
-}
 
 /**
  * How much wider every glyph is drawn for the second measure, in em of its own
  * font size: about 9% on Lato text and 6.7% on mono. Renderers do not all set
  * text alike. Linux headless Chromium, which runs the Gecko and Blink
  * comparison in CI, rounds each glyph's advance to a whole pixel, which at
- * 11px JetBrains Mono is 0.036em a glyph. A tab that fits only with no room at
- * its line ends passes on one machine and wraps a line on the next, so a fit
+ * 11px JetBrains Mono is 0.036em a glyph. A layout that holds only with no room
+ * at its line ends passes on one machine and wraps a line on the next, so a fit
  * is measured twice, as drawn and with every glyph this much wider, and must
- * hold both times. What that is meant to cover: a tab that holds widened on
- * one renderer should fit as drawn on a renderer that differs only in setting
+ * hold both times. What that is meant to cover: a layout that holds widened on
+ * one renderer should hold as drawn on a renderer that differs only in setting
  * text up to 0.04em a glyph wider; other differences, such as line heights or
  * fonts, are not covered. In CI's headless Blink the widening comes on top of
  * its own rounding.
- * On the routed tab, with a name of a real one's length, every line held up
+ * On the routed card, with a name of a real one's length, every line held up
  * to 0.06em in Chromium and Firefox on macOS and in Linux headless Chromium.
  */
 export const WIDER_EM = 0.04;
@@ -100,10 +28,22 @@ export const WIDER_EM = 0.04;
 /**
  * The letter spacing WCAG 1.4.12 lets a reader set with their own style
  * (0.12 times the font size). The routed card's layout must survive it: the
- * tab may scroll then, but the Name keeps to one line with its zone whole, and
+ * popup may scroll then, but the Name keeps to one line with its zone whole, and
  * the limits still start under the dot.
  */
 export const TEXT_SPACING_EM = 0.12;
+
+/** Resolves after two animation frames: layout has run, and whatever watches a
+ *  size (a ResizeObserver, the fade) has seen the result. */
+export function twoFrames(page: Page): Promise<void> {
+  return page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+}
+
+/** The page's fonts are loaded and the layout they give has been drawn. */
+export async function settledLayout(page: Page): Promise<void> {
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await twoFrames(page);
+}
 
 /**
  * Run `measure` with every element's own letter spacing raised by `em` of its
@@ -128,7 +68,7 @@ export async function withWiderGlyphs<T>(page: Page, em: number, measure: () => 
     };
   }, em);
   // Two frames, so whatever watches a size (the fade, the Name's zone) has seen it.
-  const frames = (): Promise<void> => page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+  const frames = (): Promise<void> => twoFrames(page);
   try {
     await frames();
     return await measure();
@@ -140,29 +80,6 @@ export async function withWiderGlyphs<T>(page: Page, em: number, measure: () => 
     });
     await frames();
   }
-}
-
-/** The tab's fit with every glyph `em` wider. */
-export async function measureBrowserTabWider(page: Page, em = WIDER_EM): Promise<TabFit> {
-  return withWiderGlyphs(page, em, () => measureBrowserTab(page));
-}
-
-/**
- * The tab fits its region as drawn and with every glyph WIDER_EM wider: no
- * scrolling and no fade, both times. Both measures go into the test's
- * annotations, and a failure of the room names the numbers.
- */
-export async function expectBrowserTabFits(page: Page, label: string): Promise<void> {
-  const plain = await measureBrowserTab(page);
-  const wider = await measureBrowserTabWider(page);
-  test.info().annotations.push({ type: label, description: `${describeFit(plain)} | ${WIDER_EM}em wider: ${describeFit(wider)}` });
-  expect(plain.over, `${label}: the tab runs ${plain.over}px past the region (${describeFit(plain)})`).toBeLessThanOrEqual(0);
-  expect(plain.fade, `${label}: the fade shows`).toBe(false);
-  expect(
-    wider.over,
-    `${label}: with every glyph ${WIDER_EM}em wider, the tab runs ${wider.over}px past the region (${describeFit(wider)})`,
-  ).toBeLessThanOrEqual(0);
-  expect(wider.fade, `${label}: with every glyph ${WIDER_EM}em wider, the fade shows`).toBe(false);
 }
 
 /**
@@ -222,4 +139,84 @@ export async function expectRoutedCardLayout(page: Page, label: string): Promise
     expect(m.zoneFromEdge, `${at}: the zone ends at the cell's right edge, whole`).toBeCloseTo(0, 0);
     expect(m.limitsFromDot, `${at}: the routing limits start under the dot`).toBeCloseTo(0, 0);
   }
+}
+
+/** How the first screen of a checked site sits against the fade over the region's foot. */
+export interface FirstScreen {
+  /** Where the fade starts, read from the element itself, in page pixels. */
+  fadeTop: number;
+  /** The fade's own height. */
+  fadeHeight: number;
+  /** Pixels between the lowest block that must be clear of the fade and the fade's top. */
+  margin: number;
+  /** The block that sits lowest of those that must be clear. */
+  lowest: string;
+  /** Pixels between the facts card's own foot and the fade's top (for the record, not asserted). */
+  cardMargin: number;
+  /** Facts rows drawn. */
+  rungs: number;
+  scrollTop: number;
+}
+
+/**
+ * Where the first screen of a clean site ends. The verdict card, its chips and
+ * every facts row must end above the top of the fade, which is read from the
+ * element (never a constant: its height is a design value that can move). Read
+ * once everything is drawn, at the top of the scroll, with the fade shown: a
+ * fade that is not shown would mean the popup has nothing below it, and the
+ * measurement would not be of this layout.
+ */
+export async function measureFirstScreen(page: Page): Promise<FirstScreen> {
+  await page.evaluate(() => document.fonts.ready);
+  await expect
+    .poll(() => page.evaluate(() => document.fonts.check("12.5px Lato") && document.fonts.check("12px 'JetBrains Mono'")))
+    .toBe(true);
+  await expect(page.locator("#popup-fade")).toBeVisible();
+  return page.evaluate(() => {
+    const region = document.getElementById("popup-scroll") as HTMLElement;
+    const fade = document.getElementById("popup-fade") as HTMLElement;
+    const fadeBox = fade.getBoundingClientRect();
+    const blocks: [string, Element][] = [
+      ["verdict card", document.getElementById("host-row")!],
+      ...(document.getElementById("site-chips")!.hidden ? [] : ([["chips", document.getElementById("site-chips")!]] as [string, Element][])),
+      ...[...document.querySelectorAll("#chain-mount .ch-rung")].map((e, i): [string, Element] => [`fact ${i + 1}`, e]),
+    ];
+    let lowest = "";
+    let bottom = -Infinity;
+    for (const [name, e] of blocks) {
+      const b = e.getBoundingClientRect().bottom;
+      if (b > bottom) {
+        bottom = b;
+        lowest = name;
+      }
+    }
+    return {
+      fadeTop: fadeBox.top,
+      fadeHeight: fadeBox.height,
+      margin: fadeBox.top - bottom,
+      lowest,
+      cardMargin: fadeBox.top - document.getElementById("chain-card")!.getBoundingClientRect().bottom,
+      rungs: document.querySelectorAll("#chain-mount .ch-rung").length,
+      scrollTop: region.scrollTop,
+    };
+  });
+}
+
+/**
+ * The first screen of a clean site holds the verdict card, its chips and all
+ * seven facts clear of the fade, as drawn and with every glyph WIDER_EM wider.
+ * Both margins go into the test's annotations, and a failure names them.
+ */
+export async function expectFirstScreen(page: Page, label: string): Promise<{ plain: FirstScreen; wider: FirstScreen }> {
+  const plain = await measureFirstScreen(page);
+  const wider = await withWiderGlyphs(page, WIDER_EM, () => measureFirstScreen(page));
+  const say = (m: FirstScreen): string =>
+    `${m.margin.toFixed(1)} px under ${m.lowest} (the whole facts card ${m.cardMargin.toFixed(1)} px; fade ${m.fadeHeight} px from ${m.fadeTop.toFixed(1)})`;
+  test.info().annotations.push({ type: label, description: `as drawn ${say(plain)} | ${WIDER_EM}em wider ${say(wider)}` });
+  for (const [how, m] of [["as drawn", plain], [`${WIDER_EM}em wider`, wider]] as const) {
+    expect(m.scrollTop, `${label}, ${how}: the popup is at the top`).toBe(0);
+    expect(m.rungs, `${label}, ${how}: all seven facts are drawn`).toBe(7);
+    expect(m.margin, `${label}, ${how}: the ${m.lowest} runs into the fade (${say(m)})`).toBeGreaterThanOrEqual(0);
+  }
+  return { plain, wider };
 }

@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// e2e: THE POPUP FRAME AND ITS THREE TABS.
+// e2e: THE POPUP FRAME AND ITS ONE SCROLL.
 //
-// The popup is a fixed 400 x 600 frame: a header, a tab bar, one scrolling
-// content region and a footer pinned to the bottom edge, with the panel's
-// blocks split over This site, This page and This browser. Each claim is
-// measured against the built extension:
+// The popup is a fixed 400 x 600 frame: a header with a line under it, one
+// scrolling region and a footer pinned to the bottom edge. The region holds
+// three parts one after the other (This site, This page, This browser). Each
+// claim is measured against the built extension:
 //
 //   - the frame holds its size and only the content region scrolls;
-//   - every block still exists, under the tab that holds it, with no id twice;
-//   - the tabs follow the WAI-ARIA pattern (roles, arrow keys, Tab order);
-//   - a tab with nothing to show says why, in one sentence;
+//   - the popup opens at the top, and again at the top after Re-check;
+//   - no tab role of any kind is left, and each part has a heading;
+//   - every block still exists, in the part that holds it, with no id twice;
+//   - one footer, the same wherever the reader has scrolled;
+//   - "Open in console" for a signed-in reader, whatever the page;
+//   - the page part says why it is empty, or is not shown, never echoing the
+//     site's own sentence;
 //   - the frame holds in the dark and the light scheme;
-//   - the header is one header, whatever the tab;
-//   - a panel that was shown once does not replay its entrance animations;
+//   - the header is one row, with room for one more button;
 //   - a soft fade above the footer shows while content runs on below.
 //
-// That choosing a tab sends nothing is proved at the message layer in
-// firefox-render.spec.ts. The popup is opened here as a page of the
-// extension, not as a toolbar window, so the sizes are those of its own box.
+// The popup is opened here as a page of the extension, not as a toolbar
+// window, so the sizes are those of its own box. That scrolling sends nothing
+// is proved at the message layer in firefox-render.spec.ts.
 
 import { test, expect, type Page } from "@playwright/test";
 import { E2ENetwork, MOCK_API_KEY } from "./helpers/servers";
@@ -27,24 +30,24 @@ import {
   launchExtension,
   openGraphDrawers,
   openPopup,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
   setSettings,
   visit,
   waitForIcon,
   type Extension,
-  type PopupTab,
 } from "./helpers/extension";
-import { WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
+import { settledLayout, WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
+import { CONSOLE_URL, GRAPH_HOST } from "../src/shared/config";
 import { compact3 } from "../src/shared/spark";
 
 let net: E2ENetwork;
 let ext: Extension;
 
-const HOST = "tabs-full-guard-e2e.com";
-const SLOW = "tabs-slow-guard-e2e.com";
+const HOST = "frame-full-guard-e2e.com";
+const SLOW = "frame-slow-guard-e2e.com";
 // A site with a threat factor, so "Why this verdict" has something to show.
-const FLAGGED = "tabs-flagged-guard-e2e.com";
+const FLAGGED = "frame-flagged-guard-e2e.com";
 
 test.beforeAll(async () => {
   net = new E2ENetwork();
@@ -102,7 +105,7 @@ test.beforeEach(async () => {
 
 const LIVE_RUNG = "#chain-mount .ch-rung.ch-live";
 
-/** A popup on a clean host with the chain drawn, on This site. */
+/** A popup on a clean host with the chain drawn, at the top. */
 async function openSite(opts: { colorScheme?: "dark" | "light" } = {}): Promise<{ popup: Page; page: Page; tabId: number }> {
   const { page, tabId } = await visit(ext, `https://${HOST}/`);
   await waitForIcon(ext, tabId, ["benign", "unknown"]);
@@ -136,18 +139,31 @@ async function box(popup: Page, selector: string): Promise<Box> {
   });
 }
 
-async function frame(popup: Page): Promise<{ body: Box; header: Box; tabs: Box; footer: Box; region: Box }> {
+async function frame(popup: Page): Promise<{ body: Box; header: Box; footer: Box; region: Box }> {
   return {
     body: await box(popup, "body"),
     header: await box(popup, ".pp-header"),
-    tabs: await box(popup, "#tab-bar"),
     footer: await box(popup, ".pp-footer"),
-    region: await box(popup, "#tab-content"),
+    region: await box(popup, "#popup-scroll"),
   };
 }
 
-const selected = (popup: Page): Promise<string[]> =>
-  popup.locator('[role="tab"][aria-selected="true"]').evaluateAll((els) => els.map((e) => e.id));
+/** Scroll the region to `y` (or its end), wait two frames, return where it stopped. */
+async function scrollRegion(popup: Page, y: number | "end"): Promise<number> {
+  return popup.locator("#popup-scroll").evaluate(async (r, to) => {
+    r.scrollTop = to === "end" ? r.scrollHeight : to;
+    await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    return r.scrollTop;
+  }, y);
+}
+
+const scrollTopOf = (popup: Page): Promise<number> => popup.locator("#popup-scroll").evaluate((r) => r.scrollTop);
+
+/** How often a sentence is on the popup as text a reader can see. */
+async function timesShown(popup: Page, sentence: string): Promise<number> {
+  const body = await popup.locator("body").innerText();
+  return body.split(sentence).length - 1;
+}
 
 // ------------------------------------------------------------------------ T1
 
@@ -160,23 +176,18 @@ test("the popup is a fixed 400 x 600 frame and only the content region scrolls",
     expect([f.body.width, f.body.height]).toEqual([400, 600]);
     expect(f.header.height).toBe(52);
     expect(f.header.y).toBe(0);
+    expect(f.region.y, "the region starts right under the header").toBe(f.header.bottom);
     expect(f.footer.bottom).toBe(600);
-    await expect(popup.locator("#tab-site")).toHaveAttribute("aria-selected", "true");
-    await expect(popup.locator("#panel-site")).toBeVisible();
-    await expect(popup.locator("#panel-page")).toBeHidden();
-    await expect(popup.locator("#panel-browser")).toBeHidden();
   }
 
-  // A short panel fills the region to its foot, and nothing scrolls.
-  const fit = await popup.evaluate(() => {
-    const region = document.getElementById("tab-content") as HTMLElement;
-    const panel = document.getElementById("panel-site") as HTMLElement;
-    const cs = getComputedStyle(region);
-    const floor = region.getBoundingClientRect().bottom - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth);
-    return { gap: Math.abs(panel.getBoundingClientRect().bottom - floor), over: region.scrollHeight - region.clientHeight };
+  // The line under the header is the header's own bottom border, inside its 52 px.
+  const line = await popup.locator(".pp-header").evaluate((h) => {
+    const cs = getComputedStyle(h);
+    return { width: cs.borderBottomWidth, style: cs.borderBottomStyle, color: cs.borderBottomColor };
   });
-  expect(fit.gap).toBeLessThanOrEqual(1);
-  expect(fit.over).toBeLessThanOrEqual(0);
+  expect(line.width).toBe("1px");
+  expect(line.style).toBe("solid");
+  expect(line.color).toBe(await token(popup, "--w-line", "backgroundColor"));
 
   // Make it overflow, by a device of the test: one tall element.
   await popup.locator("#panel-site").evaluate((p) => {
@@ -186,7 +197,7 @@ test("the popup is a fixed 400 x 600 frame and only the content region scrolls",
     p.appendChild(tall);
   });
   const before = await frame(popup);
-  const overflow = await popup.locator("#tab-content").evaluate((r) => ({
+  const overflow = await popup.locator("#popup-scroll").evaluate((r) => ({
     scrollable: r.scrollHeight > r.clientHeight,
     overflowY: getComputedStyle(r).overflowY,
   }));
@@ -197,11 +208,35 @@ test("the popup is a fixed 400 x 600 frame and only the content region scrolls",
   // frame would not, though a click would still scroll its target into view).
   await popup.mouse.move(200, 300);
   await popup.mouse.wheel(0, 300);
-  await expect.poll(() => popup.locator("#tab-content").evaluate((r) => r.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => scrollTopOf(popup)).toBeGreaterThan(0);
 
   const after = await frame(popup);
-  for (const part of ["header", "tabs", "footer"] as const) expect(after[part]).toEqual(before[part]);
+  for (const part of ["header", "footer"] as const) expect(after[part]).toEqual(before[part]);
   expect(await popup.evaluate(() => window.scrollY)).toBe(0);
+  expect(await popup.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+
+  await popup.close();
+  await page.close();
+});
+
+test("the popup opens at the top of the scroll, and again at the top after Re-check", async () => {
+  const { popup, page } = await openSite();
+  const room = await popup.locator("#popup-scroll").evaluate((r) => r.scrollHeight - r.clientHeight);
+  expect(room, "control: there is something to scroll").toBeGreaterThan(200);
+  expect(await scrollTopOf(popup), "it opened at the top").toBe(0);
+
+  await scrollPopupTo(popup, "browser");
+  expect(await scrollTopOf(popup), "control: the test really scrolled down").toBeGreaterThan(100);
+
+  await Promise.all([popup.waitForEvent("load"), popup.locator("#btn-refresh").click()]);
+  await popup.locator(LIVE_RUNG).first().waitFor({ timeout: 20_000 });
+  expect(await scrollTopOf(popup), "after Re-check it is at the top again").toBe(0);
+  // Content that arrives later does not carry the view away from the top:
+  // read again once the graph size and the last 24 hours have been drawn.
+  await expect(popup.locator("#scale")).toBeVisible();
+  await expect(popup.locator("#fig-destinations")).toBeVisible();
+  await settledLayout(popup);
+  expect(await scrollTopOf(popup)).toBe(0);
 
   await popup.close();
   await page.close();
@@ -209,7 +244,27 @@ test("the popup is a fixed 400 x 600 frame and only the content region scrolls",
 
 // ------------------------------------------------------------------------ T2
 
-// Block id -> the panel that holds it (header and footer ids are in none).
+test("no tab role of any kind is left, and the three parts are in no tab order of their own", async () => {
+  const { popup, page } = await openSite();
+  // Every role that starts with "tab": the tab, its list and its panel.
+  await expect(popup.locator('[role^="tab"]'), "an element still has a tab role").toHaveCount(0);
+  for (const role of ["tab", "tablist"] as const) {
+    await expect(popup.getByRole(role, { includeHidden: true }), role).toHaveCount(0);
+  }
+  // Nothing of the old tab bar, its dot or its keyboard wiring is left in the markup.
+  const old = await popup.evaluate(() => [...document.querySelectorAll("[id]")].map((e) => e.id).filter((id) => /^tab-/.test(id)));
+  expect(old).toEqual([]);
+
+  // The three parts are in no tab order of their own.
+  const stops = await popup.evaluate(() =>
+    ["panel-site", "panel-page", "panel-browser"].map((id) => (document.getElementById(id) as HTMLElement).tabIndex),
+  );
+  expect(stops).toEqual([-1, -1, -1]);
+  await popup.close();
+  await page.close();
+});
+
+// Block id -> the part that holds it (header and footer ids are in none).
 const HOMES: Record<string, string | null> = {
   "host-row": "panel-site",
   "checking-view": "panel-site",
@@ -240,22 +295,74 @@ const HOMES: Record<string, string | null> = {
   "activity-destinations": "panel-browser",
   "activity-flagged": "panel-browser",
   "today-row": "panel-browser",
-  "shield-readout": null,
-  "browser-console": null,
   "footer-actions": null,
+  "btn-console": null,
+  "btn-dossier": null,
   "privacy-line": null,
-  "scale": null,
+  scale: null,
   "btn-refresh": null,
   "btn-settings": null,
 };
 
-test("every block sits under the tab that holds it, and no id occurs twice", async () => {
+test("three parts follow one another, each with a heading, every block is in its part and no id occurs twice", async () => {
   const { popup, page } = await openSite();
+
+  // The parts are the region's direct children, in this order, with a heading each.
+  const parts = await popup.locator("#popup-scroll").evaluate((r) =>
+    [...r.children].map((c) => {
+      const h = document.getElementById(c.getAttribute("aria-labelledby") ?? "");
+      return {
+        id: c.id,
+        tag: c.tagName.toLowerCase(),
+        heading: h?.tagName.toLowerCase() ?? null,
+        words: h?.textContent ?? null,
+        role: c.getAttribute("role"),
+        hidden: c.hasAttribute("hidden"),
+        tabindex: c.getAttribute("tabindex"),
+      };
+    }),
+  );
+  expect(parts.map((p) => [p.id, p.tag, p.heading, p.words])).toEqual([
+    ["panel-site", "section", "h2", "This site"],
+    ["panel-page", "section", "h2", "This page"],
+    ["panel-browser", "section", "h2", "This browser"],
+  ]);
+  expect(parts.map((p) => p.role)).toEqual([null, null, null]);
+  // The site part is the one the popup moves focus to after a press: -1, never in the tab order.
+  expect(parts.map((p) => p.tabindex)).toEqual(["-1", null, null]);
+
+  // Each heading is read by a screen reader and takes no room on screen.
+  const headings = await popup.locator("#popup-scroll > section > h2").evaluateAll((hs) =>
+    hs.map((h) => {
+      const r = h.getBoundingClientRect();
+      return { w: r.width, h: r.height, shown: getComputedStyle(h).display !== "none" && getComputedStyle(h).visibility !== "hidden" };
+    }),
+  );
+  expect(headings).toHaveLength(3);
+  for (const h of headings) {
+    expect(h.shown).toBe(true);
+    expect(h.w * h.h, "a heading for screen readers takes no room on screen").toBeLessThanOrEqual(1);
+  }
+  await expect(popup.getByRole("heading", { name: "This site", level: 2 })).toHaveCount(1);
+  await expect(popup.getByRole("heading", { name: "This page", level: 2 })).toHaveCount(1);
+  await expect(popup.getByRole("heading", { name: "This browser", level: 2 })).toHaveCount(1);
+
+  // The parts sit one under another, 10 px apart, in the region's own padding.
+  const stack = await popup.evaluate(() =>
+    ["panel-site", "panel-page", "panel-browser"].map((id) => {
+      const r = document.getElementById(id)!.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    }),
+  );
+  expect(stack[0]!.bottom, "This site ends before This page starts").toBeLessThanOrEqual(stack[1]!.top);
+  expect(stack[1]!.top - stack[0]!.bottom).toBe(10);
+  expect(stack[2]!.top - stack[1]!.bottom).toBe(10);
+
   const homes = await popup.evaluate((ids) => {
     const out: Record<string, string | null> = {};
     for (const id of ids) {
       const node = document.getElementById(id);
-      out[id] = node ? (node.closest('[role="tabpanel"]')?.id ?? null) : "MISSING";
+      out[id] = node ? (node.closest("#popup-scroll > section")?.id ?? null) : "MISSING";
     }
     return out;
   }, Object.keys(HOMES));
@@ -268,17 +375,11 @@ test("every block sits under the tab that holds it, and no id occurs twice", asy
   });
   expect(twice).toEqual([]);
 
-  await selectPopupTab(popup, "site");
   // "Why this verdict" shows only for a threat factor or a score above zero,
   // so it is asserted on a flagged site below, not on this clean one.
-  for (const id of ["host-row", "chain-card", "expanders"]) {
-    await expect(popup.locator(`#${id}`), `#${id} on This site`).toBeVisible();
+  for (const id of ["host-row", "chain-card", "expanders", "linkscan-card", "iocscan-card", "signin-pitch", "btn-dashboard"]) {
+    await expect(popup.locator(`#${id}`), `#${id} is drawn`).toBeVisible();
   }
-  await selectPopupTab(popup, "page");
-  for (const id of ["linkscan-card", "iocscan-card"]) await expect(popup.locator(`#${id}`)).toBeVisible();
-  await selectPopupTab(popup, "browser");
-  await expect(popup.locator("#signin-pitch")).toBeVisible();
-  await expect(popup.locator("#btn-dashboard")).toBeVisible();
   await popup.close();
   await page.close();
 
@@ -290,138 +391,199 @@ test("every block sits under the tab that holds it, and no id occurs twice", asy
   await flagged.page.close();
 });
 
-test("signed in, This browser holds the identity and the activity", async () => {
+test("the three parts are on the popup in the order this site, this page, this browser, signed in too", async () => {
   await setKey(ext, MOCK_API_KEY);
   const { popup, page } = await openSite();
-  await selectPopupTab(popup, "browser");
   await expect(popup.locator("#identity-card")).toBeVisible({ timeout: 15_000 });
   await expect(popup.locator("#signin-pitch")).toBeHidden();
   await expect(popup.locator("#btn-dashboard")).toBeVisible();
-  // The footer actions belong to the site, so they sit in its slot only.
-  await expect(popup.locator("#footer-actions")).toBeHidden();
-  await selectPopupTab(popup, "site");
-  await expect(popup.locator("#btn-console")).toBeVisible();
+  const tops = await popup.evaluate(() =>
+    ["host-row", "linkscan-card", "iocscan-card", "identity-card", "activity-card"].map((id) => ({
+      id,
+      top: document.getElementById(id)!.getBoundingClientRect().top + (document.getElementById("popup-scroll") as HTMLElement).scrollTop,
+    })),
+  );
+  const sorted = [...tops].sort((a, b) => a.top - b.top).map((t) => t.id);
+  expect(sorted).toEqual(["host-row", "linkscan-card", "iocscan-card", "identity-card", "activity-card"]);
   await popup.close();
   await page.close();
 });
 
 // ------------------------------------------------------------------------ T3
 
-test("the tabs expose the roles and answer the arrow keys, Home and End", async () => {
-  const { popup, page } = await openSite();
+interface FooterNow {
+  box: Box;
+  text: string;
+  shown: string[];
+}
 
-  const list = popup.getByRole("tablist", { name: "Popup sections" });
-  await expect(list).toHaveCount(1);
-  const tabs = list.getByRole("tab");
-  await expect(tabs).toHaveCount(3);
-  await expect(popup.getByRole("tabpanel", { includeHidden: true })).toHaveCount(3);
+async function footerNow(popup: Page): Promise<FooterNow> {
+  return popup.locator(".pp-footer").evaluate((f) => {
+    const r = f.getBoundingClientRect();
+    const visible = (e: Element): boolean => {
+      const b = e.getBoundingClientRect();
+      return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== "hidden";
+    };
+    return {
+      box: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
+      text: (f as HTMLElement).innerText.replace(/\s+/g, " ").trim(),
+      shown: [...f.querySelectorAll("[id]")].filter(visible).map((e) => e.id),
+    };
+  });
+}
 
-  const wiring = await popup.locator('[role="tab"]').evaluateAll((els) =>
-    els.map((t) => {
-      const panel = document.getElementById(t.getAttribute("aria-controls") ?? "");
-      return {
-        role: panel?.getAttribute("role"),
-        back: panel?.getAttribute("aria-labelledby") === t.id,
-        selected: t.getAttribute("aria-selected"),
-        tabindex: (t as HTMLElement).tabIndex,
-      };
-    }),
-  );
-  expect(wiring).toEqual([
-    { role: "tabpanel", back: true, selected: "true", tabindex: 0 },
-    { role: "tabpanel", back: true, selected: "false", tabindex: -1 },
-    { role: "tabpanel", back: true, selected: "false", tabindex: -1 },
-  ]);
+for (const signedIn of [false, true]) {
+  test(`the footer is the same at the top, the middle and the end of the scroll (${signedIn ? "signed in" : "signed out"})`, async () => {
+    await setKey(ext, signedIn ? MOCK_API_KEY : null);
+    const { popup, page } = await openSite();
+    await expect(popup.locator("#privacy-line")).toBeVisible();
+    const end = await popup.locator("#popup-scroll").evaluate((r) => r.scrollHeight - r.clientHeight);
+    expect(end, "control: there is a middle to stop at").toBeGreaterThan(200);
 
-  const key = async (k: string, want: string, panel: string): Promise<void> => {
-    await popup.keyboard.press(k);
-    expect(await selected(popup), `${k}`).toEqual([want]);
-    expect(await popup.evaluate(() => document.activeElement?.id), `${k} moves focus`).toBe(want);
-    await expect(popup.locator(`#${panel}`)).toBeVisible();
-  };
-  await popup.locator("#tab-site").focus();
-  await key("ArrowRight", "tab-page", "panel-page");
-  await key("ArrowRight", "tab-browser", "panel-browser");
-  await key("ArrowRight", "tab-site", "panel-site");
-  await key("ArrowLeft", "tab-browser", "panel-browser");
-  await key("Home", "tab-site", "panel-site");
-  await key("End", "tab-browser", "panel-browser");
+    const at: FooterNow[] = [];
+    for (const y of [0, Math.round(end / 2), "end"] as const) {
+      await scrollRegion(popup, y);
+      at.push(await footerNow(popup));
+    }
+    expect(at[0]!.box.bottom).toBe(600);
+    expect(at[1], "the footer in the middle of the scroll").toEqual(at[0]);
+    expect(at[2], "the footer at the end of the scroll").toEqual(at[0]);
 
-  // Tab leaves the tab bar for the selected panel; Shift+Tab comes back.
-  await popup.keyboard.press("Tab");
-  expect(await popup.evaluate(() => document.activeElement?.id)).toBe("panel-browser");
-  await popup.keyboard.press("Shift+Tab");
-  expect(await popup.evaluate(() => document.activeElement?.id)).toBe("tab-browser");
+    // What it holds: the sent-line always; the two buttons only signed in.
+    expect(at[0]!.shown).toContain("privacy-line");
+    expect(at[0]!.shown.includes("btn-console")).toBe(signedIn);
+    expect(at[0]!.shown.includes("btn-dossier")).toBe(signedIn);
+    // The sent-line names the hostname that was sent and where it went.
+    const line = (await popup.locator("#privacy-line").textContent()) ?? "";
+    expect(line).toContain(`“${HOST}”`);
+    expect(line).toContain(GRAPH_HOST);
+    expect(line).toContain("path");
+    // Nothing of the old per-part footers is left.
+    const gone = await popup.evaluate(() =>
+      [...document.querySelectorAll("[id]")].map((e) => e.id).filter((id) => /^(footer-(page|browser)|shield-|browser-console)/.test(id)),
+    );
+    expect(gone, "an id of a per-part footer is still in the markup").toEqual([]);
+    expect(at[0]!.text).not.toContain("Active Shield");
+    expect(at[0]!.text).not.toContain("Open console");
+    // The buttons keep their 32 px.
+    if (signedIn) {
+      for (const id of ["btn-console", "btn-dossier"]) expect((await box(popup, `#${id}`)).height, id).toBe(32);
+    }
+    await popup.close();
+    await page.close();
+  });
+}
 
-  await popup.close();
-  await page.close();
+test("Open in console is there for a signed-in reader on a checked page and on a page that cannot be checked, never signed out", async () => {
+  // Signed in, checked page: both buttons, and the console button opens the console.
+  await setKey(ext, MOCK_API_KEY);
+  const checked = await openSite();
+  await expect(checked.popup.locator("#btn-console")).toBeVisible({ timeout: 15_000 });
+  await expect(checked.popup.locator("#btn-console")).toHaveText("Open in console");
+  await expect(checked.popup.locator("#btn-dossier")).toBeVisible();
+  const opened = ext.context.waitForEvent("page", { timeout: 20_000 });
+  await checked.popup.locator("#btn-console").click();
+  const tab = await opened;
+  await expect.poll(() => tab.url(), { timeout: 20_000 }).not.toBe("about:blank");
+  expect(new URL(tab.url()).origin).toBe(new URL(CONSOLE_URL).origin);
+  await tab.close().catch(() => undefined);
+  await checked.popup.close();
+  await checked.page.close();
+
+  // Signed in, a page Guard cannot check: the console button, no dossier to copy.
+  const odd = await openUncheckable();
+  await expect(odd.popup.locator("#btn-console")).toBeVisible({ timeout: 15_000 });
+  await expect(odd.popup.locator("#btn-dossier")).toBeHidden();
+  await expect(odd.popup.locator("#footer-actions")).toBeVisible();
+  await odd.popup.close();
+  await odd.page.close();
+
+  // Signed out: neither, on either kind of page.
+  await setKey(ext, null);
+  const out = await openSite();
+  await expect(out.popup.locator("#privacy-line")).toBeVisible();
+  await expect(out.popup.locator("#btn-console")).toBeHidden();
+  await expect(out.popup.locator("#btn-dossier")).toBeHidden();
+  await out.popup.close();
+  await out.page.close();
+  const outOdd = await openUncheckable();
+  await expect(outOdd.popup.locator("#btn-console")).toBeHidden();
+  await expect(outOdd.popup.locator("#footer-actions")).toBeHidden();
+  await outOdd.popup.close();
+  await outOdd.page.close();
 });
 
 // ------------------------------------------------------------------------ T4
 
 const NEEDS_LIVE_CHECK = "The link check and the indicator scan need the live check. Turn it on in settings.";
 
-test("with the live check off, This page says why and its footer takes no space", async () => {
+test("with the live check off, This page says why in one sentence and shows no card", async () => {
   await setSettings(ext, { cloudCheck: false });
   const { page, tabId } = await visit(ext, `https://${SLOW}/`);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId);
+  await expect(popup.locator("#panel-page")).toBeVisible();
   await expect(popup.locator("#page-empty")).toHaveText(NEEDS_LIVE_CHECK);
   await expect(popup.locator("#linkscan-card")).toBeHidden();
   await expect(popup.locator("#iocscan-card")).toBeHidden();
-  await expect(popup.locator(".pp-footer")).toBeHidden();
-  await selectPopupTab(popup, "site");
+  expect(await timesShown(popup, NEEDS_LIVE_CHECK)).toBe(1);
+  // The footer still says what was sent (nothing), at the foot of every position.
   await expect(popup.locator("#privacy-line")).toBeVisible();
+  await expect(popup.locator("#btn-console")).toBeHidden();
   await popup.close();
   await page.close();
 });
 
-test("on a page that cannot be checked, This page says so in the words of the site tab's message", async () => {
+test("on a page that cannot be checked, the site's message is on the popup once and This page is not shown", async () => {
   const { popup, page } = await openUncheckable();
   const words = ((await popup.locator("#ineligible").textContent()) ?? "").trim();
   expect(words.length).toBeGreaterThan(0);
-  await selectPopupTab(popup, "page");
-  await expect(popup.locator("#page-empty")).toHaveText(words);
+  await expect(popup.locator("#panel-page")).toBeHidden();
+  await expect(popup.locator("#page-empty")).toBeHidden();
   await expect(popup.locator("#linkscan-card")).toBeHidden();
-  await expect(popup.locator(".pp-footer")).toBeHidden();
-  await selectPopupTab(popup, "site");
+  expect(await timesShown(popup, words), "the site's sentence is repeated").toBe(1);
   await expect(popup.locator("#privacy-line")).toBeVisible();
+  await expect(popup.locator("#panel-browser")).toBeVisible();
   await popup.close();
   await page.close();
 });
 
-test("with the live check on, This page shows both cards and its own footer line", async () => {
+test("with the live check on, This page shows both cards and no sentence of its own", async () => {
   const { popup, page } = await openSite();
-  await selectPopupTab(popup, "page");
+  await expect(popup.locator("#panel-page")).toBeVisible();
   await expect(popup.locator("#page-empty")).toBeHidden();
   await expect(popup.locator("#linkscan-card")).toBeVisible();
   await expect(popup.locator("#iocscan-card")).toBeVisible();
-  await expect(popup.locator("#footer-page-line")).toBeVisible();
-  await expect(popup.locator("#footer-page-line")).toHaveText("Link check sends link hostnames only, never paths or the page.");
-  await selectPopupTab(popup, "browser");
-  // The page's line never leaks into another tab, and this tab's own footer shows.
-  await expect(popup.locator("#footer-page-line")).toBeHidden();
-  await expect(popup.locator("#shield-readout")).toBeVisible();
-  await selectPopupTab(popup, "site");
-  await expect(popup.locator("#privacy-line")).toBeVisible();
+  expect(await timesShown(popup, NEEDS_LIVE_CHECK)).toBe(0);
   await popup.close();
   await page.close();
 });
 
 // ------------------------------------------------------------------------ T5
 
-test("while a check is in flight This page says so, and shows its cards once it settles", async () => {
+test("while a check is in flight This page is not shown and the checking sentence is on the popup once, then both cards show", async () => {
   net.assessDelayMs.set(SLOW, 60_000);
   const { page, tabId } = await visit(ext, `https://${SLOW}/`);
   await waitForIcon(ext, tabId, ["checking"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
-  await expect(popup.locator("#page-empty")).toBeVisible();
-  const note = (await popup.locator("#checking-text").textContent()) ?? "";
+  const popup = await openPopup(ext, tabId);
+  await expect(popup.locator("#checking-view")).toBeVisible();
+  const note = ((await popup.locator("#checking-text").textContent()) ?? "").trim();
   expect(note.length).toBeGreaterThan(0);
-  await expect(popup.locator("#page-empty")).toHaveText(note);
+  await expect(popup.locator("#panel-page")).toBeHidden();
   await expect(popup.locator("#linkscan-card")).toBeHidden();
+  expect(await timesShown(popup, note), "the checking sentence is repeated").toBe(1);
+
+  // The checking view fills the first screen: the browser part waits below it.
+  const view = await popup.evaluate(() => {
+    const region = document.getElementById("popup-scroll")!.getBoundingClientRect();
+    const site = document.getElementById("panel-site")!.getBoundingClientRect();
+    const browser = document.getElementById("panel-browser")!.getBoundingClientRect();
+    return { siteBottom: site.bottom, browserTop: browser.top, regionBottom: region.bottom };
+  });
+  expect(view.siteBottom, "the checking view fills the first screen").toBeGreaterThanOrEqual(view.regionBottom - 1);
+  expect(view.browserTop, "the browser part waits below the first screen").toBeGreaterThanOrEqual(view.regionBottom);
 
   await expect(popup.locator("#band-chip")).toHaveText("COULD NOT CHECK", { timeout: 15_000 });
-  await expect(popup.locator("#page-empty")).toBeHidden();
+  await expect(popup.locator("#panel-page")).toBeVisible();
   await expect(popup.locator("#linkscan-card")).toBeVisible();
   await expect(popup.locator("#iocscan-card")).toBeVisible();
   await popup.close();
@@ -445,58 +607,58 @@ async function token(popup: Page, name: string, prop: "color" | "backgroundColor
   );
 }
 
-test("the frame holds in the dark and the light scheme, on every tab", async () => {
+test("the frame holds in the dark and the light scheme, at every scroll position", async () => {
   const boxes: Record<string, Awaited<ReturnType<typeof frame>>> = {};
   const grounds: Record<string, string> = {};
   for (const scheme of ["dark", "light"] as const) {
     const { popup, page } = await openSite({ colorScheme: scheme });
-    const tabs: PopupTab[] = ["site", "page", "browser"];
+    await expect(popup.locator(".pp-footer")).toBeVisible();
     const first = await frame(popup);
-    for (const tab of tabs) {
-      await selectPopupTab(popup, tab);
-      // The footer shows on every tab; This browser's is drawn after an asynchronous read.
-      await expect(popup.locator(".pp-footer"), `${tab} footer`).toBeVisible();
+    for (const where of ["top", "page", "end"] as const) {
+      if (where === "top") await scrollRegion(popup, 0);
+      else if (where === "page") await scrollPopupTo(popup, "page");
+      else await scrollRegion(popup, "end");
       const f = await frame(popup);
-      boxes[`${scheme}-${tab}`] = f;
+      boxes[`${scheme}-${where}`] = f;
       expect([f.body.width, f.body.height]).toEqual([400, 600]);
       expect(f.header.height).toBe(52);
       expect(f.header.y).toBe(0);
-      expect(f.tabs.y).toBe(f.header.bottom);
-      expect(f.tabs).toEqual((await frame(popup)).tabs);
-      expect(f.tabs).toEqual(first.tabs);
-      expect(f.footer.bottom, `${tab} footer is pinned to the frame`).toBe(600);
+      expect(f.header, `${where}: the header does not move`).toEqual(first.header);
+      expect(f.footer, `${where}: the footer does not move`).toEqual(first.footer);
+      expect(f.region, `${where}: the region does not move`).toEqual(first.region);
+      expect(f.footer.bottom, `${where}: the footer is pinned to the frame`).toBe(600);
     }
 
-    await selectPopupTab(popup, "site");
+    await scrollRegion(popup, 0);
     const ink = await popup.evaluate(() => {
-      const c = (s: string, p: "backgroundColor" | "borderBottomColor" | "color"): string =>
+      const c = (s: string, p: "backgroundColor" | "borderBottomColor" | "borderTopColor"): string =>
         getComputedStyle(document.querySelector(s) as Element)[p];
       return {
         body: c("body", "backgroundColor"),
         header: c(".pp-header", "backgroundColor"),
-        tabs: c("#tab-bar", "backgroundColor"),
-        underline: c("#tab-site", "borderBottomColor"),
-        muted: c("#tab-page", "color"),
+        headerLine: c(".pp-header", "borderBottomColor"),
+        footer: c(".pp-footer", "backgroundColor"),
+        footerLine: c(".pp-footer", "borderTopColor"),
       };
     });
     expect(ink.body).toBe(await token(popup, "--w-bg", "backgroundColor"));
     expect(ink.header).toBe(await token(popup, "--w-surface", "backgroundColor"));
-    expect(ink.tabs).toBe(await token(popup, "--w-surface", "backgroundColor"));
-    expect(ink.underline).toBe(await token(popup, "--w-accent-line", "backgroundColor"));
-    expect(ink.muted).toBe(await token(popup, "--w-muted", "color"));
+    expect(ink.headerLine).toBe(await token(popup, "--w-line", "backgroundColor"));
+    expect(ink.footer).toBe(await token(popup, "--w-surface", "backgroundColor"));
+    expect(ink.footerLine).toBe(await token(popup, "--w-line", "backgroundColor"));
     grounds[scheme] = ink.body;
     await popup.close();
     await page.close();
   }
   expect(grounds.dark).not.toBe(grounds.light);
-  for (const tab of ["site", "page", "browser"]) {
-    expect(boxes[`dark-${tab}`], `${tab}: the same boxes in both schemes`).toEqual(boxes[`light-${tab}`]);
+  for (const where of ["top", "page", "end"]) {
+    expect(boxes[`dark-${where}`], `${where}: the same boxes in both schemes`).toEqual(boxes[`light-${where}`]);
   }
 });
 
 // ------------------------------------------------------------------------ T7
 
-test("one header on every tab: its parts sit on one row and Re-check and Settings work", async () => {
+test("one header at every scroll position: its parts sit on one row and Re-check and Settings work", async () => {
   const { popup, page } = await openSite();
   await expect(popup.locator("#scale")).toBeVisible({ timeout: 15_000 });
   await expect(popup.locator("#scale-nodes")).toHaveText(/^\d/);
@@ -538,8 +700,8 @@ test("one header on every tab: its parts sit on one row and Re-check and Setting
   expect(site.fits, "the header overflows sideways").toBe(true);
   expect(site.row, "the header's parts are not on one row inside its box").toBe(true);
   expect(site.box.height).toBe(52);
-  for (const tab of ["page", "browser"] as const) {
-    await selectPopupTab(popup, tab);
+  for (const part of ["page", "browser"] as const) {
+    await scrollPopupTo(popup, part);
     expect(await read()).toEqual(site);
   }
 
@@ -553,12 +715,6 @@ test("one header on every tab: its parts sit on one row and Re-check and Setting
   });
   await popup.locator("#btn-settings").click();
   expect(await popup.evaluate(() => (window as unknown as { __opened: number }).__opened)).toBe(1);
-
-  // Re-check reloads the popup, and a reload always lands on This site.
-  await selectPopupTab(popup, "browser");
-  await Promise.all([popup.waitForEvent("load"), popup.locator("#btn-refresh").click()]);
-  await expect(popup.locator("#tab-site")).toHaveAttribute("aria-selected", "true");
-  await expect(popup.locator("#panel-site")).toBeVisible();
 
   await popup.close();
   await page.close();
@@ -696,55 +852,28 @@ test("the dot shows only once the graph size was read", async () => {
   await page.close();
 });
 
-// ------------------------------------------------------------------------ T8
-
-test("a panel shown again does not replay its entrance, and later arrivals still animate", async () => {
-  const { popup, page } = await openSite();
-  const name = (sel: string): Promise<string> => popup.locator(sel).evaluate((e) => getComputedStyle(e).animationName);
-
-  expect(await name("#band-glyph"), "control: the verdict mark scales in on arrival").toBe("pp-verdict-in");
-  await selectPopupTab(popup, "page");
-  await selectPopupTab(popup, "site");
-  expect(await name("#band-glyph")).toBe("none");
-  expect(await name(`${LIVE_RUNG} >> nth=0`)).toBe("none");
-
-  // A rung detail the reader opens afterwards animates as it always did.
-  await popup.locator("#chain-mount .ch-rung").filter({ hasText: "NETWORK" }).click();
-  await expect(popup.locator(".ch-detail")).toBeVisible();
-  expect(await name(".ch-detail")).toBe("ch-detail-open");
-  await popup.close();
-  await page.close();
-});
-
 // ----------------------------------------------------------------- the fade
 
-const fadeShown = (popup: Page): Promise<boolean> => popup.locator("#tab-fade").isVisible();
+const fadeShown = (popup: Page): Promise<boolean> => popup.locator("#popup-fade").isVisible();
 
-/** Open every drawer of This site so its panel runs past the region. */
-async function overflowSite(popup: Page): Promise<void> {
-  await openGraphDrawers(popup);
-  for (const id of ["exp-why", "exp-who", "exp-session"]) await popup.locator(`#${id} summary`).click();
-  await expect
-    .poll(() => popup.locator("#tab-content").evaluate((r) => r.scrollHeight - r.clientHeight))
-    .toBeGreaterThan(40);
-}
-
-test("a soft fade above the footer shows while the content runs on, and is gone at the end", async () => {
+test("a soft fade above the footer shows while the content runs on, is gone at the end, and comes back", async () => {
   const { popup, page } = await openSite();
-  await overflowSite(popup);
+  await openGraphDrawers(popup);
 
-  // At the top of an overflowing panel the fade shows, over the region's foot.
-  await expect(popup.locator("#tab-fade")).toBeVisible();
-  const fade = await popup.locator("#tab-fade").evaluate((f) => {
+  // On open, at the top of a popup that runs on below, the fade shows over the region's foot.
+  await expect(popup.locator("#popup-fade")).toBeVisible();
+  const fade = await popup.locator("#popup-fade").evaluate((f) => {
     const cs = getComputedStyle(f);
     const r = f.getBoundingClientRect();
-    const region = (document.getElementById("tab-content") as HTMLElement).getBoundingClientRect();
+    const scroller = document.getElementById("popup-scroll") as HTMLElement;
+    const region = scroller.getBoundingClientRect();
     const foot = (document.querySelector(".pp-footer") as HTMLElement).getBoundingClientRect();
     return {
       pointer: cs.pointerEvents,
       hidden: f.getAttribute("aria-hidden"),
       text: f.textContent,
-      focusable: f.tabIndex,
+      focusable: (f as HTMLElement).tabIndex,
+      inside: scroller.contains(f),
       bottomGap: Math.abs(r.bottom - region.bottom),
       aboveFooter: r.bottom <= foot.top + 0.5,
       height: r.height,
@@ -755,20 +884,21 @@ test("a soft fade above the footer shows while the content runs on, and is gone 
   expect(fade.hidden).toBe("true");
   expect(fade.text).toBe("");
   expect(fade.focusable).toBe(-1);
+  expect(fade.inside, "the fade is outside the scroller, so it stays put while content moves").toBe(false);
   expect(fade.bottomGap).toBeLessThanOrEqual(1);
   expect(fade.aboveFooter).toBe(true);
-  expect(fade.height).toBeGreaterThan(0);
+  expect(fade.height).toBe(56);
   expect(fade.image).toContain("gradient");
 
-  // Scrolled to the end, it is gone, and the last line is fully in view.
-  await popup.locator("#tab-content").evaluate((r) => r.scrollTo(0, r.scrollHeight));
-  await expect(popup.locator("#tab-fade")).toBeHidden();
-  // The last visible leaf of the panel: the one lowest on the page.
-  const last = await popup.locator("#panel-site").evaluate((panel) => {
-    const region = (document.getElementById("tab-content") as HTMLElement).getBoundingClientRect();
+  // Scrolled to the end, it is gone, and the last line is fully in view and not covered.
+  await scrollRegion(popup, "end");
+  await expect(popup.locator("#popup-fade")).toBeHidden();
+  // The last visible leaf of the popup's content: the one lowest on the page.
+  const last = await popup.locator("#popup-scroll").evaluate((scroller) => {
+    const region = scroller.getBoundingClientRect();
     let end: Element | null = null;
     let low = -Infinity;
-    for (const e of panel.querySelectorAll("*")) {
+    for (const e of scroller.querySelectorAll("*")) {
       if (e.children.length > 0) continue;
       // Content of a closed drawer is not drawn; only its summary is.
       const drawer = e.closest("details");
@@ -790,29 +920,51 @@ test("a soft fade above the footer shows while the content runs on, and is gone 
       what: `${end.tagName.toLowerCase()}${end.id ? `#${end.id}` : ""}`,
     };
   });
-  expect(last.found, "control: the panel has a last visible element").toBe(true);
+  expect(last.found, "control: the popup has a last visible element").toBe(true);
   expect(last.inside, `the last element (${last.what}) is cut off at the end of the scroll`).toBe(true);
   expect(last.hit, `the last element (${last.what}) is covered at the end of the scroll`).toBe(true);
 
   // Scrolling back up brings it back.
-  await popup.locator("#tab-content").evaluate((r) => r.scrollTo(0, 0));
-  await expect(popup.locator("#tab-fade")).toBeVisible();
+  await scrollRegion(popup, 0);
+  await expect(popup.locator("#popup-fade")).toBeVisible();
   await popup.close();
   await page.close();
 });
 
-test("a panel that fits shows no fade, and switching to one hides it", async () => {
-  const { popup, page } = await openSite();
-  await overflowSite(popup);
-  expect(await fadeShown(popup), "control: the overflowing panel shows the fade").toBe(true);
+test("content that fits shows no fade, and content made to overflow shows it", async () => {
+  const { popup, page } = await openUncheckable();
+  await popup.setViewportSize({ width: 400, height: 600 });
+  // Made to fit by a device of the test: the other two parts are taken out.
+  await popup.evaluate(() => {
+    for (const id of ["panel-page", "panel-browser"]) (document.getElementById(id) as HTMLElement).style.display = "none";
+  });
+  const fits = await popup.locator("#popup-scroll").evaluate((r) => r.scrollHeight - r.clientHeight);
+  expect(fits, "control: the content fits the region").toBeLessThanOrEqual(0);
+  await expect(popup.locator("#popup-fade")).toBeHidden();
 
-  await selectPopupTab(popup, "page");
-  const fits = await popup.locator("#tab-content").evaluate((r) => r.scrollHeight - r.clientHeight);
-  expect(fits, "This page is expected to fit the region").toBeLessThanOrEqual(0);
-  await expect(popup.locator("#tab-fade")).toBeHidden();
+  await popup.locator("#panel-site").evaluate((p) => {
+    const tall = document.createElement("div");
+    tall.style.height = "1000px";
+    tall.id = "test-tall";
+    p.appendChild(tall);
+  });
+  await expect(popup.locator("#popup-fade")).toBeVisible();
+  await popup.locator("#test-tall").evaluate((e) => e.remove());
+  await expect(popup.locator("#popup-fade")).toBeHidden();
+  expect(await fadeShown(popup)).toBe(false);
+  await popup.close();
+  await page.close();
+});
 
-  await selectPopupTab(popup, "site");
-  await expect(popup.locator("#tab-fade")).toBeVisible();
+test("the scroller draws a thin scrollbar from tokens and keeps its gutter stable", async () => {
+  const { popup, page } = await openUncheckable();
+  const bar = await popup.locator("#popup-scroll").evaluate((r) => {
+    const cs = getComputedStyle(r);
+    return { width: cs.scrollbarWidth, gutter: cs.scrollbarGutter, color: cs.scrollbarColor };
+  });
+  expect(bar.width).toBe("thin");
+  expect(bar.gutter).toContain("stable");
+  expect(bar.color).not.toBe("auto");
   await popup.close();
   await page.close();
 });

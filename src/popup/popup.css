@@ -3,8 +3,9 @@
 
    Panel layout on top of the shared theme.
 
-   The popup is a fixed frame (header, tab bar, one scrolling content region,
-   footer), with three tabs that each hold some of the panel's blocks.
+   The popup is a fixed frame (header, one scrolling content region, footer).
+   The region holds the panel's blocks in three parts, one after the other:
+   This site, This page and This browser.
 
    Four rules hold the panel together:
 
@@ -12,8 +13,8 @@
       headline: a round mark, the name and one pill in a card of its own,
       tinted by the verdict. The facts behind the name sit in a second card.
       A look-alike and a session block are popup cards of their own (.pp-card
-      with a modifier), and so are the two cards on This page (.pp-scan) and the
-      two on This browser (the identity or sign-in card, .pp-identity, and the
+      with a modifier), and so are the two cards of This page (.pp-scan) and the
+      two of This browser (the identity or sign-in card, .pp-identity, and the
       last 24 hours, .pp-activity). The shared .w-card is still used for the
       quiet notices (a failed read, a page that cannot be checked). Everything
       else is a .panel: a quiet group separated by one hairline.
@@ -37,9 +38,9 @@
    defined once in theme.css and flips whole with the reader's colour
    scheme, so the panel cannot drift from the dashboard or the console. */
 
-/* The frame: a fixed 400 x 600 window with a header, a tab bar, one scrolling
-   content region and a footer pinned to the bottom edge. Only the content
-   scrolls. The ground stays the body's own, from theme.css. */
+/* The frame: a fixed 400 x 600 window with a header, one scrolling content
+   region and a footer pinned to the bottom edge. Only the content scrolls. The
+   ground stays the body's own, from theme.css. */
 body {
   width: 400px;
   height: 600px;
@@ -57,6 +58,9 @@ body {
   gap: 6px;
   padding: 0 10px 0 14px;
   background: var(--w-surface);
+  /* The one line under the header. With border-box sizing it sits inside the
+     52 px. */
+  border-bottom: 1px solid var(--w-line);
 }
 /* As on the boards: 8 px from the knot to the wordmark, 6 px on to GUARD. */
 .pp-header .w-lockup { flex: none; white-space: nowrap; gap: 6px; }
@@ -123,65 +127,54 @@ body {
 .scale-num, .scale-unit { font: inherit; color: inherit; }
 .scale-num { font-variant-numeric: tabular-nums; }
 
-/* The tab bar: the line under it is the only line under the header. */
-.pp-tabs {
-  flex: none;
-  display: flex;
-  gap: 4px;
-  padding: 0 12px;
-  background: var(--w-surface);
-  border-bottom: 1px solid var(--w-line);
-}
-.pp-tab {
-  position: relative;
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 0 9px;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  font: 400 13px/16px var(--w-font-sans);
-  color: var(--w-muted);
-  cursor: pointer;
-}
-.pp-tab:hover { color: var(--w-text); }
-/* The red dot beside a tab's label: a mark, never the only carrier of the
-   meaning, since its words ride in the tab's name. */
-.pp-tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--w-v-high-fill); }
-
-.pp-tab[aria-selected="true"] {
-  font-weight: 700;
-  color: var(--w-text);
-  border-bottom-color: var(--w-accent-line);
-}
-/* The shared focus ring is more specific than a bare class, so the offset is
-   set on :focus-visible: inset, so the frame never cuts it. */
-.pp-tab:focus-visible, .pp-panel:focus-visible { outline-offset: -2px; }
-
-/* The one scrolling region. The stage holds it and the fade over its foot. */
+/* The one scrolling region. The stage holds it and the fade over its foot.
+   The three parts follow one another, 10 px apart. The scrollbar is the
+   browser's own, thin, in the ink of the page: its thumb is the text colour
+   mixed down, and the gutter is kept whether or not the content scrolls, so
+   nothing shifts sideways when it starts to. */
 .pp-stage { flex: 1 1 0; min-height: 0; position: relative; display: flex; flex-direction: column; }
-.pp-content { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 12px; }
-.pp-panel { display: flex; flex-direction: column; gap: 10px; min-height: 100%; }
+.pp-content {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  --pp-pad: 12px;
+  padding: var(--pp-pad);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--w-text) 24%, transparent) transparent;
+  scrollbar-gutter: stable;
+}
+/* Each part is the containing block of its own heading for screen readers (a
+   .pc-sr box), so the heading scrolls with the part it names. */
+.pp-panel { position: relative; flex: none; display: flex; flex-direction: column; gap: 10px; }
 #panel-site { gap: 6px; }
-/* A mark or rung that has played its entrance does not play it again when
-   its panel is shown again. */
-.pp-panel [data-seen] { animation: none; }
+/* The focus ring is inset, so the frame never cuts it. This site takes focus
+   from the program (after "Check this site now"), never from the Tab key. */
+.pp-panel:focus-visible { outline-offset: -2px; }
+/* While the waiting card or the not-checked card shows, This site runs from
+   the region's top padding to its foot, so that card fills the first screen
+   and This browser waits below it. */
+#panel-site:has(> #checking-view:not([hidden])),
+#panel-site:has(> #not-checked-view:not([hidden])) { min-height: calc(100% + var(--pp-pad)); }
 
 /* The fade above the footer: shown while the content runs on below, gone at
-   the end of it. Drawn from the ground the content sits on, over the foot
-   of the region, and it takes no clicks. */
+   the end of it. Drawn from the ground the content sits on, over the foot of
+   the region and outside the scroller, and it takes no clicks. */
 .pp-fade {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 24px;
+  height: 56px;
   pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--w-bg));
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--w-bg) 92%, transparent) 70%,
+    var(--w-bg)
+  );
 }
 .pp-fade[hidden] { display: none; }
 
@@ -284,7 +277,7 @@ body {
 .pp-verdict-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 /* A short name shares the row with the pill; a long one pushes the pill under
    it. The name breaks, never truncates: a cut name can hide a look-alike. */
-.pp-verdict-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.pp-verdict-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .pp-host {
   min-width: 0;
   font: 700 15px/1.2 var(--w-mono);
@@ -713,19 +706,6 @@ button.pp-link { background: none; border: 0; padding: 0; text-align: left; curs
 .pp-caption { margin: 0; font: 400 11.5px/1.35 var(--w-font-sans); color: var(--w-muted); }
 .pp-activity .pp-link { margin-top: 0; font-size: 12.5px; }
 
-/* ----------------------------------------- the fit: this browser in 600 px
-
-   The routed state keeps its whole routing sentence and the limits under it,
-   and it is the tallest thing this tab draws, so the tab is tightened where
-   it can be without changing a word or setting type under the card sizes
-   above: the cards are 12px inside and 8px apart, the foot of the frame sits
-   closer to its readout, and the region's own padding is 8px top and bottom
-   while this tab shows. Nothing here reaches This site or This page. */
-
-#panel-browser { gap: 8px; }
-.pp-content:has(> #panel-browser:not([hidden])) { padding-top: 8px; padding-bottom: 8px; }
-.pp-footer:has(> #footer-browser:not([hidden])) { padding-top: 8px; padding-bottom: 8px; }
-
 /* ------------------------------------------------------------- drawers */
 
 details { border-top: 1px solid var(--w-line); }
@@ -792,27 +772,15 @@ details[open] summary { color: var(--w-text); }
 
 .pp-footer {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--w-line);
   background: var(--w-surface);
 }
-/* A footer with nothing in the shown slot takes no space. */
-.pp-footer:not(:has(> .pp-foot-slot:not([hidden]) > :not([hidden]):not(:empty))) { display: none; }
-#footer-site { display: flex; flex-direction: column; gap: 6px; }
-/* This browser: the Active Shield readout on the left, the console link on the right. */
-#footer-browser {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font: 400 11.5px/1.35 var(--w-font-sans);
-  color: var(--w-muted);
-}
-.pp-shield { display: inline-flex; align-items: center; gap: 6px; }
-.pp-shield-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--w-fill-neutral); }
-.pp-shield-dot.on { background: var(--w-ok); border-color: var(--w-ok); }
-.pp-foot-link { margin-left: auto; font: 700 11.5px/1.35 var(--w-font-sans); color: var(--w-accent); text-decoration: none; }
-.pp-foot-link:hover { color: var(--w-accent-hover); }
+/* A footer with nothing visible in it takes no space. */
+.pp-footer:not(:has(> :not([hidden]))) { display: none; }
 .pp-actions { display: flex; gap: 8px; }
 .pp-actions .pp-btn { flex: 1; min-height: 32px; }
 .pp-privacy {
@@ -827,8 +795,8 @@ details[open] summary { color: var(--w-text); }
 /* --------------------------- the waiting and not-yet-checked views (This site) */
 
 /* While a check runs: a card with a ring and the name, then placeholders the
-   verdict replaces. Both animations are waiting marks, so they are not in the
-   tab entrances and they stop under reduced motion (theme.css). */
+   verdict replaces. Both animations are waiting marks, and they stop under
+   reduced motion (theme.css). */
 .pp-checking { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .pp-checking-card {
   border-color: color-mix(in srgb, var(--w-accent-line) 35%, transparent);
@@ -880,7 +848,7 @@ details[open] summary { color: var(--w-text); }
 @keyframes pp-spin { to { transform: rotate(360deg); } }
 @keyframes pp-pulse { from { opacity: 1; } to { opacity: 0.45; } }
 
-/* A tab Guard has not checked: one centred group on the panel ground. */
+/* A page Guard has not checked: one centred group on the panel ground. */
 .pp-notchecked {
   display: flex;
   flex-direction: column;

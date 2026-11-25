@@ -65,6 +65,12 @@ export interface LaunchOptions {
    * English decline vocabulary, however many languages the module speaks.
    */
   locale?: string;
+  /**
+   * Draw scrollbars. Playwright starts headless Chromium with
+   * `--hide-scrollbars`, so by default no page ever has a gutter, which is not
+   * what a reader on Windows or Linux, or with "always show scroll bars", sees.
+   */
+  showScrollbars?: boolean;
 }
 
 /**
@@ -100,6 +106,7 @@ export async function launchExtension(opts: LaunchOptions = {}): Promise<Extensi
     headless: true,
     args,
     viewport: { width: 1280, height: 800 },
+    ...(opts.showScrollbars ? { ignoreDefaultArgs: ["--hide-scrollbars"] } : {}),
     ...(opts.locale ? { locale: opts.locale } : {}),
   });
 
@@ -368,24 +375,24 @@ export async function markHostBlocked(ext: Extension, host: string): Promise<voi
   }, host);
 }
 
-export type PopupTab = "site" | "page" | "browser";
-
-const POPUP_TAB_LABEL: Record<PopupTab, string> = {
-  site: "This site",
-  page: "This page",
-  browser: "This browser",
-};
+export type PopupSection = "site" | "page" | "browser";
 
 /**
- * Select one of the popup's own tabs (This site, This page, This browser) by
- * its role and label, then wait until its panel is laid out. The label is a
- * substring match so a marker appended to a tab name later does not break it.
- * It takes only a Page, so it also works on the file:// page of the Firefox
- * render spec. Not for the dashboard, which has tabs of its own.
+ * Scroll the popup so one of its three parts (This site, This page, This
+ * browser) starts at the top of the scrolling region, then wait until the
+ * scroll has settled. The part must be shown: a part the popup hides (while a
+ * check runs, for example) is an error here, never a silent no-op. It takes
+ * only a Page, so it also works on the file:// page of the Firefox render spec.
  */
-export async function selectPopupTab(popup: Page, tab: PopupTab): Promise<void> {
-  await popup.getByRole("tab", { name: POPUP_TAB_LABEL[tab] }).click();
-  await popup.locator(`#panel-${tab}`).waitFor({ state: "visible" });
+export async function scrollPopupTo(popup: Page, section: PopupSection): Promise<void> {
+  await popup.locator(`#panel-${section}`).waitFor({ state: "visible" });
+  await popup.evaluate(async (id) => {
+    const region = document.getElementById("popup-scroll") as HTMLElement;
+    const part = document.getElementById(id) as HTMLElement;
+    region.scrollTop += part.getBoundingClientRect().top - region.getBoundingClientRect().top;
+    // Two frames: the fade and anything watching the scroll have seen it.
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  }, `panel-${section}`);
 }
 
 /**
@@ -399,30 +406,14 @@ export async function openGraphDrawers(popup: Page): Promise<void> {
 }
 
 /**
- * What a reader sees on This page and on This browser, as the text of the
- * document while each is selected. `body.innerText()` omits a hidden panel, so
- * a "this text is nowhere on the popup" check that reads it on This site covers
- * one tab only: it reads the other two here, once each, and leaves the popup on
- * This browser.
- */
-export async function otherPopupTabsText(popup: Page): Promise<string[]> {
-  const out: string[] = [];
-  for (const tab of ["page", "browser"] as const) {
-    await selectPopupTab(popup, tab);
-    out.push(await popup.locator("body").innerText());
-  }
-  return out;
-}
-
-/**
  * Open the popup pinned to a browser tab (the ?tab= debugging/testing
- * affordance). `popupTab` is the popup's own tab to select once it has
- * loaded; the popup always opens on This site.
+ * affordance). `section` is the part of the popup to scroll to once it has
+ * loaded; the popup always opens at the top, on This site.
  */
-export async function openPopup(ext: Extension, tabId: number, opts: { popupTab?: PopupTab } = {}): Promise<Page> {
+export async function openPopup(ext: Extension, tabId: number, opts: { section?: PopupSection } = {}): Promise<Page> {
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
-  if (opts.popupTab && opts.popupTab !== "site") await selectPopupTab(page, opts.popupTab);
+  if (opts.section && opts.section !== "site") await scrollPopupTo(page, opts.section);
   return page;
 }
 
@@ -482,7 +473,7 @@ export async function navigateInTab(page: Page, url: string): Promise<void> {
  */
 export async function settlePopup(
   popup: Page,
-  opts: { colorScheme?: "dark" | "light"; width?: number; height?: number; popupTab?: PopupTab } = {},
+  opts: { colorScheme?: "dark" | "light"; width?: number; height?: number; section?: PopupSection } = {},
 ): Promise<string | null> {
   await popup.emulateMedia({
     colorScheme: opts.colorScheme ?? "dark",
@@ -497,10 +488,9 @@ export async function settlePopup(
     .catch(() => undefined);
   await popup.waitForTimeout(500);
 
-  // The tab is selected after the rung wait (the wait looks for a visible
-  // rung, which only This site shows) and before the readout reads, which
-  // would otherwise return early when the readout is absent.
-  if (opts.popupTab && opts.popupTab !== "site") await selectPopupTab(popup, opts.popupTab);
+  // The part is scrolled to after the rung wait and before the readout reads,
+  // which would otherwise return early when the readout is absent.
+  if (opts.section && opts.section !== "site") await scrollPopupTo(popup, opts.section);
 
   const first = await popup.locator("#scale-nodes").textContent().catch(() => null);
   if (first === null) return null;

@@ -28,7 +28,7 @@ import {
   makeShieldDist,
   openDashboard,
   openPopup,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
   visit,
   waitForIcon,
@@ -295,7 +295,7 @@ test("the keyless tier meter is a measurement, not a pitch", async () => {
   await waitForIcon(ext, tabId, ["benign"]);
   await popupShot(tabId, "tier-healthy-dark.png", "dark", async (pop) => {
     // The meter is on This browser, which the reload above left.
-    await selectPopupTab(pop, "browser");
+    await scrollPopupTo(pop, "browser");
     await pop.locator("#tier-meter").scrollIntoViewIfNeeded();
     // Assert the figure, not just the pixels: a capture proves a meter was
     // drawn, never that it was drawn from a measurement.
@@ -318,7 +318,7 @@ test("the keyless tier meter is a measurement, not a pitch", async () => {
   await spender.close();
 
   await popupShot(tabId, "tier-nearly-spent-dark.png", "dark", async (pop) => {
-    await selectPopupTab(pop, "browser");
+    await scrollPopupTo(pop, "browser");
     await pop.locator("#tier-meter").scrollIntoViewIfNeeded();
     await expect(pop.locator("#tier-count")).toHaveText(/4 of 100/);
     await expect(pop.locator("#tier-fill")).toHaveClass(/out|low/);
@@ -347,7 +347,7 @@ test("the panel signed in but not yet enrolled: the state a new account lands in
   // with the /128, its reverse-DNS name and the RDAP proof link, is
   // captured by e2e/protect.spec.ts, which walks the real enrol flow.
   await popupShot(tabId, "panel-signedin-not-enrolled-dark.png", "dark", async (pop) => {
-    await selectPopupTab(pop, "browser");
+    await scrollPopupTo(pop, "browser");
     await expect(pop.locator("#identity-card")).toBeVisible();
     await pop.locator("#identity-card").scrollIntoViewIfNeeded();
   });

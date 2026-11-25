@@ -1,25 +1,24 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// e2e: THE THIS BROWSER TAB. The identity card, the last 24 hours and the
-// footer's Active Shield readout.
+// e2e: THE THIS BROWSER PART. The identity card and the last 24 hours, at the
+// end of the popup's one scroll.
 //
-// The tab shows one card for the browser's identity (one chip, the facts, one
+// It shows one card for the browser's identity (one chip, the facts, one
 // sentence, one button; signed out, the sign-in card in the same style), a
 // "Last 24 hours" card with three figures, a time strip, a caption and a link
-// to the dashboard, and a footer with the Active Shield state. Each claim is
-// measured on the built extension:
+// to the dashboard. Each claim is measured on the built extension:
 //
 //   - each of the four states shows its chip, sentence and single button;
 //   - the address and the name can be selected and copied;
 //   - the destination and flagged figures equal the dashboard's tiles, even
 //     for destinations past the 200 the popup enriches;
-//   - the tab fits 600 px signed out and in the steady signed-in states, and
-//     the routed state is measured in both schemes with one and three
-//     categories (its sentence keeps its full wording, so its fit is recorded);
-//   - the state names are the same on the popup and on the dashboard;
-//   - the footer reads Active Shield live, and the console link shows only
-//     signed in.
+//   - the routed card keeps its layout, in both schemes, as drawn and with
+//     wider glyphs, with one category and with three;
+//   - the state names are the same on the popup and on the dashboard.
+//
+// The footer, its console button and the popup's fit are measured in
+// popup-frame.spec.ts and this-site.spec.ts.
 //
 // Fictional hosts only; hostnames are matched exactly, never by substring.
 
@@ -35,16 +34,14 @@ import {
   openDashboard,
   openPopup,
   rebindWorker,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
-  setSettings,
   stopWorker,
   visit,
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
-import { expectBrowserTabFits, expectRoutedCardLayout } from "./helpers/popup-fit";
-import { CONSOLE_URL } from "../src/shared/config";
+import { expectRoutedCardLayout } from "./helpers/popup-fit";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/chromium");
@@ -136,7 +133,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
   test("NOT ENROLLED: the chip, the sentence and one button", async () => {
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await expect(popup.locator("#identity-state")).toHaveText("NOT ENROLLED", { timeout: 10_000 });
     await expect(popup.locator("#route-line")).toHaveText("No Whisper identity yet.");
     await expect(popup.locator("#identity-detail")).toBeHidden();
@@ -153,7 +150,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
     );
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await expect(popup.locator("#identity-state")).toHaveText("ENROLLED", { timeout: 15_000 });
     // The stand-in record does not anchor this address, so the answer is no
     // and the rows that need a yes (the name and the proof) are not drawn.
@@ -190,7 +187,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
       };
     });
     await popup.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
-    await selectPopupTab(popup, "browser");
+    await scrollPopupTo(popup, "browser");
     await expect(popup.locator("#identity-control")).toHaveAttribute("data-state", "enrolled", { timeout: 15_000 });
     await expect(popup.locator("#route-line")).toBeHidden();
     await popup.locator("#btn-protect").click();
@@ -210,7 +207,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
   test("routing refused: the chip follows the public record, the sentence names the permission", async () => {
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await exactlyOneButton(popup, "Protect this browser");
     await popup.locator("#btn-protect").click();
     await expect(popup.locator("#identity-state")).toHaveText("VERIFIED", { timeout: 25_000 });
@@ -265,7 +262,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
     await rebindWorker(ext);
     net.clearLog();
 
-    const popup = await openPopup(ext, anchor.tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, anchor.tabId, { section: "browser" });
     await expect(popup.locator("#activity-destinations")).toHaveText(String(total), { timeout: 20_000 });
     await expect(popup.locator("#activity-flagged")).toHaveText("1");
     await expect(popup.locator("#today-row .pp-fig-l")).toHaveText("handled quietly today");
@@ -302,7 +299,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
     await waitForIcon(ext, tabId, ["benign"]);
 
     const compare = async (name: string): Promise<void> => {
-      const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+      const popup = await openPopup(ext, tabId, { section: "browser" });
       await expect(popup.locator("#identity-state")).toHaveText(name, { timeout: 25_000 });
       const dash = await openDashboard(ext, "browser");
       await expect(dash.locator("#identity-state")).toHaveText(name, { timeout: 25_000 });
@@ -320,7 +317,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
     await compare("ENROLLED");
 
     await clearIdentity(ext);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await popup.locator("#btn-protect").click();
     await expect(popup.locator("#identity-state")).toHaveText("VERIFIED", { timeout: 25_000 });
     await popup.close();
@@ -331,7 +328,7 @@ test.describe("This browser, on the plain build (the routing permission is refus
   test("signed out, This browser shows no state chip at all", async () => {
     await setKey(ext, null);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await expect(popup.locator("#signin-pitch")).toBeVisible();
     await expect(popup.locator("#signin-pitch .w-chip")).toHaveCount(0);
     await expect(popup.locator("#identity-state")).toBeHidden();
@@ -351,93 +348,6 @@ test.describe("This browser, on the plain build (the routing permission is refus
     expect(read("dashboard.html")).toContain("NOT ENROLLED");
   });
 
-  // ---------------------------------------------------------------- T6
-
-  test("the footer reads Active Shield, and the console link shows only signed in", async () => {
-    const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    await waitForIcon(ext, tabId, ["benign", "unknown", "signedout"]);
-    try {
-      // Signed out: the readout, no link.
-      await setKey(ext, null);
-      await setSettings(ext, { shield: false });
-      let popup = await openPopup(ext, tabId, { popupTab: "browser" });
-      await expect(popup.locator("#shield-readout")).toHaveText("Active Shield off");
-      await expect(popup.locator("#browser-console")).toBeHidden();
-      await popup.close();
-
-      // The setting alone is not enough: this build holds no all-sites grant.
-      await setSettings(ext, { shield: true });
-      popup = await openPopup(ext, tabId, { popupTab: "browser" });
-      await expect(popup.locator("#shield-readout")).toHaveText("Active Shield off");
-      await popup.close();
-
-      // Signed in: the link, and it opens the console.
-      await setKey(ext, MOCK_KEY);
-      popup = await openPopup(ext, tabId, { popupTab: "browser" });
-      const link = popup.locator("#browser-console");
-      await expect(link).toBeVisible({ timeout: 15_000 });
-      await expect(link).toHaveText("Open console ↗");
-      const opened = ext.context.waitForEvent("page", { timeout: 20_000 });
-      await link.click();
-      const tab = await opened;
-      await expect.poll(() => tab.url(), { timeout: 20_000 }).not.toBe("about:blank");
-      expect(new URL(tab.url()).origin).toBe(new URL(CONSOLE_URL).origin);
-      await tab.close().catch(() => undefined);
-      await popup.close();
-    } finally {
-      await setSettings(ext, { shield: false });
-    }
-    await page.close();
-  });
-
-  // ---------------------------------------------------------------- T4
-
-  test("signed out, the tab fits 600 px without scrolling, in the dark and the light scheme", async () => {
-    await setKey(ext, null);
-    await plantWins(ext, { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 });
-    for (const host of [CLEAN, SECOND]) {
-      const v = await visit(ext, `https://${host}/`);
-      await waitForIcon(ext, v.tabId, ["benign", "unknown", "signedout"]);
-      await v.page.close();
-    }
-    const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
-    await popup.setViewportSize({ width: 400, height: 600 });
-    for (const scheme of ["dark", "light"] as const) {
-      await popup.emulateMedia({ colorScheme: scheme });
-      // The measurement is not vacuous: everything the tab holds is on screen.
-      for (const id of ["signin-pitch", "tier-meter", "activity-destinations", "activity-flagged", "today-row", "today-caption", "btn-dashboard", "shield-readout"]) {
-        await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible({ timeout: 15_000 });
-      }
-      await expect(popup.locator("#browser-strip svg")).toBeVisible();
-      await expectBrowserTabFits(popup, `signed-out-${scheme}`);
-    }
-    await popup.close();
-    await page.close();
-    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
-  });
-
-  test("signed in after the permission is refused, the tab fits 600 px without scrolling, in both schemes", async () => {
-    test.setTimeout(150_000);
-    await plantWins(ext, { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 });
-    const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
-    await popup.setViewportSize({ width: 400, height: 600 });
-    await popup.locator("#btn-protect").click();
-    await expect(popup.locator("#identity-state")).toHaveText("VERIFIED", { timeout: 25_000 });
-    await expect(popup.locator("#route-line")).toContainText("Not routed.", { timeout: 25_000 });
-    for (const scheme of ["dark", "light"] as const) {
-      await popup.emulateMedia({ colorScheme: scheme });
-      for (const id of ["identity-card", "identity-detail", "route-line", "activity-destinations", "today-row", "today-caption", "btn-dashboard", "shield-readout"]) {
-        await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible();
-      }
-      await expect(popup.locator("#browser-strip svg")).toBeVisible();
-      await expectBrowserTabFits(popup, `refused-${scheme}`);
-    }
-    await popup.close();
-    await page.close();
-    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
-  });
 });
 
 // ------------------------------------------- G: the routing permission is granted
@@ -464,7 +374,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
     await clearIdentity(ext);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await exactlyOneButton(popup, "Protect this browser");
     await popup.locator("#btn-protect").click();
 
@@ -519,7 +429,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
       }).observe(document, { childList: true, subtree: true, characterData: true });
     });
     await popup.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
-    await selectPopupTab(popup, "browser");
+    await scrollPopupTo(popup, "browser");
     await ensureRouted(popup);
     const said = (): Promise<Array<{ text: string; hidden: boolean; live: string | null }>> =>
       popup.evaluate(() => (window as unknown as { __said: Array<{ text: string; hidden: boolean; live: string | null }> }).__said);
@@ -568,7 +478,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
       };
     });
     await popup.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
-    await selectPopupTab(popup, "browser");
+    await scrollPopupTo(popup, "browser");
     await ensureRouted(popup);
     await popup.evaluate(() => {
       const w = window as unknown as { __holdVerify: Promise<void> | null; __release: () => void };
@@ -592,7 +502,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
   test("on the dashboard the same control says nothing when it is first drawn, and says routing is off when it is", async () => {
     await setKey(ext, MOCK_KEY);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await ensureRouted(popup);
     await popup.close();
     await page.close();
@@ -610,7 +520,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
   test("the dashboard draws the whole name, and only the popup keeps it to one line", async () => {
     await setKey(ext, MOCK_KEY);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await ensureRouted(popup);
     await popup.close();
     await page.close();
@@ -684,7 +594,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
   test("the address and the name can be selected and copied", async () => {
     await setKey(ext, MOCK_KEY);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await ensureRouted(popup);
     const stored = await ext.sw.evaluate(async () => {
       const e = (await chrome.storage.local.get("egress"))["egress"] as { identity: { address: string; fqdn: string | null } };
@@ -745,32 +655,13 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
     await page.close();
   });
 
-  test("the footer reads Active Shield live: off, then on with the grant", async () => {
-    const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    await waitForIcon(ext, tabId, ["benign", "unknown", "signedout"]);
-    try {
-      await setSettings(ext, { shield: false });
-      let popup = await openPopup(ext, tabId, { popupTab: "browser" });
-      await expect(popup.locator("#shield-readout")).toHaveText("Active Shield off");
-      await popup.close();
-
-      await setSettings(ext, { shield: true });
-      popup = await openPopup(ext, tabId, { popupTab: "browser" });
-      await expect(popup.locator("#shield-readout")).toHaveText("Active Shield on");
-      await popup.close();
-    } finally {
-      await setSettings(ext, { shield: false });
-    }
-    await page.close();
-  });
-
-  test("routed, the full routing sentence is measured at 400 x 600 in both schemes, with one category and with three", async () => {
+  test("routed, the card keeps its layout at 400 x 600 in both schemes, with one category and with three", async () => {
     test.setTimeout(150_000);
     await setKey(ext, MOCK_KEY);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
     {
-      const first = await openPopup(ext, tabId, { popupTab: "browser" });
+      const first = await openPopup(ext, tabId, { section: "browser" });
       await ensureRouted(first);
       await first.close();
     }
@@ -779,7 +670,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
       ["three-categories", { preemptBlock: 2, identityVerified: 1, cookieDecline: 3 }],
     ] as const) {
       await plantWins(ext, counts);
-      const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+      const popup = await openPopup(ext, tabId, { section: "browser" });
       await popup.setViewportSize({ width: 400, height: 600 });
       await expect(popup.locator("#identity-control")).toHaveAttribute("data-state", "routed", { timeout: 25_000 });
       // The card is complete before it is measured: verified, with all three rows.
@@ -787,12 +678,11 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
       await expect(popup.locator("#identity-detail .w-kv .k")).toHaveText(["Address", "Name", "Proof"]);
       for (const scheme of ["dark", "light"] as const) {
         await popup.emulateMedia({ colorScheme: scheme });
-        for (const id of ["identity-detail", "route-line", "activity-destinations", "today-row", "today-caption", "btn-dashboard", "shield-readout"]) {
+        for (const id of ["identity-detail", "route-line", "activity-destinations", "today-row", "today-caption", "btn-dashboard"]) {
           await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible();
         }
         await expect(popup.locator("#browser-strip svg")).toBeVisible();
         await expectRoutedCardLayout(popup, `routed-${name}-${scheme}`);
-        await expectBrowserTabFits(popup, `routed-${name}-${scheme}`);
       }
       await popup.close();
     }
@@ -823,7 +713,7 @@ test.describe("This browser, a log of one destination", () => {
     await setKey(ext, null);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign", "unknown", "signedout"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await expect(popup.locator("#activity-destinations")).toHaveText("1");
     await expect(popup.locator("#browser-strip svg > title")).toHaveText(
       "The last sighting of the one destination in the last 24 hours",
@@ -858,7 +748,7 @@ test.describe("This browser, a day with a flagged destination and nothing handle
     await waitForIcon(ext, clean.tabId, ["benign", "unknown", "signedout"]);
 
     // Control: with nothing flagged and nothing handled, the sentence is shown.
-    let popup = await openPopup(ext, clean.tabId, { popupTab: "browser" });
+    let popup = await openPopup(ext, clean.tabId, { section: "browser" });
     await expect(popup.locator("#activity-flagged")).toHaveText("0");
     await expect(popup.locator("#today-hero")).toHaveText("0");
     await expect(popup.locator("#today-caption")).toHaveText(SENTENCE, { useInnerText: true });
@@ -867,7 +757,7 @@ test.describe("This browser, a day with a flagged destination and nothing handle
     // One flagged destination: the figure says 1 and the sentence is gone.
     const flagged = await visit(ext, `https://${FLAGGED}/`);
     await waitForIcon(ext, flagged.tabId, ["malicious"]);
-    popup = await openPopup(ext, clean.tabId, { popupTab: "browser" });
+    popup = await openPopup(ext, clean.tabId, { section: "browser" });
     await expect(popup.locator("#activity-destinations")).toHaveText("2");
     await expect(popup.locator("#activity-flagged")).toHaveText("1");
     await expect(popup.locator("#today-row")).toBeVisible();
@@ -909,7 +799,7 @@ test.describe("This browser, held by another extension", () => {
     await plantWins(ext, { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 });
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await popup.setViewportSize({ width: 400, height: 600 });
     await exactlyOneButton(popup, "Protect this browser");
     await popup.locator("#btn-protect").click();
@@ -923,15 +813,6 @@ test.describe("This browser, held by another extension", () => {
     // Focus follows to the visible button when the steps end, never to the hidden one.
     await expect(popup.locator("#btn-route-fix")).toBeFocused();
 
-    // The held state fits too, in both schemes.
-    for (const scheme of ["dark", "light"] as const) {
-      await popup.emulateMedia({ colorScheme: scheme });
-      for (const id of ["identity-detail", "activity-destinations", "today-row", "today-caption", "btn-dashboard", "shield-readout"]) {
-        await expect(popup.locator(`#${id}`), `#${id}`).toBeVisible();
-      }
-      await expect(popup.locator("#browser-strip svg")).toBeVisible();
-      await expectBrowserTabFits(popup, `held-${scheme}`);
-    }
     await popup.close();
     await page.close();
     await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
