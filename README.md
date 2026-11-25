@@ -98,9 +98,11 @@ history.
   depth it allows, read from the graph itself. "Sign in" is then a fact
   about a ceiling you can see, not an advertisement. The size of the graph
   behind every verdict is read live too, in the panel masthead and across
-  the top of the dashboard, along with the resolvers' own pulse over the
-  trailing 24 hours. No figure about our coverage is ever written into the
-  build: a number typed into a page is stale the day after it ships.
+  the top of the dashboard. The panel shows the graph size, with the
+  resolvers' totals in its tooltip. The pulse line over the trailing 24
+  hours is on the dashboard and the first-run page. No figure about our
+  coverage is ever written into the build: a number typed into a page is
+  stale the day after it ships.
 - **A calm tally of what it handled.** One line in the panel counts today's
   quiet wins by category (clicks held, identities verified, cookie prompts
   declined) and nothing else: the record is a category, a count and today's
@@ -303,11 +305,12 @@ public identity verification all work with no key.
   browsing data). `rdap.whisper.online` is contacted only to verify the
   identity of your own endpoints, and only receives IP literals of those
   endpoints, never a browsing hostname. `nic.whisper.online` serves the public
-  network statistics document, which is how the live size of the graph and the
-  resolvers' pulse reach the panel and the dashboard: a plain GET of a public
-  file, with no query string, no header, no body and no cookie, so nothing
-  about you can ride on it. The alternative was writing a coverage figure into
-  the build, where it would be stale the day after it shipped.
+  network statistics document, which is how the live size of the graph reaches
+  the panel and the dashboard, and the resolvers' pulse reaches the
+  dashboard and the first-run page: a plain GET of a public file, with no
+  query string, no header, no body and no cookie, so nothing about you can
+  ride on it. The alternative was writing a coverage figure into the build,
+  where it would be stale the day after it shipped.
 - Verdicts are cached locally and navigations debounced, so revisits paint
   from cache with zero network.
 - Hostnames are used to answer the live safety check, not retained to build a

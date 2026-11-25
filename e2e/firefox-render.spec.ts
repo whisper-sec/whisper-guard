@@ -72,7 +72,7 @@ const REPLIES = {
   } },
   getSettings: { ok: true, settings: { shield: false, amberBanner: true, fieldGuard: true, nearMiss: false, corpusAutoUpdate: true, allowlist: [], cookieDecline: true, cloudCheck: true }, signedIn: false, corpusVersion: 1, corpusUpdated: "" },
   getChain: { ok: true, chain: CHAIN },
-  getScale: { ok: true, scale: { nodes: 7482240523, edges: 39546784832, objects: 47029025355, identities: 649, queries: 5699066, windowHours: 24, p50Us: 30, p99Us: 76083, pulse: Array.from({length: 48}, (_, i) => 18000 + Math.round(6000 * Math.sin(i / 7))), updated: Date.now(), degraded: false } },
+  getScale: { ok: true, scale: { nodes: window.__nodes ?? 7482240523, edges: 39546784832, objects: 47029025355, identities: 649, queries: 5699066, windowHours: 24, p50Us: 30, p99Us: 76083, pulse: Array.from({length: 48}, (_, i) => 18000 + Math.round(6000 * Math.sin(i / 7))), updated: Date.now(), degraded: false } },
   getQuota: { ok: true, quota: { plan: "ANONYMOUS", anonymous: true, hourlyLimit: 100, hourlyRemaining: 94, dailyLimit: 500, dailyRemaining: 466, maxDepth: 2 } },
   getWins: { ok: true, wins: { date: "2026-09-02", total: 3, counts: { preemptBlock: 1, identityVerified: 1, cookieDecline: 1 } } },
   getBrowserReport: { ok: true, report: { hosts: [], totals: { destinations: 4, companies: 4, countries: 2, networks: 2, lookups: 8, flagged: 1 }, generatedAt: Date.now() } },
@@ -106,20 +106,27 @@ interface Geometry {
   /** Sideways overflow of the scrolling content region, read on each tab. */
   regionOverflow: { tab: string; scrollWidth: number; clientWidth: number }[];
   scaleVisible: boolean;
-  sparkPaths: number;
+  dotBox: [number, number];
+  spacer: number;
+  headerHeight: number;
+  headerOverflow: boolean;
+  headerOneRow: boolean;
+  scaleText: string;
   tierWidthPct: number;
   chainLabels: string[];
 }
 
-async function measure(browser: Browser, scheme: "dark" | "light"): Promise<Geometry> {
+async function measure(browser: Browser, scheme: "dark" | "light", nodes?: number): Promise<Geometry> {
   const page: Page = await browser.newPage({
     viewport: { width: 400, height: 900 },
     colorScheme: scheme,
     reducedMotion: "reduce",
   });
+  if (nodes !== undefined) await page.addInitScript(`window.__nodes = ${nodes};`);
   await page.addInitScript(SHIM);
   await page.goto(`file://${join(DIST, "popup.html")}`);
   await page.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
   await page.waitForTimeout(600);
 
   const g = await page.evaluate((): Geometry => {
@@ -132,7 +139,24 @@ async function measure(browser: Browser, scheme: "dark" | "light"): Promise<Geom
       bodyScrollWidth: document.body.scrollWidth,
       bodyClientWidth: document.body.clientWidth,
       scaleVisible: scale ? !scale.hasAttribute("hidden") : false,
-      sparkPaths: document.querySelectorAll("#scale-pulse svg path").length,
+      dotBox: (() => {
+        const d = document.querySelector("#scale .scale-dot")?.getBoundingClientRect();
+        return [d ? d.width : 0, d ? d.height : 0] as [number, number];
+      })(),
+      spacer: document.querySelector(".pp-header .spacer")!.getBoundingClientRect().width,
+      headerHeight: document.querySelector(".pp-header")!.getBoundingClientRect().height,
+      headerOverflow: (() => {
+        const h = document.querySelector(".pp-header") as HTMLElement;
+        return h.scrollWidth > h.clientWidth;
+      })(),
+      headerOneRow: (() => {
+        const h = document.querySelector(".pp-header")!;
+        const mids = [...h.children]
+          .filter((k) => k.getBoundingClientRect().width > 0)
+          .map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
+        return Math.max(...mids) - Math.min(...mids) <= 2;
+      })(),
+      scaleText: document.getElementById("scale-nodes")?.textContent ?? "",
       tierWidthPct: -1,
       regionOverflow: [],
       chainLabels: [...document.querySelectorAll("#chain-mount .ch-label")].map(
@@ -195,8 +219,8 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
 
     // The live readouts really drew: an inline SVG path and a filled meter.
     expect(gecko.scaleVisible && blink.scaleVisible, "the scale readout did not appear").toBe(true);
-    expect(gecko.sparkPaths, "Gecko drew no pulse").toBeGreaterThan(0);
-    expect(blink.sparkPaths, "Blink drew no pulse").toBeGreaterThan(0);
+    expect(gecko.dotBox, "the dot is not 6 x 6 in Gecko").toEqual([6, 6]);
+    expect(blink.dotBox, "the dot is not 6 x 6 in Blink").toEqual([6, 6]);
     expect(gecko.tierWidthPct, "the tier meter did not fill in Gecko").toBeGreaterThan(50);
     expect(blink.tierWidthPct, "the tier meter did not fill in Blink").toBeGreaterThan(50);
 
@@ -215,6 +239,28 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
           r.scrollWidth,
           `${engine} overflows the ${r.tab} tab horizontally (${r.scrollWidth} > ${r.clientWidth})`,
         ).toBeLessThanOrEqual(r.clientWidth + 1);
+      }
+    }
+  } finally {
+    await ff.close();
+    await cr.close();
+  }
+});
+
+test("the header keeps 36 px free beside a 12-character figure in Gecko and in Blink, in both schemes", async () => {
+  test.setTimeout(120_000);
+  const ff = await firefox.launch();
+  const cr = await chromium.launch();
+  try {
+    for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
+      for (const scheme of ["dark", "light"] as const) {
+        const g = await measure(browser, scheme, 12_340_000_000);
+        expect(g.scaleVisible, `${engine} ${scheme}: the readout did not appear`).toBe(true);
+        expect(g.scaleText, `${engine} ${scheme}: the 12-character figure was not drawn`).toBe("12.34B");
+        expect(g.spacer, `${engine} ${scheme}: less than 36 px free in the header`).toBeGreaterThanOrEqual(36);
+        expect(g.headerHeight, `${engine} ${scheme}: the header is not 52 px tall`).toBe(52);
+        expect(g.headerOverflow, `${engine} ${scheme}: the header overflows sideways`).toBe(false);
+        expect(g.headerOneRow, `${engine} ${scheme}: the header's parts are not on one row`).toBe(true);
       }
     }
   } finally {

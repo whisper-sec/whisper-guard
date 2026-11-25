@@ -519,6 +519,19 @@ test("one header on every tab: its parts sit on one row and Re-check and Setting
           }) && Math.max(...mids) - Math.min(...mids) <= 2,
       };
     });
+  // The graph size is a dot and a figure: no line graph, and the dot is a
+  // 6 px circle centred on the figure's line.
+  await expect(popup.locator("#scale svg"), "a line graph is still drawn in the header").toHaveCount(0);
+  await expect(popup.locator("#scale-pulse"), "the old pulse element is still in the header").toHaveCount(0);
+  await expect(popup.locator("#scale .scale-dot")).toBeVisible();
+  const dot = await popup.evaluate(() => {
+    const d = document.querySelector("#scale .scale-dot")!.getBoundingClientRect();
+    const f = document.querySelector("#scale .scale-figures")!.getBoundingClientRect();
+    return { w: d.width, h: d.height, off: Math.abs(d.top + d.height / 2 - (f.top + f.height / 2)) };
+  });
+  expect([dot.w, dot.h], "the dot is not 6 x 6").toEqual([6, 6]);
+  expect(dot.off, "the dot is not centred on the figure").toBeLessThanOrEqual(1);
+
   const site = await read();
   expect(site.fits, "the header overflows sideways").toBe(true);
   expect(site.row, "the header's parts are not on one row inside its box").toBe(true);
@@ -545,6 +558,98 @@ test("one header on every tab: its parts sit on one row and Re-check and Setting
   await expect(popup.locator("#tab-site")).toHaveAttribute("aria-selected", "true");
   await expect(popup.locator("#panel-site")).toBeVisible();
 
+  await popup.close();
+  await page.close();
+});
+
+// The popup opened with its graph-size answer replaced, so a test can pick
+// the figure, hold the answer, or make the read fail. Everything else goes to
+// the worker as usual.
+type ScaleStub = { nodes?: number; mode?: "figure" | "held" | "failed" };
+
+async function openSiteWithScale(
+  stub: ScaleStub,
+  colorScheme: "dark" | "light" = "dark",
+): Promise<{ popup: Page; page: Page }> {
+  const { page, tabId } = await visit(ext, `https://${HOST}/`);
+  await waitForIcon(ext, tabId, ["benign", "unknown"]);
+  const popup = await ext.context.newPage();
+  await popup.emulateMedia({ colorScheme });
+  await popup.addInitScript((s: ScaleStub) => {
+    const w = window as unknown as { __releaseScale: () => void; __scaleAsked: number };
+    w.__scaleAsked = 0;
+    const orig = chrome.runtime.sendMessage.bind(chrome.runtime) as (m: unknown) => Promise<unknown>;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    w.__releaseScale = release;
+    (chrome.runtime as unknown as { sendMessage: (m: { kind?: string }) => Promise<unknown> }).sendMessage = async (m) => {
+      if (m?.kind !== "getScale") return orig(m);
+      w.__scaleAsked++;
+      if (s.mode === "failed") return { ok: false };
+      if (s.mode === "held") await gate;
+      const res = (await orig(m)) as { ok: boolean; scale?: { nodes: number } };
+      if (s.nodes !== undefined && res.ok && res.scale) res.scale.nodes = s.nodes;
+      return res;
+    };
+  }, stub);
+  await popup.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
+  await popup.locator(LIVE_RUNG).first().waitFor({ timeout: 20_000 });
+  return { popup, page };
+}
+
+// The popup has asked for the graph size once: what is shown (or not) after
+// this is the answer to that ask, with no fixed wait.
+async function scaleAsked(popup: Page): Promise<void> {
+  await expect
+    .poll(() => popup.evaluate(() => (window as unknown as { __scaleAsked: number }).__scaleAsked))
+    .toBe(1);
+}
+
+for (const scheme of ["dark", "light"] as const) {
+  test(`the header keeps room for one more button beside a 12-character figure (${scheme})`, async () => {
+    const { popup, page } = await openSiteWithScale({ nodes: 12_340_000_000 }, scheme);
+    await expect(popup.locator("#scale-nodes")).toHaveText("12.34B", { timeout: 15_000 });
+    await popup.evaluate(() => document.fonts.ready.then(() => undefined));
+    const m = await popup.locator(".pp-header").evaluate((h) => {
+      const hb = h.getBoundingClientRect();
+      const kids = [...h.children].filter((k) => k.getBoundingClientRect().width > 0);
+      const mids = kids.map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
+      return {
+        spacer: h.querySelector(".spacer")!.getBoundingClientRect().width,
+        height: hb.height,
+        fits: h.scrollWidth <= h.clientWidth,
+        row: Math.max(...mids) - Math.min(...mids) <= 2,
+        text: (h as HTMLElement).innerText.replace(/\s+/g, " "),
+      };
+    });
+    expect(m.text, "the figure read is not the 12-character one").toContain("12.34B nodes");
+    expect(m.spacer, "less than 36 px free beside Re-check and Settings").toBeGreaterThanOrEqual(36);
+    expect(m.height).toBe(52);
+    expect(m.fits, "the header overflows sideways").toBe(true);
+    expect(m.row, "the header wrapped onto a second row").toBe(true);
+    await popup.close();
+    await page.close();
+  });
+}
+
+test("the dot shows only once the graph size was read", async () => {
+  // Read fails: nothing shows, so neither does the dot.
+  {
+    const { popup, page } = await openSiteWithScale({ mode: "failed" });
+    await scaleAsked(popup);
+    await expect(popup.locator("#scale")).toBeHidden();
+    await expect(popup.locator("#scale .scale-dot")).toBeHidden();
+    await popup.close();
+    await page.close();
+  }
+  // Read not yet answered: still nothing. Once it answers, both show.
+  const { popup, page } = await openSiteWithScale({ mode: "held" });
+  await scaleAsked(popup);
+  await expect(popup.locator("#scale")).toBeHidden();
+  await expect(popup.locator("#scale .scale-dot")).toBeHidden();
+  await popup.evaluate(() => (window as unknown as { __releaseScale: () => void }).__releaseScale());
+  await expect(popup.locator("#scale")).toBeVisible({ timeout: 15_000 });
+  await expect(popup.locator("#scale .scale-dot")).toBeVisible();
   await popup.close();
   await page.close();
 });

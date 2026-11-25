@@ -447,7 +447,7 @@ export interface GraphScale {
   /** Resolver answer latency, microseconds. */
   p50Us: number | null;
   p99Us: number | null;
-  /** 5-minute query buckets, oldest first: the pulse the header draws. */
+  /** 5-minute query buckets, oldest first: the pulse the dashboard and first run draw. */
   pulse: number[];
   /** When the endpoint says it computed this. */
   updated: number;
