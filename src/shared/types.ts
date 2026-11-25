@@ -64,6 +64,11 @@ export interface TabState {
   // faking a verdict or claiming the check failed. Optional so older saved states and
   // fixtures stay valid.
   lost?: true;
+  // Set only on a state that stands for a check still running: the time (ms
+  // since the epoch) the worker scheduled it. The popup counts its overall
+  // limit from here, so a popup opened late never waits longer than the
+  // worker itself would.
+  checkStartedAt?: number;
 }
 
 export interface SessionRisk {
