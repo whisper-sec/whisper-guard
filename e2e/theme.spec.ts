@@ -90,15 +90,16 @@ test("every page declares both schemes and links the shared theme", () => {
 test("every page loads theme-boot.js first: a classic, blocking script in the head, after the shared theme", () => {
   for (const page of PAGES) {
     const html = readFileSync(join(DIST, page), "utf8");
-    const head = html.slice(html.indexOf("<head>"), html.indexOf("</head>"));
-    const tags = [...head.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
-    const boot = tags.filter((t) => /\bsrc="theme-boot\.js"/.test(t));
+    const lower = html.toLowerCase();
+    const head = html.slice(lower.indexOf("<head"), lower.indexOf("</head>"));
+    const tags = [...head.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
+    const boot = tags.filter((t) => /\bsrc\s*=\s*["']theme-boot\.js["']/i.test(t));
     expect(boot, `${page} must load theme-boot.js once, inside <head>`).toHaveLength(1);
-    expect(boot[0], `${page}: the boot script must block (no async, defer or module)`).not.toMatch(/\b(async|defer)\b|type\s*=/);
+    expect(boot[0], `${page}: the boot script must block (no async, defer or module)`).not.toMatch(/\b(async|defer)\b|\btype\s*=/i);
     expect(head.indexOf("theme-boot.js"), `${page}: theme-boot.js comes after theme.css`).toBeGreaterThan(head.indexOf('href="theme.css"'));
     // It runs before any of the page's own stylesheets are applied or its body is parsed.
     expect(head.indexOf('href="theme.css"')).toBeGreaterThan(-1);
-    expect(html.indexOf("theme-boot.js"), `${page}: before the body`).toBeLessThan(html.indexOf("<body"));
+    expect(lower.indexOf("theme-boot.js"), `${page}: before the body`).toBeLessThan(lower.indexOf("<body"));
   }
 });
 

@@ -1926,7 +1926,11 @@ async function showSite(first: TabState): Promise<void> {
       while (isRunning(s) && Date.now() < limit && s.hostname === host) {
         await sleep(Math.min(POLL_MS, Math.max(0, limit - Date.now())));
         const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
-        if (res.ok) s = res.tabState;
+        if (res.ok) {
+          s = res.tabState;
+          // A state that gained its detector since the last one still shows the card beside the loader.
+          if (s.hostname === host) drawLookalike(s);
+        }
       }
     }
     if (run !== siteRun) return;
