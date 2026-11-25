@@ -26,6 +26,7 @@
 import { LOGO_DATAURI } from "../shared/brand";
 import { PREEMPT_DECIDE_TIMEOUT_MS } from "../shared/config";
 import { armConsent } from "./consent";
+import { FONT_MONO, FONT_SANS, ONPAGE, el, focusRing, markImg } from "./onpage-style";
 import { extractHostname } from "../shared/hostname";
 import {
   linkTarget,
@@ -561,48 +562,88 @@ if (!w[FLAG]) {
       const root = mount();
       const hostEl = root.host as HTMLElement;
 
-      const overlay = document.createElement("div");
+      // The overlay scrolls, and the card centres itself with auto margins,
+      // so a window shorter than the card can still reach the buttons.
+      const overlay = el(
+        "div",
+        "w-overlay",
+        [
+          "position:fixed", "inset:0", `background:${ONPAGE.scrim}`, "display:flex",
+          "padding:16px", "box-sizing:border-box", "overflow-y:auto", `font-family:${FONT_SANS}`,
+        ].join(";"),
+      );
       overlay.setAttribute("role", "alertdialog");
       overlay.setAttribute("aria-modal", "true");
-      overlay.style.cssText = [
-        "position:fixed", "inset:0", "background:rgba(12,10,9,.78)",
-        "display:flex", "align-items:center", "justify-content:center",
-        "font:15px/1.6 system-ui,sans-serif", "padding:16px",
-      ].join(";");
+      overlay.setAttribute("aria-labelledby", "w-title");
+      overlay.setAttribute("aria-describedby", "w-desc");
 
-      const card = document.createElement("div");
-      card.style.cssText = [
-        "max-width:480px", "width:100%", "background:#1C1917", "color:#F5F5F4",
-        "border-radius:12px", "padding:24px", "box-shadow:0 12px 48px rgba(0,0,0,.6)",
-        "border-top:4px solid #DC2626",
-      ].join(";");
+      const card = el(
+        "div",
+        "w-card",
+        [
+          "width:100%", "max-width:520px", "box-sizing:border-box", "margin:auto",
+          `background:${ONPAGE.card}`, `color:${ONPAGE.text}`, `border:1px solid ${ONPAGE.line}`,
+          `border-top:4px solid ${ONPAGE.high}`, "border-radius:16px", "padding:28px",
+          "display:flex", "flex-direction:column", "gap:16px", `box-shadow:${ONPAGE.cardShadow}`,
+          `font-family:${FONT_SANS}`, "font-size:15px", "line-height:1.55", "user-select:none",
+        ].join(";"),
+      );
 
-      const logo = document.createElement("img");
-      logo.src = LOGO_DATAURI;
-      logo.alt = "Whisper";
-      logo.style.cssText = "height:18px;width:auto;display:block;margin-bottom:14px";
-      card.appendChild(logo);
+      // Header: mark, name, product pill, what was held.
+      const header = el("div", null, "display:flex;align-items:center;gap:10px");
+      const mark = markImg(22);
+      mark.id = "w-mark";
+      const word = el("span", "w-word", "font-size:15px;font-weight:900", "Whisper");
+      const pill = el(
+        "span",
+        "w-guard",
+        [
+          `color:${ONPAGE.accent}`, `background:${ONPAGE.pillFill}`, `border:1px solid ${ONPAGE.pillLine}`,
+          "border-radius:999px", "padding:3px 9px", "font-size:11px", "font-weight:700", "line-height:1.2",
+        ].join(";"),
+        "Guard",
+      );
+      const spacer = el("span", null, "flex:1 1 auto");
+      const tag = el(
+        "span",
+        "w-tag",
+        `font-family:${FONT_MONO};font-size:11px;color:${ONPAGE.muted}`,
+        kind === "form" ? "form held" : "click held",
+      );
+      header.append(mark, word, pill, spacer, tag);
 
-      const h = document.createElement("div");
-      h.style.cssText = "font-size:18px;font-weight:700;margin-bottom:8px;color:#FECACA";
-      h.textContent =
-        kind === "form"
-          ? "Whisper stopped a dangerous form submission"
-          : "Whisper stopped a dangerous link";
-      card.appendChild(h);
+      const h = el(
+        "h2",
+        "w-title",
+        `margin:0;font-size:22px;line-height:1.3;font-weight:900;color:${ONPAGE.headingDanger}`,
+        kind === "form" ? "Whisper stopped a dangerous form submission" : "Whisper stopped a dangerous link",
+      );
 
-      const detail = document.createElement("p");
-      detail.style.cssText = "margin:0 0 12px";
-      detail.textContent =
-        kind === "form"
-          ? `${evd.host} is flagged ${evd.band} in the Whisper security graph. Nothing you typed was sent.`
-          : `${evd.host} is flagged ${evd.band} in the Whisper security graph. The click was stopped before anything loaded.`;
-      card.appendChild(detail);
+      const detail = el("p", "w-desc", `margin:0;font-size:15px;line-height:1.55;color:${ONPAGE.text2}`);
+      const hostSpan = el(
+        "span",
+        "w-host",
+        `font-family:${FONT_MONO};color:${ONPAGE.text};overflow-wrap:anywhere`,
+        evd.host,
+      );
+      detail.append(
+        hostSpan,
+        document.createTextNode(
+          kind === "form"
+            ? ` is flagged ${evd.band} in the Whisper security graph. Nothing you typed was sent.`
+            : ` is flagged ${evd.band} in the Whisper security graph. The click was stopped before anything loaded.`,
+        ),
+      );
 
       // The receipts: band, label, coverage, straight from the verdict.
-      const receipts = document.createElement("div");
-      receipts.style.cssText =
-        "background:#292524;border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:13px;color:#D6D3D1";
+      const receipts = el(
+        "div",
+        "w-evidence",
+        [
+          `background:${ONPAGE.well}`, `border:1px solid ${ONPAGE.wellLine}`, "border-radius:8px",
+          "padding:12px 14px", "display:flex", "flex-direction:column", "gap:6px", "font-size:13px",
+        ].join(";"),
+      );
       const rows: [string, string | null][] = [
         ["verdict", evd.band],
         ["label", evd.label],
@@ -610,57 +651,119 @@ if (!w[FLAG]) {
       ];
       for (const [k, v] of rows) {
         if (!v) continue;
-        const row = document.createElement("div");
-        const kEl = document.createElement("span");
-        kEl.style.cssText = "display:inline-block;min-width:80px;color:#A8A29E";
-        kEl.textContent = k;
-        row.append(kEl, document.createTextNode(v));
+        const row = el("div", null, "display:grid;grid-template-columns:96px minmax(0,1fr);align-items:baseline");
+        const kEl = el("span", null, `font-family:${FONT_MONO};font-size:11px;color:${ONPAGE.muted}`, k);
+        const vEl =
+          k === "verdict"
+            ? el(
+                "span",
+                "w-verdict",
+                [
+                  `font-family:${FONT_MONO}`, "font-size:11px", "font-weight:700", `color:${ONPAGE.onAccent}`,
+                  `background:${ONPAGE.critical}`, "border-radius:999px", "padding:2px 8px",
+                  "justify-self:start",
+                ].join(";"),
+                v,
+              )
+            : el("span", null, `color:${ONPAGE.text};overflow-wrap:anywhere`, v);
+        row.append(kEl, vEl);
         receipts.appendChild(row);
       }
-      card.appendChild(receipts);
 
-      const privacy = document.createElement("p");
-      privacy.style.cssText = "margin:0 0 16px;font-size:12px;color:#A8A29E";
-      privacy.textContent = `Privacy: only "${evd.host}" was checked. Your browsing stays yours.`;
-      card.appendChild(privacy);
+      const privacy = el(
+        "p",
+        "w-privacy",
+        `margin:0;font-size:12px;color:${ONPAGE.muted}`,
+        `Privacy: only “${evd.host}” was checked. Your browsing stays yours.`,
+      );
 
-      const buttons = document.createElement("div");
-      buttons.style.cssText = "display:flex;gap:10px;justify-content:flex-end";
+      const buttons = el("div", null, "display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap");
+      const base = `font-family:${FONT_SANS};font-size:14px;border-radius:6px;min-height:44px;cursor:pointer`;
+      const proceed = el(
+        "button",
+        "w-proceed",
+        `${base};color:${ONPAGE.text2};background:transparent;border:1px solid ${ONPAGE.lineStrong};padding:0 18px`,
+        "Proceed anyway",
+      );
+      const back = el(
+        "button",
+        "w-back",
+        `${base};font-weight:700;color:${ONPAGE.onAccent};background:${ONPAGE.accentLine};border:0;padding:0 22px`,
+        "Go back",
+      );
+      proceed.type = "button";
+      back.type = "button";
+      focusRing(proceed);
+      focusRing(back);
 
-      const back = document.createElement("button");
-      back.textContent = "Go back";
-      back.style.cssText =
-        "background:#F5F5F4;color:#1C1917;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer";
-
-      const proceed = document.createElement("button");
-      proceed.textContent = "Proceed anyway";
-      proceed.style.cssText =
-        "background:transparent;color:#D6D3D1;border:1px solid #57534E;border-radius:8px;padding:9px 16px;font:inherit;cursor:pointer";
-
+      /** Set by the first Proceed press: from then on nothing else acts. */
+      let decided = false;
       const close = (): void => {
         interstitialOpen = false;
         document.removeEventListener("keydown", onKey, true);
         hostEl.remove();
       };
       const onKey = (kev: KeyboardEvent): void => {
+        // Only real key presses count: a page can dispatch its own events.
+        if (!kev.isTrusted) return;
+        // The page removed the card: never trap a key on a page without it.
+        if (!hostEl.isConnected) {
+          close();
+          return;
+        }
         if (kev.key === "Escape") {
           kev.preventDefault();
           kev.stopImmediatePropagation();
-          close();
+          if (!decided) close();
+          return;
+        }
+        const at = [proceed, back].findIndex((b) => b === root.activeElement);
+        if (kev.key === "Tab") {
+          // A modal dialog: focus cycles between the two buttons and never
+          // reaches the page behind. The key arrives retargeted to the host,
+          // so the root's own activeElement says which button has focus.
+          kev.preventDefault();
+          kev.stopImmediatePropagation();
+          const order = [proceed, back];
+          const next =
+            at === -1
+              ? back
+              : kev.shiftKey
+                ? order[(at + order.length - 1) % order.length]!
+                : order[(at + 1) % order.length]!;
+          next.focus();
+          return;
+        }
+        if ((kev.key === "Enter" || kev.key === " ") && at === -1) {
+          // Focus is on neither button: the key must not reach the page
+          // behind or act on a button the user did not choose.
+          kev.preventDefault();
+          kev.stopImmediatePropagation();
+          back.focus();
         }
       };
 
-      back.addEventListener("click", close);
-      proceed.addEventListener("click", () => {
+      back.addEventListener("click", (cev) => {
+        if (!cev.isTrusted || decided) return;
+        close();
+      });
+      proceed.addEventListener("click", (cev) => {
+        if (!cev.isTrusted || decided) return; // a page's click, or a second press while the answer is pending
+        decided = true;
         // Honest one-click-through, like the full-page warning: session-
         // allow in the background (which also lifts any DNR rule), THEN
         // resume, so the resumed navigation is not re-blocked. Fail open
-        // if the background is unreachable.
+        // if the background is unreachable or never answers.
         cleanHosts.add(evd.host);
+        let went = false;
         const go = (): void => {
+          if (went) return;
+          went = true;
+          clearTimeout(timer);
           close();
           resume();
         };
+        const timer = setTimeout(go, PREEMPT_DECIDE_TIMEOUT_MS);
         try {
           chrome.runtime.sendMessage({ kind: "preemptAllow", host: evd.host }, () => {
             void chrome.runtime.lastError;
@@ -672,8 +775,8 @@ if (!w[FLAG]) {
       });
 
       document.addEventListener("keydown", onKey, true);
-      buttons.append(back, proceed);
-      card.appendChild(buttons);
+      buttons.append(proceed, back);
+      card.append(header, h, detail, receipts, privacy, buttons);
       overlay.appendChild(card);
       root.appendChild(overlay);
       back.focus();
