@@ -240,6 +240,21 @@ export class E2ENetwork {
    * another's fast one (graphDelayMs delays everything). Clear it in afterEach.
    */
   readonly assessDelayMs = new Map<string, number>();
+  /**
+   * Answer a whisper.assess request naming one of these hosts with its headers
+   * at once and its body only after this many ms. It is the answer that
+   * stalls after it has started, which a delay before the headers cannot be.
+   * Clear it in afterEach.
+   */
+  readonly assessBodyDelayMs = new Map<string, number>();
+  /**
+   * Hold the answer to any graph query whose text contains the key, by this
+   * many ms (the explain and the chain's reads, for one). The assess query is
+   * not affected unless a key names it. Clear it in afterEach.
+   */
+  readonly queryDelayMs = new Map<string, number>();
+  /** Every graph answer sent for a hostname parameter, in order, with the time it was sent. */
+  readonly answered: { query: string; host: string; at: number }[] = [];
   private listHold: Promise<void> | null = null;
   /**
    * Hold the answer to the NEXT control-plane roster read until the returned
@@ -387,6 +402,24 @@ export class E2ENetwork {
     while (!this.lateAnswered.has(key)) {
       if (Date.now() > deadline) throw new Error(`no delayed assess answer for ${key}`);
       await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  /**
+   * Resolve once a whisper.assess request naming `host` has reached the graph:
+   * the check is then past its start and waiting on the answer. The toolbar's
+   * checking tile is not that signal, since it is painted from the commit.
+   */
+  async waitForAssessRequest(host: string, timeoutMs = 10_000): Promise<void> {
+    const key = host.toLowerCase();
+    const deadline = Date.now() + timeoutMs;
+    const seen = (): boolean =>
+      this.log.some(
+        (r) => r.host === GRAPH_READ_HOST && r.body.includes("whisper.assess") && r.body.toLowerCase().includes(key),
+      );
+    while (!seen()) {
+      if (Date.now() > deadline) throw new Error(`no assess request for ${key}`);
+      await new Promise((r) => setTimeout(r, 25));
     }
   }
 
@@ -718,6 +751,9 @@ export class E2ENetwork {
     }
     const params = parsed.parameters ?? {};
     const rows: Record<string, unknown>[] = [];
+    for (const [needle, ms] of this.queryDelayMs) {
+      if (q.includes(needle)) await new Promise((r) => setTimeout(r, ms));
+    }
 
     // The control plane rides the SAME endpoint: a bare CALL whisper.agents.
     if (q.includes("whisper.agents")) {
@@ -762,6 +798,17 @@ export class E2ENetwork {
               }
             : { host: h.toLowerCase(), band: "UNKNOWN", coverage: "no-data", label: "unknown", sub_labels: [] },
         );
+      }
+      const bodyHeld = hs.filter((h) => this.assessBodyDelayMs.has(h.toLowerCase()));
+      if (bodyHeld.length > 0) {
+        const ms = Math.max(...bodyHeld.map((h) => this.assessBodyDelayMs.get(h.toLowerCase()) ?? 0));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.flushHeaders();
+        await new Promise((r) => setTimeout(r, ms));
+        for (const h of bodyHeld) this.lateAnswered.set(h.toLowerCase(), Date.now());
+        // The reader may have given up by now; ending a closed answer is harmless.
+        res.end(JSON.stringify({ columns: [], rows, statistics: { rowCount: rows.length } }));
+        return;
       }
     } else if (q.includes("whisper.explain")) {
       const h = String(params["h"] ?? "").toLowerCase();
@@ -921,6 +968,7 @@ export class E2ENetwork {
       }
     }
 
+    this.answered.push({ query: q, host: String(params["h"] ?? "").toLowerCase(), at: Date.now() });
     res
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify({ columns: [], rows, statistics: { rowCount: rows.length } }));

@@ -15,7 +15,7 @@
 // browsing is never blocked.
 
 import { ext } from "../shared/api";
-import { GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
+import { CHECK_LIMIT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { atLeast, decide } from "../shared/escalation";
 import { extractHostname } from "../shared/hostname";
 import { registrableDomain } from "../shared/psl";
@@ -126,6 +126,12 @@ const lastUrl = new Map<number, string>();
  */
 const pending = new Set<number>();
 /**
+ * When each tab's current check was scheduled (ms since the epoch). It rides
+ * the "checking" states the worker answers with, so a popup counts its limit
+ * from the start of the check and not from when it was opened. Memory only.
+ */
+const checkStartedAt = new Map<number, number>();
+/**
  * Callers waiting for a tab's check to settle (the popup's "Check this site
  * now"). Keyed by tab, not by generation: when a navigation supersedes a check,
  * the state of the page the tab shows now is the right answer. Memory only.
@@ -222,7 +228,7 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
       // Show progress honestly while the one assess call runs.
       if (!current()) return;
       // Memory only: a saved "checking" would outlive the check that set it.
-      tabs.set(tabId, { ...state, icon: "checking" });
+      tabs.set(tabId, { ...state, icon: "checking", checkStartedAt: checkStartedAt.get(tabId) ?? Date.now() });
       pending.delete(tabId);
       await paintIcon(tabId, "checking");
       try {
@@ -360,6 +366,7 @@ function scheduleEvaluate(tabId: number, url: string): void {
   const gen = (navGen.get(tabId) ?? 0) + 1;
   navGen.set(tabId, gen);
   pending.add(tabId);
+  checkStartedAt.set(tabId, Date.now());
   const t = debounce.get(tabId);
   if (t) clearTimeout(t);
   debounce.set(
@@ -370,11 +377,38 @@ function scheduleEvaluate(tabId: number, url: string): void {
         // An evaluation that threw must not leave the tab "checking" forever.
         if (navGen.get(tabId) === gen) {
           pending.delete(tabId);
+          // Nothing settled, so neither the toolbar nor a popup may be left
+          // on a checking tile that no check is behind.
+          if (tabs.get(tabId)?.icon === "checking") tabs.delete(tabId);
+          if (!tabs.has(tabId)) void paintIcon(tabId, "neutral");
           resolveSettled(tabId, null);
         }
       });
     }, NAV_DEBOUNCE_MS),
   );
+}
+
+/**
+ * The checking tile, from the moment an eligible page's check is scheduled
+ * (its commit, or a press of "Check this site now") and not only once the
+ * graph is asked: the debounce, the on-device pass and the cache read no
+ * longer show the muted tile. Nothing is painted when
+ *  - the page is not one that is checked (not http or https, or a local name),
+ *  - the live check is off,
+ *  - the cache already holds the verdict (that tile follows at once, so the
+ *    toolbar does not flash the checking tile first), or
+ *  - by the time those were read, the check has a state of its own or a newer
+ *    navigation took the tab over: the verdict's paint is always the last one.
+ */
+async function paintCheckingEarly(tabId: number, url: string, gen: number): Promise<void> {
+  const hostname = /^https?:/i.test(url) ? extractHostname(url) : null;
+  if (!hostname) return;
+  const current = (): boolean =>
+    navGen.get(tabId) === gen && (pending.has(tabId) || tabs.get(tabId)?.icon === "checking");
+  if (!(await getSettings()).cloudCheck || !current()) return;
+  if (await cacheGet(hostname)) return;
+  if (!current()) return;
+  await paintIcon(tabId, "checking");
 }
 
 // ------------------------------------------------------------- wiring
@@ -409,6 +443,7 @@ ext.webNavigation.onCommitted.addListener((details) => {
   // that stops mid-check must not restore it for the new page.
   tabs.delete(details.tabId);
   scheduleEvaluate(details.tabId, details.url);
+  void paintCheckingEarly(details.tabId, details.url, navGen.get(details.tabId) ?? 0).catch(() => undefined);
   void clearTabState(details.tabId);
   // A new page starts without a declined prompt.
   void clearCookieDeclined(details.tabId);
@@ -433,6 +468,7 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 ext.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
   pending.delete(tabId);
+  checkStartedAt.delete(tabId);
   resolveSettled(tabId, null);
   void forgetTabState(tabId);
   navGen.delete(tabId);
@@ -646,6 +682,7 @@ async function lookupTabState(tabId: number): Promise<TabState> {
     stand.registrable = registrableDomain(hostname);
     stand.eligible = true;
     stand.icon = settings.cloudCheck ? "checking" : "signedout";
+    if (settings.cloudCheck) stand.checkStartedAt = checkStartedAt.get(tabId);
     return stand;
   }
   const restored = await restoreTabState(tabId);
@@ -656,19 +693,22 @@ async function lookupTabState(tabId: number): Promise<TabState> {
   return blankState();
 }
 
-/** Wait for the tab's next settled state, bounded by the longest a check can take. */
+/** Wait for the tab's next settled state, until the check's limit counted from
+ *  when the check was scheduled (never from now: a check begun long ago has
+ *  that much less left, and one that is over its limit answers at once). */
 function waitForSettled(tabId: number): Promise<TabState | null> {
   return new Promise((resolve) => {
     const done = (state: TabState | null): void => {
       clearTimeout(timer);
       resolve(state);
     };
+    const left = Math.max(0, (checkStartedAt.get(tabId) ?? Date.now()) + CHECK_LIMIT_MS - Date.now());
     const timer = setTimeout(() => {
       const rest = (settleWaiters.get(tabId) ?? []).filter((f) => f !== done);
       if (rest.length > 0) settleWaiters.set(tabId, rest);
       else settleWaiters.delete(tabId);
       resolve(null);
-    }, GRAPH_TIMEOUT_MS + NAV_DEBOUNCE_MS + 1500);
+    }, left);
     settleWaiters.set(tabId, [...(settleWaiters.get(tabId) ?? []), done]);
   });
 }
@@ -696,15 +736,15 @@ async function checkTabNow(tabId: number): Promise<TabState> {
   }
   if (!url || !/^https?:/i.test(url)) return lookupTabState(tabId);
 
-  const settled = waitForSettled(tabId);
   // A check already in flight (queued, or past its first write and waiting on
   // the graph) is waited for, never repeated.
   if (!pending.has(tabId) && tabs.get(tabId)?.icon !== "checking") {
     if (learned) lastUrl.set(tabId, url);
     tabs.delete(tabId);
     scheduleEvaluate(tabId, url);
+    void paintCheckingEarly(tabId, url, navGen.get(tabId) ?? 0).catch(() => undefined);
   }
-  const state = await settled;
+  const state = await waitForSettled(tabId);
   return state ? { ...state } : lookupTabState(tabId);
 }
 

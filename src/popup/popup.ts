@@ -50,7 +50,7 @@ import {
   type WinsToday,
 } from "../shared/types";
 import type { PageScanResult } from "../background/page-scan";
-import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
+import { CHECK_LIMIT_MS, CONSOLE_URL, EVIDENCE_LIMIT_MS, GRAPH_HOST } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { cookieDeclinedKey } from "../shared/tab-flags";
 import { initFade } from "./fade";
@@ -156,6 +156,8 @@ async function loadExpander(kind: "explain" | "identify", host: string, bodyId: 
   const body = $(bodyId);
   body.textContent = "Asking the graph...";
   const res = await send<{ ok: true; explain: ExplainResult }>({ kind, host });
+  // The drawer belongs to the name drawn now; an answer for another is dropped.
+  if (drawnState?.hostname !== host) return;
   if (!res.ok) {
     body.textContent = "Could not reach Whisper.";
     return;
@@ -229,6 +231,7 @@ async function loadNeighborhood(host: string): Promise<void> {
   const note = $("neighborhood-note");
   note.textContent = "Asking the graph for registered look-alikes of this name...";
   const res = await send<{ ok: true; candidates: CandidateVerdict[] }>({ kind: "confirmLookalikes", host });
+  if (drawnState?.hostname !== host) return;
   const canvas = $<HTMLCanvasElement>("graph-canvas");
   if (!res.ok) {
     note.textContent = "Could not reach Whisper; try again.";
@@ -506,10 +509,9 @@ function isTrusted(host: string, registrable: string | null, list: readonly stri
  * thing twice in two vocabularies, which is how a surface starts to read as
  * padding, and it left two places for the same fact to disagree.
  */
-async function loadProtection(host: string, band: GraphBand | null, coverage: string | null): Promise<void> {
-  const res = await send<{ ok: true; protection: Protection }>({ kind: "getProtection", host });
-  if (!res.ok) return;
-  const p = res.protection;
+function applyProtection(p: Protection | null, band: GraphBand | null, coverage: string | null): void {
+  // A read that failed draws nothing: Why this verdict stays hidden.
+  if (!p) return;
   const why = renderWhy(p);
   const card = $("protect-card");
   const whyBox = $("why-chips");
@@ -1176,18 +1178,17 @@ function sentenceOf(fact: string): string {
   return fact.charAt(0).toUpperCase() + fact.slice(1) + ".";
 }
 
-async function loadChain(host: string, band: GraphBand | null): Promise<void> {
+function applyChain(chain: SiteChain | null, band: GraphBand | null): void {
   const card = $("chain-card");
   const mount = $("chain-mount");
-  card.hidden = false;
-  renderChainPending(mount, 7, "WHO IS BEHIND IT");
-  const res = await send<{ ok: true; chain: SiteChain }>({ kind: "getChain", host });
   const note = $("chain-note");
-  if (!res.ok) {
+  card.hidden = false;
+  if (!chain) {
     // The transport failed, which is a different fact from "the graph knows
     // nothing", and the panel has to say which one happened. The link and the
     // drawers stay: they do not depend on this read.
     // Only the rows are replaced: the heading stays, the waiting count goes.
+    renderChainPending(mount, 7, "WHO IS BEHIND IT");
     const lost = document.createElement("div");
     lost.className = "pp-note lost";
     lost.textContent = FACTS_UNREAD;
@@ -1196,7 +1197,6 @@ async function loadChain(host: string, band: GraphBand | null): Promise<void> {
     note.hidden = true;
     return;
   }
-  const chain = res.chain;
   renderChain(
     mount,
     { ...chain, rungs: chain.rungs.map((r) => ({ ...r, label: FACT_LABEL[r.kind] })) },
@@ -1220,7 +1220,7 @@ async function loadChain(host: string, band: GraphBand | null): Promise<void> {
     if (kind) li.dataset.kind = kind;
   });
 
-  // The age joins the reason line only now that the history read came back.
+  // The age is part of the reason line, drawn with the rest of the answer.
   const name = chain.rungs.find((r) => r.kind === "name");
   if (name && name.state === "live" && name.fact) {
     const age = $("band-age");
@@ -1435,21 +1435,187 @@ function drawLookalike(s: TabState): void {
   }
 }
 
-let siteRendered = false;
+/** The reads behind a verdict: why it says what it says, and who is behind the
+ *  name. They start while the loader shows and are drawn with the verdict, in
+ *  one draw. undefined is "not in yet", null is "could not be read". */
+interface Evidence {
+  host: string;
+  startedAt: number;
+  protection: Protection | null | undefined;
+  chain: SiteChain | null | undefined;
+  ready: Promise<void>;
+}
 
-/** The part of the popup that is this site's answer: drawn at most once, so
- *  its listeners are attached once, either at open or after the press. */
-function renderSite(s: TabState): void {
+let evidence: Evidence | null = null;
+
+/** Start the reads for a name, once: asking again for the same name joins them. */
+function startEvidence(host: string): Evidence {
+  if (evidence && evidence.host === host) return evidence;
+  const ev: Evidence = { host, startedAt: Date.now(), protection: undefined, chain: undefined, ready: Promise.resolve() };
+  const protection = send<{ ok: true; protection: Protection }>({ kind: "getProtection", host }).then(
+    (res) => {
+      ev.protection = res.ok ? res.protection : null;
+    },
+    () => {
+      ev.protection = null;
+    },
+  );
+  const chain = send<{ ok: true; chain: SiteChain }>({ kind: "getChain", host }).then(
+    (res) => {
+      ev.chain = res.ok ? res.chain : null;
+    },
+    () => {
+      ev.chain = null;
+    },
+  );
+  ev.ready = Promise.all([protection, chain]).then(() => undefined);
+  evidence = ev;
+  return ev;
+}
+
+/** Wait until both reads have answered or failed, or until they have had the
+ *  longest the worker can honestly take for them. */
+function evidenceIn(ev: Evidence): Promise<void> {
+  const left = Math.max(0, ev.startedAt + EVIDENCE_LIMIT_MS - Date.now());
+  return Promise.race([ev.ready, new Promise<void>((r) => setTimeout(r, left))]);
+}
+
+/** What the popup says when the check outlasted its limit, in the worker's own words for a call that did not answer. */
+const LIMIT_ERROR = "could not reach Whisper; showing on-device checks only";
+
+let siteWired = false;
+/** Which drawers have read for the name drawn now. */
+const drawerLoaded = { why: false, who: false, hood: false };
+/** The state the site part shows now: what "Copy dossier" reads. */
+let drawnState: TabState | null = null;
+
+/** The site part's listeners, attached once however often it is drawn. */
+function wireSite(cloudCheck: boolean): void {
+  if (siteWired) return;
+  siteWired = true;
+
+  // opening the popup is a real invocation of Guard on this tab, so
+  // arm the pre-emptive click/submit guard here: under activeTab this
+  // works even without the broad Active-Shield grant. Fire-and-forget;
+  // the background fails silently where the page is not scriptable.
+  void send({ kind: "preemptArm", tabId });
+
+  if (cloudCheck) {
+    wireLinkScan();
+    wireIocScan();
+    wireGraphPath();
+    // The analyst drawers ride the public tier: available keyless and keyed.
+    // Each reads the name from the state drawn now, never from the first one.
+    $("expanders").hidden = false;
+    $("exp-why").addEventListener("toggle", () => {
+      const h = drawnState?.hostname;
+      if (h && !drawerLoaded.why && ($("exp-why") as HTMLDetailsElement).open) {
+        drawerLoaded.why = true;
+        void loadExpander("explain", h, "why-body");
+      }
+    });
+    $("exp-who").addEventListener("toggle", () => {
+      const h = drawnState?.hostname;
+      if (h && !drawerLoaded.who && ($("exp-who") as HTMLDetailsElement).open) {
+        drawerLoaded.who = true;
+        void loadExpander("identify", h, "who-body");
+      }
+    });
+    $("exp-neighborhood").addEventListener("toggle", () => {
+      const h = drawnState?.hostname;
+      if (h && !drawerLoaded.hood && ($("exp-neighborhood") as HTMLDetailsElement).open) {
+        drawerLoaded.hood = true;
+        void loadNeighborhood(h);
+      }
+    });
+    void loadSession();
+  }
+
+  if (state?.signedIn) {
+    // The footer's other button: a dossier needs a site that was checked.
+    $("footer-actions").hidden = false;
+    $("btn-dossier").hidden = false;
+    $("btn-dossier").addEventListener("click", async () => {
+      const s = drawnState;
+      const host = s?.hostname;
+      if (!host) return;
+      const [explain, identify] = await Promise.all([
+        send<{ ok: true; explain: ExplainResult }>({ kind: "explain", host }),
+        send<{ ok: true; explain: ExplainResult }>({ kind: "identify", host }),
+      ]);
+      const lines = [
+        `# Whisper Guard dossier: ${host}`,
+        ``,
+        `- band: ${s?.verdict?.band ?? "(no live check)"}`,
+        `- coverage: ${s?.verdict?.coverage ?? "n/a"} (categorical, not a safety score)`,
+        `- label: ${s?.verdict?.label ?? "n/a"}`,
+        `- on-device look-alike: ${s?.detector ? `${s.detector.kind} of ${s.detector.brandDomain}` : "none"}`,
+        ``,
+        `## explain`,
+        "```json",
+        JSON.stringify(explain.ok ? explain.explain.rows : [], null, 2),
+        "```",
+        `## identify`,
+        "```json",
+        JSON.stringify(identify.ok ? identify.explain.rows : [], null, 2),
+        "```",
+      ];
+      await navigator.clipboard.writeText(lines.join("\n"));
+      $("btn-dossier").textContent = "Copied";
+    });
+  }
+}
+
+/** A different name is drawn: what the drawers read for the last one goes. */
+function resetDrawers(): void {
+  drawerLoaded.why = drawerLoaded.who = drawerLoaded.hood = false;
+  for (const id of ["exp-why", "exp-who", "exp-neighborhood"]) ($(id) as HTMLDetailsElement).open = false;
+  $("why-body").textContent = "Loading...";
+  $("who-body").textContent = "Loading...";
+  $("neighborhood-note").textContent = "";
+}
+
+/** Put the site part back to nothing drawn, so a second draw starts clean. */
+function clearSiteDraw(): void {
+  for (const id of ["coverage-chip", "score-chip", "allow-chip"]) $(id).hidden = true;
+  $("coverage-chip").replaceChildren();
+  $("score-chip").replaceChildren();
+  syncChips();
+  $("band-age").hidden = true;
+  $("band-age").textContent = "";
+  $("why-panel").hidden = true;
+  $("why-score").hidden = true;
+  $("why-factors").replaceChildren();
+  $("why-chips").replaceChildren();
+  $("why-coverage").hidden = true;
+  $("protect-card").hidden = true;
+  $("chain-card").hidden = true;
+  $("chain-mount").replaceChildren();
+  $("chain-note").hidden = true;
+  $("neighbours-note").hidden = true;
+  $("graph-error").hidden = true;
+}
+
+/** A tab whose check is still running is never drawn as a verdict. */
+function isRunning(s: TabState): boolean {
+  return (settings?.cloudCheck ?? true) && s.icon === "checking" && s.eligible && !!s.hostname;
+}
+
+/** The part of the popup that is this site's answer, drawn in one go from a
+ *  state that is settled (or, past the limit, one that stands for could not
+ *  check) and the reads behind it. It can be drawn again for a later state:
+ *  every write replaces what an earlier draw left, and the listeners are
+ *  attached once. */
+function drawSite(s: TabState, ev: Evidence | null): void {
   const cloudCheck = settings?.cloudCheck ?? true;
-  $("checking-view").hidden = true;
-  $("not-checked-view").hidden = true;
-  // A tab with no answer is never drawn as a verdict: it gets the card.
-  if (cloudCheck && s.lost && s.eligible && s.hostname) {
-    drawNotChecked();
+  // The reads are for the name drawn, and no other: for any other name the
+  // site part starts over with its own reads, and nothing is written here.
+  if (ev && s.hostname !== ev.host) {
+    void showSite(s).catch(() => drawNotChecked());
     return;
   }
-  if (siteRendered) return;
-  siteRendered = true;
+  $("checking-view").hidden = true;
+  $("not-checked-view").hidden = true;
   drawLookalike(s);
 
   if (!s.eligible || !s.hostname) {
@@ -1462,24 +1628,23 @@ function renderSite(s: TabState): void {
     return;
   }
   const host = s.hostname;
-
-  // opening the popup is a real invocation of Guard on this tab, so
-  // arm the pre-emptive click/submit guard here: under activeTab this
-  // works even without the broad Active-Shield grant. Fire-and-forget;
-  // the background fails silently where the page is not scriptable.
-  void send({ kind: "preemptArm", tabId });
+  if (drawnState?.hostname !== host) resetDrawers();
+  drawnState = s;
+  wireSite(cloudCheck);
+  clearSiteDraw();
+  if (cloudCheck) pointGraphPath(host);
 
   $("host-row").hidden = false;
   writeName($("hostname"), host, s.detector ? swapOf(host, s.detector) : null);
   const band: GraphBand | null = s.verdict?.band ?? null;
+  // The reads that did not answer (or are not wanted) draw nothing of their own.
+  const protection = ev?.protection ?? null;
+  const chain = ev?.chain ?? null;
   if (cloudCheck) {
-    wireLinkScan();
-    wireIocScan();
     // The chain is the keyless payload and does not wait on a verdict:
     // whether the name is flagged or unremarkable, the path behind it is
     // the thing the panel was opened to see.
-    void loadChain(host, band);
-    wireGraphPath(host);
+    applyChain(chain, band);
     showPagePart("cards");
   } else {
     showPagePart("live-off");
@@ -1494,15 +1659,19 @@ function renderSite(s: TabState): void {
     const ui = BAND_UI[band];
     paintVerdict(ui.tone, ui.tone, ui.glyph, ui.chip, verdictSentence(band, s.verdict?.label ?? null), ADVICE[band] ?? null);
     renderCoverage(s.verdict?.coverage ?? null);
-    void loadProtection(host, band, s.verdict?.coverage ?? null);
+    applyProtection(protection, band, s.verdict?.coverage ?? null);
   } else if (cloudCheck && s.graphError) {
     // The check was made and Whisper did not answer. Its own word, glyph and
     // amber, so it is never read as SUSPICIOUS or as a clean "unknown".
     paintVerdict("err", "err", "!", "COULD NOT CHECK", "Not confirmed either way. On-device checks still ran.");
-    void loadProtection(host, null, null);
+    applyProtection(protection, null, null);
   } else if (cloudCheck) {
+    // Reached only by a state that holds no answer and no check running: one
+    // kept from a time the live check was off and opened after it was turned
+    // on. It is not a check that was made, and it is not drawn as one that is
+    // still running.
     paintVerdict("unknown", "unknown", "?", "UNKNOWN", "No verdict yet for this site.");
-    void loadProtection(host, null, null);
+    applyProtection(protection, null, null);
   } else {
     // A plain ring: no reading was taken. U+26BF has no glyph in a good many
     // system font stacks and falls back to a tofu box, which reads as a
@@ -1513,64 +1682,6 @@ function renderSite(s: TabState): void {
   if (s.graphError) {
     $("graph-error").hidden = false;
     $("graph-error").textContent = `${s.graphError} Re-check with the arrow at the top.`;
-  }
-
-  // The analyst drawers ride the public tier: available keyless and keyed.
-  if (cloudCheck) {
-    $("expanders").hidden = false;
-    let whyLoaded = false;
-    $("exp-why").addEventListener("toggle", () => {
-      if (!whyLoaded && ($("exp-why") as HTMLDetailsElement).open) {
-        whyLoaded = true;
-        void loadExpander("explain", host, "why-body");
-      }
-    });
-    let whoLoaded = false;
-    $("exp-who").addEventListener("toggle", () => {
-      if (!whoLoaded && ($("exp-who") as HTMLDetailsElement).open) {
-        whoLoaded = true;
-        void loadExpander("identify", host, "who-body");
-      }
-    });
-    let hoodLoaded = false;
-    $("exp-neighborhood").addEventListener("toggle", () => {
-      if (!hoodLoaded && ($("exp-neighborhood") as HTMLDetailsElement).open) {
-        hoodLoaded = true;
-        void loadNeighborhood(host);
-      }
-    });
-    void loadSession();
-  }
-
-  if (s.signedIn) {
-    // The footer's other button: a dossier needs a site that was checked.
-    $("footer-actions").hidden = false;
-    $("btn-dossier").hidden = false;
-    $("btn-dossier").addEventListener("click", async () => {
-      const [explain, identify] = await Promise.all([
-        send<{ ok: true; explain: ExplainResult }>({ kind: "explain", host }),
-        send<{ ok: true; explain: ExplainResult }>({ kind: "identify", host }),
-      ]);
-      const lines = [
-        `# Whisper Guard dossier: ${host}`,
-        ``,
-        `- band: ${s.verdict?.band ?? "(no live check)"}`,
-        `- coverage: ${s.verdict?.coverage ?? "n/a"} (categorical, not a safety score)`,
-        `- label: ${s.verdict?.label ?? "n/a"}`,
-        `- on-device look-alike: ${s.detector ? `${s.detector.kind} of ${s.detector.brandDomain}` : "none"}`,
-        ``,
-        `## explain`,
-        "```json",
-        JSON.stringify(explain.ok ? explain.explain.rows : [], null, 2),
-        "```",
-        `## identify`,
-        "```json",
-        JSON.stringify(identify.ok ? identify.explain.rows : [], null, 2),
-        "```",
-      ];
-      await navigator.clipboard.writeText(lines.join("\n"));
-      $("btn-dossier").textContent = "Copied";
-    });
   }
 
   setPrivacyLine(
@@ -1626,16 +1737,21 @@ function liveCheckLine(host: string): string {
 /** "Show the graph path": the check-link page for this hostname. A real link,
  *  so it is in the Tab order and answers Enter; opened as the context menu
  *  opens it, which sends what that page sends for this one name and no more. */
-function wireGraphPath(host: string): void {
-  const page = `check-link.html?host=${encodeURIComponent(host)}`;
-  const link = $<HTMLAnchorElement>("graph-path");
-  link.href = page;
-  link.addEventListener("click", (ev) => {
+function wireGraphPath(): void {
+  $<HTMLAnchorElement>("graph-path").addEventListener("click", (ev) => {
     ev.preventDefault();
-    chrome.tabs.create({ url: chrome.runtime.getURL(page) });
+    const href = $<HTMLAnchorElement>("graph-path").dataset["page"];
+    if (href) chrome.tabs.create({ url: chrome.runtime.getURL(href) });
   });
 }
 
+/** Point the graph path link at the check-link page for the name drawn. */
+function pointGraphPath(host: string): void {
+  const page = `check-link.html?host=${encodeURIComponent(host)}`;
+  const link = $<HTMLAnchorElement>("graph-path");
+  link.href = page;
+  link.dataset["page"] = page;
+}
 
 /** The one sentence This page shows while the live check is off. */
 const PAGE_NEEDS_LIVE_CHECK = "The link check and the indicator scan need the live check. Turn it on in settings.";
@@ -1696,29 +1812,119 @@ async function init(): Promise<void> {
   state = first;
   const cloudCheck = settings?.cloudCheck ?? true;
   renderShell(first.signedIn, first.hostname ?? "", first);
-  // Only after BOTH answers: a tab with the live check off must never flash
-  // the checking view. renderSite() attaches listeners and runs at most once,
-  // so while a check is in flight only the checking view is drawn and the
-  // verdict replaces it in place.
-  if (first.icon === "checking" && first.eligible && first.hostname && cloudCheck) {
-    drawChecking(first.hostname);
-    try {
-      state = await waitUntilSettled(first);
-    } catch {
-      // The worker stopped while waiting: no answer to draw.
-      drawNotChecked();
-      return;
-    }
-  }
-  if (cloudCheck && state.lost && state.eligible && state.hostname) {
+  if (cloudCheck && first.lost && first.eligible && first.hostname) {
     drawNotChecked();
     return;
   }
-  renderSite(state);
+  try {
+    await showSite(first);
+  } catch {
+    // The worker stopped while waiting: no answer to draw.
+    drawNotChecked();
+  }
 }
 
 function tabStateOf(res: BgResponse | null): TabState | null {
   return res && res.ok && "tabState" in res ? res.tabState : null;
+}
+
+/** How often the popup asks the worker whether the check has settled. */
+const POLL_MS = 200;
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Which draw of the site part is current: a newer one (a press of "Check this
+ *  site now") takes over from an older one that is still waiting. */
+let siteRun = 0;
+
+/**
+ * Draw This site for a tab. While its check is running only the loader shows;
+ * the reads behind the verdict start with it. The verdict, Why this verdict,
+ * the age line and the facts are then drawn together, once the check has
+ * settled and the reads have answered or failed. A check that is still running
+ * at its limit (counted from when the worker scheduled it) is drawn as could
+ * not check, and the popup keeps listening: when the check settles later the
+ * site part is drawn again from the settled state.
+ */
+async function showSite(first: TabState): Promise<void> {
+  const run = ++siteRun;
+  const cloudCheck = settings?.cloudCheck ?? true;
+  let s = first;
+  // One pass per name: when the tab moves to another name while the popup
+  // waits, the loader shows again and the reads start for the new name.
+  for (;;) {
+    if (!cloudCheck || !s.eligible || !s.hostname) {
+      state = s;
+      drawSite(s, null);
+      return;
+    }
+    const host = s.hostname;
+    const ev = startEvidence(host);
+    drawChecking(host);
+
+    if (isRunning(s)) {
+      const limit = (s.checkStartedAt ?? Date.now()) + CHECK_LIMIT_MS;
+      while (isRunning(s) && Date.now() < limit && s.hostname === host) {
+        await sleep(Math.min(POLL_MS, Math.max(0, limit - Date.now())));
+        const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
+        if (res.ok) s = res.tabState;
+      }
+    }
+    if (run !== siteRun) return;
+    if (s.hostname !== host) continue;
+    if (s.lost && s.eligible) {
+      drawNotChecked();
+      return;
+    }
+    if (isRunning(s)) {
+      // The limit passed with the check still going: could not check, drawn
+      // with whatever the reads have brought so far, and the popup keeps
+      // listening until twice the limit has passed since the check began.
+      state = s;
+      drawSite({ ...s, icon: "unknown", graphError: LIMIT_ERROR }, ev);
+      void listenForSettled(run, host, ev, (s.checkStartedAt ?? Date.now()) + LISTEN_LIMIT_MS);
+      return;
+    }
+    await evidenceIn(ev);
+    if (run !== siteRun) return;
+    state = s;
+    drawSite(s, ev);
+    return;
+  }
+}
+
+/** How long after a check began the popup goes on listening for it to settle. */
+const LISTEN_LIMIT_MS = 2 * CHECK_LIMIT_MS;
+
+/** After the limit: ask until the check settles, then draw the site part again from its answer. */
+async function listenForSettled(run: number, host: string, ev: Evidence, until: number): Promise<void> {
+  while (run === siteRun && Date.now() < until) {
+    await sleep(POLL_MS);
+    let s: TabState;
+    try {
+      const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
+      if (!res.ok) continue;
+      s = res.tabState;
+    } catch {
+      return;
+    }
+    if (run !== siteRun) return;
+    // The tab moved on to another page: it is drawn as its own page, with its own reads.
+    if (s.hostname !== host) {
+      void showSite(s).catch(() => drawNotChecked());
+      return;
+    }
+    if (isRunning(s)) continue;
+    if (s.lost) {
+      drawNotChecked();
+      return;
+    }
+    await evidenceIn(ev);
+    if (run !== siteRun) return;
+    state = s;
+    drawSite(s, ev);
+    return;
+  }
 }
 
 /** The waiting view: the site's name and placeholders that the verdict replaces. */
@@ -1748,22 +1954,35 @@ function drawNotChecked(): void {
 }
 
 /** "Check this site now": one check of this tab's page by the worker, drawn in
- *  place. The popup and the page are never reloaded. */
+ *  place by the same rules as a check at open. The popup and the page are
+ *  never reloaded. */
 async function checkNow(): Promise<void> {
   const button = $("btn-check-now") as HTMLButtonElement;
   const hadFocus = document.activeElement === button;
   button.disabled = true;
+  // Reads from an earlier look at this name are not this check's.
+  evidence = null;
   drawChecking(state?.hostname ?? "");
+  if (state?.hostname && state.eligible) startEvidence(state.hostname);
   let next: TabState | null = null;
   try {
     next = tabStateOf(await send({ kind: "checkTab", tabId }));
-    if (next && next.icon === "checking" && next.eligible && next.hostname) next = await waitUntilSettled(next);
   } catch {
     next = null;
   }
   if (next && !(next.lost && next.eligible && next.hostname)) {
     state = next;
-    renderSite(next);
+    try {
+      await showSite(next);
+    } catch {
+      drawNotChecked();
+      if (hadFocus) button.focus();
+      return;
+    }
+    if (!$("not-checked-view").hidden) {
+      if (hadFocus) button.focus();
+      return;
+    }
     // The pressed button is gone; keep focus inside This site. Whether the
     // press focused the button first depends on the browser (a mouse click on
     // macOS Firefox does not), so it moves on every successful press.
@@ -1772,19 +1991,6 @@ async function checkNow(): Promise<void> {
     drawNotChecked();
     if (hadFocus) button.focus();
   }
-}
-
-/** Poll the worker until the check settles; bounded by the longest the worker
- *  itself can take, after which the latest state is rendered as it is. */
-async function waitUntilSettled(first: TabState): Promise<TabState> {
-  let latest = first;
-  const deadline = Date.now() + GRAPH_TIMEOUT_MS + NAV_DEBOUNCE_MS + 1500;
-  while (latest.icon === "checking" && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 200));
-    const res = await send<{ ok: true; tabState: TabState }>({ kind: "getTabState", tabId });
-    if (res.ok) latest = res.tabState;
-  }
-  return latest;
 }
 
 void init();

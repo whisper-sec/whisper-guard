@@ -80,6 +80,9 @@ test.describe("default dist: mark, popup state and stored state", () => {
     net.assessDelayMs.set(A, DELAY_MS);
     const { page, tabId } = await visit(ext, `https://${A}/`);
     await waitForIcon(ext, tabId, ["checking"]);
+    // The check is in flight once its request has reached the graph; the
+    // checking tile alone shows from the commit.
+    await net.waitForAssessRequest(A);
     await navigateInTab(page, `https://${B}/`);
     await waitForIcon(ext, tabId, ["suspicious"]);
     const bTitle = await title(ext, tabId);
@@ -149,6 +152,9 @@ test.describe("shield dist: redirect and banner", () => {
     net.assessDelayMs.set(A_BLOCK, DELAY_MS);
     const { page, tabId } = await visit(ext, `https://${A_BLOCK}/`);
     await waitForIcon(ext, tabId, ["checking"]);
+    // The check is in flight once its request has reached the graph; the
+    // checking tile alone shows from the commit.
+    await net.waitForAssessRequest(A_BLOCK);
     await navigateInTab(page, `https://${B}/`);
     await waitForIcon(ext, tabId, ["benign"]);
 
@@ -171,6 +177,9 @@ test.describe("shield dist: redirect and banner", () => {
     net.assessDelayMs.set(A_AMBER, DELAY_MS);
     const { page, tabId } = await visit(ext, `https://${A_AMBER}/`);
     await waitForIcon(ext, tabId, ["checking"]);
+    // The check is in flight once its request has reached the graph; the
+    // checking tile alone shows from the commit.
+    await net.waitForAssessRequest(A_AMBER);
     await navigateInTab(page, `https://${B}/`);
     await waitForIcon(ext, tabId, ["benign"]);
 

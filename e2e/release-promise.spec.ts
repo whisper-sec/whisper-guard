@@ -314,7 +314,7 @@ test("should move from Checking to Could not check within 4.5 s", async () => {
   await waitForIcon(ext, tabId, ["checking"]);
   const popup = await openPopup(ext, tabId);
   await expect(popup.locator("#checking-view")).toBeVisible();
-  await expect(popup.locator("#checking-text")).toHaveText("Checking this site\u2026 usually under a second");
+  await expect(popup.locator("#checking-text")).toHaveText("Checking this site\u2026");
   await expect(popup.locator("#checking-host")).toHaveText(host);
   const t0 = Date.now();
   await expect(popup.locator("#band-chip")).toHaveText("COULD NOT CHECK", { timeout: 4500 });
