@@ -15,7 +15,7 @@ import {
   launchExtension,
   openGraphDrawers,
   openPopup,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
   setSettings,
   getStoredKey,
@@ -149,7 +149,7 @@ test("keyless: popup shows the on-device look-alike hit and the honest privacy l
   await expect(popup.locator("#btn-goto")).toHaveText("Go to the real site");
   await expect(popup.locator("#lookalike-real")).toHaveText("paypal.com");
   await expect(popup.locator("#privacy-line")).toContainText(GRAPH_READ_HOST);
-  await selectPopupTab(popup, "browser");
+  await scrollPopupTo(popup, "browser");
   await expect(popup.locator("#signin-pitch")).toBeVisible();
   await expect(popup.locator("#btn-signin")).toHaveText("Sign in with Whisper");
   await popup.close();
@@ -363,7 +363,7 @@ test("device flow: one click signs in and the key lands in storage", async () =>
   // per-site verdict, so this asserts the sign-in itself completes.
   const { page, tabId } = await visit(ext, "https://clean-site-guard-e2e.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+  const popup = await openPopup(ext, tabId, { section: "browser" });
   await popup.locator("#btn-signin").click();
 
   // The flow opens the console approval tab (our mock approves on visit)

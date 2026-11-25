@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// e2e: THE THIS SITE TAB. The verdict, the facts behind the name and the way
-// to the graph path.
+// e2e: THE THIS SITE PART. The verdict, the facts behind the name and the way
+// to the graph path, at the top of the popup's one scroll.
 //
-// The tab shows a verdict card, a row of plain chips, a "who is behind it"
-// card with a count of the facts read, a link to the graph path and one closed
-// row holding the four drawers. Each claim is measured on the built extension:
+// It shows a verdict card, a row of plain chips, a "who is behind it" card
+// with a count of the facts read, a link to the graph path and one closed row
+// holding the four drawers. Each claim is measured on the built extension:
 //
-//   - on a clean site all of it fits 600 px without scrolling, in both schemes;
+//   - on a clean site the verdict card, its chips and all seven facts are on
+//     the first screen, clear of the fade, in both schemes;
+//   - a site name that fits the card keeps one line, with the pill under it
+//     when both do not fit side by side; a longer name breaks, never cut;
 //   - the counter counts rows ANSWERED, and an unread row says so in words;
 //   - a chip shows only when the data behind it exists;
 //   - the graph path link opens the check-link page for the hostname, by
@@ -32,6 +35,7 @@ import {
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
+import { WIDER_EM, expectFirstScreen, withWiderGlyphs } from "./helpers/popup-fit";
 
 let net: E2ENetwork;
 let ext: Extension;
@@ -147,36 +151,23 @@ function graphKinds(): string[] {
     .sort();
 }
 
-async function fitOf(popup: Page): Promise<{ over: number; spare: number; scroll: number; client: number; fade: boolean }> {
-  await popup.evaluate(() => document.fonts.ready);
-  await expect
-    .poll(() => popup.evaluate(() => document.fonts.check("12.5px Lato") && document.fonts.check("12px 'JetBrains Mono'")))
-    .toBe(true);
-  // The region never reports less than its own height, so the slack is read from
-  // where the last block ends: pixels left under it, inside the region's padding.
-  const m = await popup.locator("#tab-content").evaluate((r) => {
-    const last = [...document.getElementById("panel-site")!.children].filter((e) => !(e as HTMLElement).hidden).pop()!;
-    const end = last.getBoundingClientRect().bottom - r.getBoundingClientRect().top;
-    return { s: r.scrollHeight, c: r.clientHeight, spare: r.clientHeight - 12 - end };
-  });
-  return { over: m.s - m.c, spare: m.spare, scroll: m.s, client: m.c, fade: await popup.locator("#tab-fade").isVisible() };
-}
-
 // -------------------------------------------------------------------- 1
 
-const FIT_CASES = [
-  { name: "a clean site", host: CLEAN, note: "Nothing in the graph lists this site.", minSpare: 18 },
-  // A 30-character name, a LOW verdict and a label in the reason: the longest reason line.
-  { name: "a LOW verdict with a label on a 30-character name", host: LOW_LABELLED, note: "(shared hosting provider)", minSpare: 0 },
+// Signed in, the footer holds its two buttons as well as the sent-line, which is
+// the least room the first screen ever has. The second case has a 30-character
+// name, a LOW verdict and a label in the reason: the longest reason line.
+const FIRST_SCREEN_CASES = [
+  { name: "a clean site", host: CLEAN, note: "Nothing in the graph lists this site." },
+  { name: "a LOW verdict with a label on a 30-character name", host: LOW_LABELLED, note: "(shared hosting provider)" },
 ];
 
-for (const c of FIT_CASES) {
-  test(`${c.name}: the whole This site tab fits 600 px without scrolling, in the dark and the light scheme`, async () => {
+for (const c of FIRST_SCREEN_CASES) {
+  test(`${c.name}: the verdict card, its chips and all seven facts are on the first screen, clear of the fade, in the dark and the light scheme`, async () => {
     await setKey(ext, MOCK_API_KEY);
     for (const scheme of ["dark", "light"] as const) {
       const { popup, page } = await openSite(`https://${c.host}/`, { colorScheme: scheme });
 
-      // The measurement is not vacuous: everything the tab holds is on screen.
+      // The measurement is not vacuous: everything the part holds is drawn.
       await expect(popup.locator("#score-chip")).toBeVisible();
       await expect(popup.locator("#band-age")).toBeVisible();
       await expect(popup.locator("#band-note")).toContainText(c.note);
@@ -188,15 +179,102 @@ for (const c of FIT_CASES) {
       await expect(popup.locator("#protect-card")).toBeHidden();
       await protectionDrawn(popup, c.host);
 
-      const fit = await fitOf(popup);
-      test.info().annotations.push({ type: `fit-${scheme}`, description: `spare ${fit.spare.toFixed(1)}` });
-      expect(fit.over, `${scheme}: the tab runs ${fit.over}px past the region`).toBeLessThanOrEqual(0);
-      expect(fit.spare, `${scheme}: only ${fit.spare.toFixed(1)}px to spare`).toBeGreaterThanOrEqual(c.minSpare);
-      expect(fit.fade, `${scheme}: the fade shows`).toBe(false);
+      await expectFirstScreen(popup, `first-screen-${scheme}`);
 
       await popup.close();
       await page.close();
     }
+  });
+}
+
+// ------------------------------------------------------------------ 1b
+
+// The verdict card's name: it shares the row with the pill when both fit, keeps
+// one line with the pill under it when only the name fits the card, and breaks
+// (never cut, never wider than the card) when it is wider than the card.
+const NAMES = {
+  short: "ex-site.io",
+  alone: "intranet-tools-vendor.com",
+  long: "a-name-far-too-long-to-fit-the-card-on-one-line-guard-e2e.com",
+} as const;
+
+async function nameBoxes(popup: Page): Promise<{
+  text: string;
+  line: number;
+  nameHeight: number;
+  nameTop: number;
+  nameBottom: number;
+  pillTop: number;
+  pillBottom: number;
+  nameOverflow: boolean;
+  cardOverflow: boolean;
+  regionOverflow: boolean;
+  nameWidth: number;
+  textColumn: number;
+  pillWidth: number;
+}> {
+  return popup.evaluate(() => {
+    const name = document.getElementById("hostname") as HTMLElement;
+    const pill = document.getElementById("band-chip") as HTMLElement;
+    const card = document.getElementById("host-row") as HTMLElement;
+    const region = document.getElementById("popup-scroll") as HTMLElement;
+    const n = name.getBoundingClientRect();
+    const p = pill.getBoundingClientRect();
+    return {
+      text: name.textContent ?? "",
+      line: parseFloat(getComputedStyle(name).lineHeight),
+      nameHeight: n.height,
+      nameTop: n.top,
+      nameBottom: n.bottom,
+      pillTop: p.top,
+      pillBottom: p.bottom,
+      nameWidth: n.width,
+      textColumn: (card.querySelector(".pp-verdict-text") as HTMLElement).getBoundingClientRect().width,
+      pillWidth: p.width,
+      nameOverflow: name.scrollWidth > name.clientWidth,
+      cardOverflow: card.scrollWidth > card.clientWidth,
+      regionOverflow: region.scrollWidth > region.clientWidth,
+    };
+  });
+}
+
+for (const scheme of ["dark", "light"] as const) {
+  test(`the site name keeps one line where it fits the card, with the pill under it when both do not fit, and breaks without a cut when it is wider (${scheme})`, async () => {
+    for (const host of Object.values(NAMES)) seed(host, { explain: POPULARITY, ageDays: AGE_DAYS });
+    const seen: Record<string, string> = {};
+    const say = (m: Awaited<ReturnType<typeof nameBoxes>>): string =>
+      `name ${m.nameWidth.toFixed(1)} px, pill ${m.pillWidth.toFixed(1)} px, column ${m.textColumn.toFixed(1)} px`;
+    for (const [kind, host] of Object.entries(NAMES) as [keyof typeof NAMES, string][]) {
+      const { popup, page } = await openSite(`https://${host}/`, { colorScheme: scheme });
+      await expect(popup.locator("#hostname")).toHaveText(host);
+      await popup.evaluate(() => document.fonts.ready.then(() => undefined));
+      const plain = await nameBoxes(popup);
+      const wider = await withWiderGlyphs(popup, WIDER_EM, () => nameBoxes(popup));
+      for (const [how, m] of [["as drawn", plain], [`${WIDER_EM}em wider`, wider]] as const) {
+        const at = `${kind} name, ${scheme}, ${how}`;
+        expect(m.text, `${at}: the name is cut`).toBe(host);
+        expect(m.nameOverflow, `${at}: the name is wider than its own box`).toBe(false);
+        expect(m.cardOverflow, `${at}: the card is wider than itself`).toBe(false);
+        expect(m.regionOverflow, `${at}: the popup scrolls sideways`).toBe(false);
+        const lines = m.nameHeight / m.line;
+        if (kind === "short") {
+          expect(lines, `${at}: the name is on one line`).toBeCloseTo(1, 1);
+          // The pill is on the name's row: their boxes overlap in height.
+          expect(m.pillTop, `${at}: the pill is not beside the name`).toBeLessThan(m.nameBottom);
+          expect(m.pillBottom, `${at}: the pill is not beside the name`).toBeGreaterThan(m.nameTop);
+        } else if (kind === "alone") {
+          expect(lines, `${at}: the name is broken over lines`).toBeCloseTo(1, 1);
+          expect(m.pillTop, `${at}: the pill is not under the name`).toBeGreaterThanOrEqual(m.nameBottom);
+        } else {
+          expect(lines, `${at}: the name was not broken`).toBeGreaterThan(1.5);
+          expect(m.pillTop, `${at}: the pill is not under the name`).toBeGreaterThanOrEqual(m.nameBottom);
+        }
+      }
+      seen[kind] = `${host.length} characters; as drawn ${say(plain)}; ${WIDER_EM}em wider ${say(wider)}`;
+      await popup.close();
+      await page.close();
+    }
+    for (const [kind, what] of Object.entries(seen)) test.info().annotations.push({ type: `name-${kind}-${scheme}`, description: what });
   });
 }
 
@@ -348,7 +426,8 @@ test.describe("Show the graph path", () => {
           await popup.locator("#graph-path").click();
           return;
         }
-        await popup.locator("#tab-site").focus();
+        // From the first control in the popup: the header's Re-check button.
+        await popup.locator("#btn-refresh").focus();
         let presses = 0;
         while ((await popup.evaluate(() => document.activeElement?.id)) !== "graph-path") {
           if (++presses > 40) throw new Error("Tab never reached #graph-path in 40 presses");

@@ -562,13 +562,13 @@ test("should never record a declined cookie prompt for a private-window tab, and
       await expect.poll(keys, { timeout: 10_000, message: "the normal-window tab's record" }).toContain(`cookieDeclined:${normal.tabId}`);
       expect(await keys()).not.toContain(`cookieDeclined:${p.tabId}`);
 
-      const privPopup = await openPopup(own, p.tabId, { popupTab: "page" });
+      const privPopup = await openPopup(own, p.tabId, { section: "page" });
       await expect(privPopup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
       await expect(privPopup.locator("#cookie-line")).toHaveCount(1);
       await expect(privPopup.locator("#cookie-line")).toBeHidden();
       await privPopup.close();
 
-      const normPopup = await openPopup(own, normal.tabId, { popupTab: "page" });
+      const normPopup = await openPopup(own, normal.tabId, { section: "page" });
       await expect(normPopup.locator("#cookie-line")).toBeVisible({ timeout: 10_000 });
       await normPopup.close();
     } finally {

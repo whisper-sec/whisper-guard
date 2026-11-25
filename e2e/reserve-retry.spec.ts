@@ -22,7 +22,7 @@ import {
   launchExtension,
   openDashboard,
   openPopup,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
   visit,
   waitForIcon,
@@ -62,7 +62,7 @@ test.beforeEach(async () => {
 
 async function popupOnASite(): Promise<{ popup: Page; page: Page; tabId: number }> {
   const { page, tabId } = await visit(ext, "https://example-reserve-retry.com/");
-  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+  const popup = await openPopup(ext, tabId, { section: "browser" });
   await expect(popup.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
   return { popup, page, tabId };
 }
@@ -262,7 +262,7 @@ test("closing the popup part-way does not cancel the reservation", async () => {
   held.release();
   await expect.poll(browserDevices, { timeout: 15_000 }).toBe(1);
 
-  const again = await openPopup(ext, tabId, { popupTab: "browser" });
+  const again = await openPopup(ext, tabId, { section: "browser" });
   await expectEnrolledAndQuiet(again, null);
   expect(net.registerCalls).toBe(1);
   await again.close();
@@ -275,7 +275,7 @@ test("a popup opened while the answer is still held shows the steps and the curr
   await popup.locator("#btn-protect").click();
   await held.held;
 
-  const second = await openPopup(ext, tabId, { popupTab: "browser" });
+  const second = await openPopup(ext, tabId, { section: "browser" });
   await expect(second.locator("#protect-steps li[aria-current='step']")).toContainText(
     "Reserving your Whisper address (try 1 of 3)",
     { timeout: 10_000 },
@@ -373,7 +373,7 @@ test("the outcome on the route line is written while it is visible and a live re
     };
   });
   await popup.goto(`chrome-extension://${ext.id}/popup.html?tab=${site.tabId}`);
-  await selectPopupTab(popup, "browser");
+  await scrollPopupTo(popup, "browser");
   await expect(popup.locator("#btn-protect")).toHaveText("Protect this browser", { timeout: 10_000 });
   await popup.locator("#btn-protect").click();
   await expect(popup.locator("#route-line")).toContainText(FALLBACK, { timeout: 30_000 });

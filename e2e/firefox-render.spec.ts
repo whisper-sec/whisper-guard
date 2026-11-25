@@ -27,8 +27,8 @@ import { test, expect, chromium, firefox, type Browser, type Page } from "@playw
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { selectPopupTab } from "./helpers/extension";
-import { expectBrowserTabFits, expectRoutedCardLayout, WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
+import { scrollPopupTo } from "./helpers/extension";
+import { expectFirstScreen, expectRoutedCardLayout, settledLayout, WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/firefox");
@@ -103,8 +103,8 @@ interface Geometry {
   discHeight: number;
   bodyScrollWidth: number;
   bodyClientWidth: number;
-  /** Sideways overflow of the scrolling content region, read on each tab. */
-  regionOverflow: { tab: string; scrollWidth: number; clientWidth: number }[];
+  /** Sideways overflow of the one scrolling content region. */
+  regionOverflow: { scrollWidth: number; clientWidth: number };
   scaleVisible: boolean;
   dotBox: [number, number];
   /** The header as drawn, and again with every glyph WIDER_EM wider. */
@@ -169,30 +169,25 @@ async function measure(browser: Browser, scheme: "dark" | "light", nodes?: numbe
       headerWider: { spacer: -1, height: -1, overflow: true, oneRow: false },
       scaleText: document.getElementById("scale-nodes")?.textContent ?? "",
       tierWidthPct: -1,
-      regionOverflow: [],
+      regionOverflow: { scrollWidth: -1, clientWidth: -1 },
       chainLabels: [...document.querySelectorAll("#chain-mount .ch-label")].map(
         (e) => e.textContent ?? "",
       ),
     };
   });
-  // The header is the same on every tab: read it as drawn and with wider
+  // The header is the same at every scroll position: read it as drawn and with wider
   // glyphs (Linux Chromium, which runs this comparison in CI, already sets
   // each glyph wider than macOS does, by rounding its advance).
   g.header = await readHeader(page);
   g.headerWider = await withWiderGlyphs(page, WIDER_EM, () => readHeader(page));
-  // Each panel is laid out only while its tab is selected (a hidden panel
-  // measures 0), so the region's sideways overflow is read on each tab, and
-  // the tier meter, which sits on This browser, is read once that is chosen.
-  const region = (tab: string): Promise<Geometry["regionOverflow"][number]> =>
-    page.evaluate((t) => {
-      const r = document.getElementById("tab-content") as HTMLElement;
-      return { tab: t, scrollWidth: r.scrollWidth, clientWidth: r.clientWidth };
-    }, tab);
-  g.regionOverflow.push(await region("site"));
-  await selectPopupTab(page, "page");
-  g.regionOverflow.push(await region("page"));
-  await selectPopupTab(page, "browser");
-  g.regionOverflow.push(await region("browser"));
+  // The three parts follow one another in one region, so its sideways
+  // overflow is read once. The tier meter sits in This browser, at the end of
+  // the scroll, and is read once that part is in view.
+  g.regionOverflow = await page.evaluate(() => {
+    const r = document.getElementById("popup-scroll") as HTMLElement;
+    return { scrollWidth: r.scrollWidth, clientWidth: r.clientWidth };
+  });
+  await scrollPopupTo(page, "browser");
   g.tierWidthPct = await page.evaluate(() => {
     const fill = document.getElementById("tier-fill");
     return fill ? (fill.getBoundingClientRect().width / 340) * 100 : -1;
@@ -249,13 +244,11 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
         `${engine} overflows the panel horizontally (${g.bodyScrollWidth} > ${g.bodyClientWidth})`,
       ).toBeLessThanOrEqual(g.bodyClientWidth + 1);
       // The content region keeps its own overflow, so a block that is too wide
-      // scrolls inside it rather than widening the body: check it on each tab.
-      for (const r of g.regionOverflow) {
-        expect(
-          r.scrollWidth,
-          `${engine} overflows the ${r.tab} tab horizontally (${r.scrollWidth} > ${r.clientWidth})`,
-        ).toBeLessThanOrEqual(r.clientWidth + 1);
-      }
+      // scrolls inside it rather than widening the body: check the one region.
+      expect(
+        g.regionOverflow.scrollWidth,
+        `${engine} overflows the scrolling region horizontally (${g.regionOverflow.scrollWidth} > ${g.regionOverflow.clientWidth})`,
+      ).toBeLessThanOrEqual(g.regionOverflow.clientWidth + 1);
     }
   } finally {
     await ff.close();
@@ -294,7 +287,36 @@ test("the header keeps 36 px free beside the widest figure in Gecko and in Blink
   }
 });
 
-test("the tabs expose their roles and answer the keyboard in both engines, and choosing one sends nothing", async () => {
+/** The lowest visible leaf of the scrolling region: is it fully in view, and is it what a click there would hit? */
+function lastLine(page: Page): Promise<{ found: boolean; inside: boolean; hit: boolean; what: string }> {
+  return page.locator("#popup-scroll").evaluate((scroller) => {
+    const region = scroller.getBoundingClientRect();
+    let end: Element | null = null;
+    let low = -Infinity;
+    for (const e of scroller.querySelectorAll("*")) {
+      if (e.children.length > 0) continue;
+      const drawer = e.closest("details");
+      if (drawer && !drawer.open && !e.closest("summary")) continue;
+      const r = e.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === "hidden") continue;
+      if (r.bottom >= low) {
+        low = r.bottom;
+        end = e;
+      }
+    }
+    if (!end) return { found: false, inside: false, hit: false, what: "" };
+    const r = end.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return {
+      found: true,
+      inside: r.bottom <= region.bottom + 0.5 && r.top >= region.top,
+      hit: !!hit && (end.contains(hit) || hit.contains(end)),
+      what: `${end.tagName.toLowerCase()}${end.id ? `#${end.id}` : ""}`,
+    };
+  });
+}
+
+test("scrolling the whole content top to bottom and back sends nothing, in both engines, and no tab role is left", async () => {
   test.setTimeout(120_000);
   const ff = await firefox.launch();
   const cr = await chromium.launch();
@@ -305,9 +327,11 @@ test("the tabs expose their roles and answer the keyboard in both engines, and c
       await page.goto(`file://${join(DIST, "popup.html")}`);
       await page.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
 
-      await expect(page.getByRole("tablist", { name: "Popup sections" }), engine).toHaveCount(1);
-      await expect(page.getByRole("tab"), engine).toHaveCount(3);
-      await expect(page.getByRole("tabpanel", { includeHidden: true }), engine).toHaveCount(3);
+      await expect(page.locator('[role^="tab"]'), `${engine}: an element still has a tab role`).toHaveCount(0);
+      await expect(page.getByRole("tab", { includeHidden: true }), engine).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "This site", level: 2 }), engine).toHaveCount(1);
+      await expect(page.getByRole("heading", { name: "This page", level: 2 }), engine).toHaveCount(1);
+      await expect(page.getByRole("heading", { name: "This browser", level: 2 }), engine).toHaveCount(1);
 
       // The render has no session storage, so the cookie line's record is
       // unknown and the line stays hidden, in both engines.
@@ -332,22 +356,94 @@ test("the tabs expose their roles and answer the keyboard in both engines, and c
         .toBe(true);
       const opened = last;
 
-      // By click, on every tab.
-      for (const tab of ["page", "browser", "site"] as const) {
-        await selectPopupTab(page, tab);
-        expect(await sent(), `${engine}: choosing ${tab} by click sent a message`).toBe(opened);
+      // Top to bottom and back, a part at a time and then the whole way.
+      expect(await page.locator("#popup-scroll").evaluate((r) => r.scrollTop), `${engine}: it opens at the top`).toBe(0);
+      for (const part of ["page", "browser", "page", "site"] as const) {
+        await scrollPopupTo(page, part);
+        expect(await sent(), `${engine}: scrolling to ${part} sent a message`).toBe(opened);
       }
+      const room = await page.locator("#popup-scroll").evaluate((r) => r.scrollHeight - r.clientHeight);
+      expect(room, `${engine}: control: there is something to scroll`).toBeGreaterThan(200);
+      await page.mouse.move(200, 300);
+      for (let i = 0; i < 12; i++) await page.mouse.wheel(0, 120);
+      await expect.poll(() => page.locator("#popup-scroll").evaluate((r) => r.scrollTop), { message: engine }).toBeGreaterThan(room - 2);
+      await expect(page.locator("#popup-fade"), `${engine}: the fade is gone at the end`).toBeHidden();
+      const end = await lastLine(page);
+      expect(end.found, `${engine}: control: there is a last line`).toBe(true);
+      expect(end.inside, `${engine}: the last line (${end.what}) is cut off at the end`).toBe(true);
+      expect(end.hit, `${engine}: the last line (${end.what}) is covered at the end`).toBe(true);
+      for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -120);
+      await expect.poll(() => page.locator("#popup-scroll").evaluate((r) => r.scrollTop), { message: engine }).toBe(0);
+      await expect(page.locator("#popup-fade"), `${engine}: the fade is back at the top`).toBeVisible();
+      expect(await sent(), `${engine}: scrolling top to bottom and back sent a message`).toBe(opened);
 
-      // By key: ArrowRight shows This page.
-      await page.getByRole("tab", { name: "This site" }).focus();
-      await page.keyboard.press("ArrowRight");
-      await expect(page.locator("#panel-page"), engine).toBeVisible();
-      await page.keyboard.press("End");
-      await expect(page.locator("#panel-browser"), engine).toBeVisible();
-      await page.keyboard.press("Home");
-      await expect(page.locator("#panel-site"), engine).toBeVisible();
-      expect(await sent(), `${engine}: choosing a tab by key sent a message`).toBe(opened);
+      // A reload (what Re-check does) after scrolling down lands at the top.
+      await page.locator("#popup-scroll").evaluate((r) => r.scrollTo(0, r.scrollHeight));
+      expect(await page.locator("#popup-scroll").evaluate((r) => r.scrollTop), `${engine}: control: scrolled down`).toBeGreaterThan(100);
+      await page.reload();
+      await page.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
+      await settledLayout(page);
+      expect(await page.locator("#popup-scroll").evaluate((r) => r.scrollTop), `${engine}: a reload did not land at the top`).toBe(0);
       await page.close();
+    }
+  } finally {
+    await ff.close();
+    await cr.close();
+  }
+});
+
+/** The shim for a signed-in reader: two buttons in the footer, the least room the first screen ever has. */
+const SIGNED_IN_SHIM = `${SHIM}
+Object.assign(REPLIES, {
+  getTabState: { ok: true, tabState: { ...REPLIES.getTabState.tabState, signedIn: true } },
+  getSettings: { ...REPLIES.getSettings, signedIn: true },
+});
+`;
+
+test("while a check runs the checking view fills the first screen and the browser part waits below, in Gecko and Blink", async () => {
+  test.setTimeout(120_000);
+  const ff = await firefox.launch();
+  const cr = await chromium.launch();
+  try {
+    for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
+      const page = await browser.newPage({ viewport: { width: 400, height: 600 }, reducedMotion: "reduce" });
+      // The worker keeps answering that the check is still running.
+      await page.addInitScript(`${SHIM}
+Object.assign(REPLIES, { getTabState: { ok: true, tabState: { ...REPLIES.getTabState.tabState, icon: "checking", verdict: null } } });`);
+      await page.goto(`file://${join(DIST, "popup.html")}`);
+      await expect(page.locator("#checking-view"), engine).toBeVisible();
+      await expect(page.locator("#panel-page"), engine).toBeHidden();
+      const where = await page.evaluate(() => ({
+        siteBottom: document.getElementById("panel-site")!.getBoundingClientRect().bottom,
+        browserTop: document.getElementById("panel-browser")!.getBoundingClientRect().top,
+        regionBottom: document.getElementById("popup-scroll")!.getBoundingClientRect().bottom,
+      }));
+      expect(where.siteBottom, `${engine}: the checking view stops short of the first screen's foot`).toBeGreaterThanOrEqual(where.regionBottom - 1);
+      expect(where.browserTop, `${engine}: the browser part shows on the first screen`).toBeGreaterThanOrEqual(where.regionBottom);
+      await page.close();
+    }
+  } finally {
+    await ff.close();
+    await cr.close();
+  }
+});
+
+test("the first screen of a clean site holds the verdict card, its chips and all seven facts clear of the fade, in Gecko and Blink, both schemes, as drawn and wider", async () => {
+  test.setTimeout(120_000);
+  const ff = await firefox.launch();
+  const cr = await chromium.launch();
+  try {
+    for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
+      for (const scheme of ["dark", "light"] as const) {
+        const page = await browser.newPage({ viewport: { width: 400, height: 600 }, colorScheme: scheme, reducedMotion: "reduce" });
+        await page.addInitScript(SIGNED_IN_SHIM);
+        await page.goto(`file://${join(DIST, "popup.html")}`);
+        await page.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
+        await expect(page.locator("#btn-dossier"), engine).toBeVisible();
+        await expect(page.locator("#band-chip"), engine).toHaveText("NO KNOWN THREAT");
+        await expectFirstScreen(page, `${engine}-${scheme}`);
+        await page.close();
+      }
     }
   } finally {
     await ff.close();
@@ -576,7 +672,7 @@ for (const categories of [1, 3] as const) {
           });
           await page.addInitScript(routedShim(categories));
           await page.goto(`file://${join(DIST, "popup.html")}`);
-          await selectPopupTab(page, "browser");
+          await scrollPopupTo(page, "browser");
           await expect(page.locator("#identity-control"), engine).toHaveAttribute("data-state", "routed");
           // The card is complete before it is measured: verified, with all three rows.
           await expect(page.locator("#identity-state"), engine).toHaveText("VERIFIED");
@@ -584,7 +680,6 @@ for (const categories of [1, 3] as const) {
           await expect(page.locator("#browser-strip svg"), engine).toBeVisible();
           await expect(page.locator("#today-row"), engine).toBeVisible();
           await expectRoutedCardLayout(page, `${engine}-${scheme}-${categories}`);
-          await expectBrowserTabFits(page, `${engine}-${scheme}-${categories}`);
           await page.close();
         }
       }

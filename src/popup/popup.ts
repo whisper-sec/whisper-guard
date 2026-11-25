@@ -20,14 +20,16 @@
 //                              read behind it has answered.
 //
 // UNKNOWN is the honest common state and reads as "not confirmed either
-// way", never as green. The answers sit under three tabs (tabs.ts): This site
-// holds the verdict, the evidence and who is behind the name, This page the link check and
-// the indicator scan (and, when Guard declined a cookie prompt on the page, a line
-// saying so), This browser the identity and the activity. Every tab is
-// filled when the popup opens, and that holds while a check waits and on a tab
-// Guard has not checked yet: This site then shows a ring with placeholders, or a
-// card with a button, and the verdict replaces either in place. This site's
-// footer carries the per-host privacy line saying exactly what was sent.
+// way", never as green. The answers sit in one scrolling region, in three parts
+// one after the other: This site holds the verdict, the evidence and who is
+// behind the name, This page the link check and the indicator scan (and, when
+// Guard declined a cookie prompt on the page, a line saying so), This browser
+// the identity and the activity. Every part is filled when the popup opens, and
+// that holds while a check waits and on a page Guard has not checked yet: This
+// site then shows a ring with placeholders, or a card with a button, and the
+// verdict replaces either in place. This page is not shown while its cards
+// would have nothing to say. The one footer carries the per-host privacy line
+// saying exactly what was sent, wherever the reader has scrolled.
 
 import { send, type BgResponse, type BrowserReport } from "../shared/messages";
 import {
@@ -51,10 +53,9 @@ import type { PageScanResult } from "../background/page-scan";
 import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../shared/config";
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { cookieDeclinedKey } from "../shared/tab-flags";
-import { initTabs, setPageFlagCount } from "./tabs";
+import { initFade } from "./fade";
 import { compact3, countUp } from "../shared/spark";
 import { timeStrip, type TimeEvent } from "../shared/viz";
-import { shieldActive, shieldGranted } from "../shared/shield-state";
 import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
 import { CANVAS_MONO, onThemeChange, redrawWhenMonoLoads, themeColor } from "../shared/theme";
@@ -730,8 +731,6 @@ function renderLinkScan(scan: LinkScanResult): void {
   note.textContent = "Only the link hostnames were checked, never the page, its text, or your history.";
 
   stampLinkAge();
-  // The tab bar carries the count of malicious links this result holds.
-  setPageFlagCount(scan.flagged);
 }
 
 // When the reader was blocked (the popup opened without host access to this
@@ -879,8 +878,15 @@ function wireIocScan(): void {
   });
 }
 
+/** What the link check sends, said before the reader presses it. A finished
+ *  check replaces it with what that check did (renderLinkScan). */
+const LINK_NOTE_BEFORE = "Link check sends link hostnames only, never paths or the page.";
+
 function wireLinkScan(): void {
   $("linkscan-card").hidden = false;
+  const note = $("linkscan-note");
+  note.textContent = LINK_NOTE_BEFORE;
+  note.hidden = false;
   // "See all" opens the whole list in place and goes back; it sends nothing and
   // keeps focus on itself.
   $("linkscan-all").addEventListener("click", () => {
@@ -1033,26 +1039,15 @@ function stripTitle(drawn: number, logged: number): string {
   return `The last sighting of ${these} drawn here, out of ${logged}, ${when}`;
 }
 
-/** The footer's Active Shield readout: the setting AND the browser's all-sites
- *  grant, read now. The tab's own flag is not used, because it is stale the
- *  moment a grant is revoked. Shown only once both reads have answered. */
-async function loadShield(): Promise<void> {
-  if (!settings) return;
-  const on = shieldActive(settings, await shieldGranted());
-  $("shield-text").textContent = on ? "Active Shield on" : "Active Shield off";
-  $("shield-dot").className = on ? "pp-shield-dot on" : "pp-shield-dot";
-  $("shield-readout").hidden = false;
-}
-
-/** The console link in the footer, for a signed-in reader. */
-function wireConsoleLink(): void {
-  const link = $("browser-console") as HTMLAnchorElement;
-  link.href = CONSOLE_URL;
-  link.addEventListener("click", (ev) => {
-    ev.preventDefault();
+/** "Open in console" in the footer, for a signed-in reader on every page,
+ *  checked or not. Wired once, when the popup opens. */
+function wireConsoleButton(): void {
+  $("footer-actions").hidden = false;
+  const button = $("btn-console");
+  button.hidden = false;
+  button.addEventListener("click", () => {
     chrome.tabs.create({ url: CONSOLE_URL });
   });
-  link.hidden = false;
 }
 
 // ---------------------------------------------------------- sign-in tier
@@ -1303,7 +1298,7 @@ function watchCookieLine(): void {
 }
 
 /** Everything that does not depend on this site's check: drawn once at open,
- *  in every case, so every tab is filled while a check waits or a press is due. */
+ *  in every case, so every part is filled while a check waits or a press is due. */
 function renderShell(signedIn: boolean, activeHost: string, first: TabState | null): void {
   void loadScale();
   void loadToday();
@@ -1312,8 +1307,7 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
     ev.preventDefault();
     void send({ kind: "openDashboard" }).then(() => window.close());
   });
-  void loadShield();
-  if (signedIn) wireConsoleLink();
+  if (signedIn) wireConsoleButton();
 
   // This browser's protection is on every page, signed in or not: keyed
   // readers get the one control, keyless readers get the one thing that
@@ -1462,8 +1456,9 @@ function renderSite(s: TabState): void {
     $("ineligible").hidden = false;
     $("host-row").hidden = true;
     setPrivacyLine("Privacy: nothing was sent.");
-    // The words of the message this tab shows, so they have one source.
-    syncPageNote($("ineligible").textContent?.trim() ?? null);
+    // The site's message is the only sentence about this page: This page
+    // does not repeat it.
+    showPagePart("hidden");
     return;
   }
   const host = s.hostname;
@@ -1485,10 +1480,9 @@ function renderSite(s: TabState): void {
     // the thing the panel was opened to see.
     void loadChain(host, band);
     wireGraphPath(host);
-    $("footer-page-line").hidden = false;
-    syncPageNote(null);
+    showPagePart("cards");
   } else {
-    syncPageNote("The link check and the indicator scan need the live check. Turn it on in settings.");
+    showPagePart("live-off");
   }
 
   if (settings && isTrusted(host, s.registrable, settings.allowlist)) {
@@ -1549,11 +1543,8 @@ function renderSite(s: TabState): void {
   }
 
   if (s.signedIn) {
+    // The footer's other button: a dossier needs a site that was checked.
     $("footer-actions").hidden = false;
-    $("btn-console").hidden = false;
-    $("btn-console").addEventListener("click", () => {
-      chrome.tabs.create({ url: CONSOLE_URL });
-    });
     $("btn-dossier").hidden = false;
     $("btn-dossier").addEventListener("click", async () => {
       const [explain, identify] = await Promise.all([
@@ -1646,18 +1637,28 @@ function wireGraphPath(host: string): void {
 }
 
 
-/** The one writer of the sentence that says why This page has nothing to
- *  show: text to show it, null to hide it. */
-function syncPageNote(text: string | null): void {
+/** The one sentence This page shows while the live check is off. */
+const PAGE_NEEDS_LIVE_CHECK = "The link check and the indicator scan need the live check. Turn it on in settings.";
+
+/** What This page shows. It is the one writer of that.
+ *  - "cards": the link check, the indicator scan and the cookie line.
+ *  - "live-off": one sentence, since both checks need the live check.
+ *  - "hidden": nothing. While a check runs, before one was made, and on a page
+ *    that cannot be checked, the site part already says why, in its own
+ *    words, and this part would only repeat it. */
+function showPagePart(what: "cards" | "live-off" | "hidden"): void {
   const note = $("page-empty");
-  note.textContent = text ?? "";
-  note.hidden = text === null;
+  note.textContent = what === "live-off" ? PAGE_NEEDS_LIVE_CHECK : "";
+  note.hidden = what !== "live-off";
+  $("panel-page").hidden = what === "hidden";
 }
 
 async function init(): Promise<void> {
-  // First, before any await: the tabs work while a check is in flight and
-  // when the tab's state cannot be read.
-  initTabs();
+  // First, before any await: the popup opens at the top, and the fade
+  // follows the scroll while a check is in flight and when the page's state
+  // cannot be read.
+  $("popup-scroll").scrollTop = 0;
+  initFade();
   // A <canvas> keeps the ink it was drawn with, so a colour-scheme flip
   // has to redraw the look-alike neighbourhood.
   onThemeChange(() => {
@@ -1727,7 +1728,7 @@ function drawChecking(host: string): void {
   $("checking-host").textContent = host;
   $("checking-host").hidden = host === "";
   $("checking-view").hidden = false;
-  syncPageNote($("checking-text").textContent?.trim() ?? null);
+  showPagePart("hidden");
   // After a press on a tab whose hostname the popup could not read, there is
   // no name to report yet; the verdict view writes the line.
   if (host) setPrivacyLine(liveCheckLine(host));
@@ -1742,8 +1743,8 @@ function drawNotChecked(): void {
   ($("btn-check-now") as HTMLButtonElement).disabled = false;
   // Hidden, so the footer takes no space while nothing was sent.
   setPrivacyLine(null);
-  // The words of the card, so This page has one source for them.
-  syncPageNote($("not-checked-title").textContent?.trim() ?? null);
+  // The card says it all; This page does not repeat it.
+  showPagePart("hidden");
 }
 
 /** "Check this site now": one check of this tab's page by the worker, drawn in
@@ -1763,8 +1764,10 @@ async function checkNow(): Promise<void> {
   if (next && !(next.lost && next.eligible && next.hostname)) {
     state = next;
     renderSite(next);
-    // The pressed button is gone; keep focus inside the panel.
-    if (hadFocus) $("panel-site").focus();
+    // The pressed button is gone; keep focus inside This site. Whether the
+    // press focused the button first depends on the browser (a mouse click on
+    // macOS Firefox does not), so it moves on every successful press.
+    $("panel-site").focus({ preventScroll: true });
   } else {
     drawNotChecked();
     if (hadFocus) button.focus();

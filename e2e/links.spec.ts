@@ -52,7 +52,7 @@ test("one click verdicts every linked destination before any visit, keyless", as
   // Keyless on purpose: the sweep is a public-tier feature.
   const { page, tabId } = await visit(ext, "https://fixture-links.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await expect(popup.locator("#linkscan-card")).toBeVisible({ timeout: 10_000 });
 
   await popup.locator("#btn-linkscan").click();
@@ -92,7 +92,7 @@ test("one click verdicts every linked destination before any visit, keyless", as
 test("re-checking rides the verdict cache: no duplicate assess for the same hosts", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-links.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await popup.locator("#btn-linkscan").click();
   await expect(popup.locator("#linkscan-summary")).toContainText("destination", { timeout: 15_000 });
 

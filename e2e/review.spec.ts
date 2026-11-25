@@ -24,7 +24,7 @@ import {
   openGraphDrawers,
   openPopup,
   markHostBlocked,
-  selectPopupTab,
+  scrollPopupTo,
   setKey,
   setSettings,
   visit,
@@ -126,13 +126,14 @@ test.describe("panel, pages", () => {
       await waitForIcon(ext, tabId, [...icons]);
       const popup = await openPopup(ext, tabId);
       for (const s of SCHEMES) await shot(popup, name, s, 400, 600);
-      // A clean host also gets the other two tabs, in both schemes: this
-      // sheet is where a person sees them side by side.
+      // A clean host also gets the popup scrolled to the page checks and to
+      // the end, in both schemes: this sheet is where a person sees the three
+      // positions of the one scroll side by side.
       if (host === CLEAN) {
-        for (const tab of ["page", "browser"] as const) {
-          await selectPopupTab(popup, tab);
-          for (const s of SCHEMES) await shot(popup, `${name}-${tab}`, s, 400, 600);
-        }
+        await scrollPopupTo(popup, "page");
+        for (const s of SCHEMES) await shot(popup, `${name}-page`, s, 400, 600);
+        await popup.locator("#popup-scroll").evaluate((r) => r.scrollTo(0, r.scrollHeight));
+        for (const s of SCHEMES) await shot(popup, `${name}-end`, s, 400, 600);
       }
       await popup.close();
       await page.close();
@@ -148,13 +149,14 @@ test.describe("panel, pages", () => {
       await waitForIcon(ext, tabId, [...icons]);
       const popup = await openPopup(ext, tabId);
       for (const s of SCHEMES) await shot(popup, name, s, 400, 600);
-      // A clean host also gets the other two tabs, in both schemes: this
-      // sheet is where a person sees them side by side.
+      // A clean host also gets the popup scrolled to the page checks and to
+      // the end, in both schemes: this sheet is where a person sees the three
+      // positions of the one scroll side by side.
       if (host === CLEAN) {
-        for (const tab of ["page", "browser"] as const) {
-          await selectPopupTab(popup, tab);
-          for (const s of SCHEMES) await shot(popup, `${name}-${tab}`, s, 400, 600);
-        }
+        await scrollPopupTo(popup, "page");
+        for (const s of SCHEMES) await shot(popup, `${name}-page`, s, 400, 600);
+        await popup.locator("#popup-scroll").evaluate((r) => r.scrollTo(0, r.scrollHeight));
+        for (const s of SCHEMES) await shot(popup, `${name}-end`, s, 400, 600);
       }
       await popup.close();
       await page.close();
@@ -256,7 +258,7 @@ test.describe("the one control: offered and refused", () => {
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
 
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     for (const s of SCHEMES) await shot(popup, "control-panel-offered", s, 400, 600);
     await popup.locator("#btn-protect").click();
@@ -301,7 +303,7 @@ test.describe("the one control: granted", () => {
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, tabId, ["benign"]);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await popup.locator("#btn-protect").click();
     await popup.locator("#route-line").filter({ hasText: "Protected" }).waitFor({ timeout: 30_000 });
@@ -347,7 +349,7 @@ test.describe("the one control: another extension owns the proxy", () => {
     await setKey(ext, MOCK_KEY);
     net.clearEndpoints();
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await popup.locator("#btn-protect").click();
     await popup.locator("#route-line").filter({ hasText: "Another extension" }).waitFor({ timeout: 30_000 });
@@ -381,7 +383,7 @@ test.describe("the one control: reserving the address", () => {
     await waitForIcon(ext, tabId, ["benign"]);
 
     net.scriptRegister({ outcome: "real", hiddenReads: 2 });
-    const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+    const popup = await openPopup(ext, tabId, { section: "browser" });
     await popup.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await popup.locator("#btn-protect").click();
     await popup.locator("#protect-steps li[aria-current='step']").filter({ hasText: "try 2 of 3" }).waitFor();
@@ -392,7 +394,7 @@ test.describe("the one control: reserving the address", () => {
     net.clearEndpoints();
     await ext.sw.evaluate(() => chrome.storage.local.remove("egress"));
     net.scriptRegister({ outcome: "real", hiddenReads: Infinity });
-    const again = await openPopup(ext, tabId, { popupTab: "browser" });
+    const again = await openPopup(ext, tabId, { section: "browser" });
     await again.locator("#btn-protect").waitFor({ state: "visible", timeout: 15_000 });
     await again.locator("#btn-protect").click();
     await again.locator("#route-line").filter({ hasText: "couldn’t reserve" }).waitFor({ timeout: 30_000 });

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// e2e: THE RISKY VERDICTS ON THE THIS SITE TAB. A suspicious site, a look-alike
+// e2e: THE RISKY VERDICTS AT THE TOP OF THE POPUP. A suspicious site, a look-alike
 // and an UNKNOWN one, each measured on the built extension at 400 x 600.
 //
 //   - a suspicious site shows its verdict, its level and its first factor on the
@@ -28,6 +28,7 @@ import {
   waitForIcon,
   type Extension,
 } from "./helpers/extension";
+import { WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
 
 let net: E2ENetwork;
 let ext: Extension;
@@ -172,35 +173,36 @@ interface Fit {
 }
 
 /**
- * Where an element sits in the content region at the first screen. A mark the
- * reader must read or press has to end clear of the fade when the fade shows; a
- * card only has to end inside the region.
+ * Where an element sits in the content region at the first screen. Whatever the
+ * reader must read or press, a card included, has to end above the fade's own
+ * top while the fade shows (its height is read from the element, never a
+ * constant), and inside the region when it does not.
  */
-async function firstScreen(popup: Page, selector: string, kind: "mark" | "card"): Promise<Fit> {
-  return popup.evaluate(
-    ({ sel, k }) => {
-      const region = document.getElementById("tab-content")!;
-      const r = region.getBoundingClientRect();
-      const e = document.querySelector(sel)!.getBoundingClientRect();
-      const fade = !document.getElementById("tab-fade")!.hidden;
-      const limit = r.bottom - (k === "mark" && fade ? 24 : 0);
-      return { top: e.top - r.top, bottom: e.bottom, limit, spare: limit - e.bottom, fade, scrollTop: region.scrollTop };
-    },
-    { sel: selector, k: kind },
-  );
+async function firstScreen(popup: Page, selector: string): Promise<Fit> {
+  return popup.evaluate((sel) => {
+    const region = document.getElementById("popup-scroll")!;
+    const r = region.getBoundingClientRect();
+    const e = document.querySelector(sel)!.getBoundingClientRect();
+    const fadeEl = document.getElementById("popup-fade")!;
+    const fade = !fadeEl.hidden;
+    const limit = fade ? fadeEl.getBoundingClientRect().top : r.bottom;
+    return { top: e.top - r.top, bottom: e.bottom, limit, spare: limit - e.bottom, fade, scrollTop: region.scrollTop };
+  }, selector);
 }
 
-async function expectOnFirstScreen(
-  popup: Page,
-  selector: string,
-  kind: "mark" | "card",
-  label: string,
-): Promise<void> {
-  const fit = await firstScreen(popup, selector, kind);
-  test.info().annotations.push({ type: `fit ${label}`, description: `spare ${fit.spare.toFixed(1)}` });
-  expect(fit.scrollTop, `${label}: the region is scrolled`).toBe(0);
-  expect(fit.top, `${label}: starts above the region`).toBeGreaterThanOrEqual(0);
-  expect(fit.spare, `${label}: ends ${(-fit.spare).toFixed(1)}px past the first screen`).toBeGreaterThanOrEqual(0);
+/** On the first screen, clear of the fade, as drawn and with every glyph WIDER_EM wider: both must hold. */
+async function expectOnFirstScreen(popup: Page, selector: string, label: string): Promise<void> {
+  const plain = await firstScreen(popup, selector);
+  const wider = await withWiderGlyphs(popup, WIDER_EM, () => firstScreen(popup, selector));
+  test.info().annotations.push({
+    type: `fit ${label}`,
+    description: `spare ${plain.spare.toFixed(1)} px as drawn, ${wider.spare.toFixed(1)} px ${WIDER_EM}em wider`,
+  });
+  for (const [how, fit] of [["as drawn", plain], [`${WIDER_EM}em wider`, wider]] as const) {
+    expect(fit.scrollTop, `${label}, ${how}: the region is scrolled`).toBe(0);
+    expect(fit.top, `${label}, ${how}: starts above the region`).toBeGreaterThanOrEqual(0);
+    expect(fit.spare, `${label}, ${how}: ends ${(-fit.spare).toFixed(1)}px past the first screen`).toBeGreaterThanOrEqual(0);
+  }
 }
 
 /** The colour a token resolves to on the page, as the browser computes a colour. */
@@ -282,15 +284,15 @@ test("on a suspicious site the verdict, its level and the first factor are on th
     await expect(popup.locator("#band-note")).toHaveText("Some risk signals in the graph.");
     await expect(popup.locator("#band-advice")).toHaveText("Be careful with passwords and payment details.");
     await expect(popup.locator("#band-age")).toBeVisible();
-    // Not vacuous: the session ledger is on the tab, and Why sits above it.
+    // Not vacuous: the session ledger is on the popup, and Why sits above it.
     await expect(popup.locator("#blocked-card")).toBeVisible();
     await expect(popup.locator("#why-factors .why-factor").first()).toBeVisible();
     const why = await popup.locator("#protect-card").boundingBox();
     const blocked = await popup.locator("#blocked-card").boundingBox();
     expect(why!.y, `${scheme}: Why this verdict sits under the session ledger`).toBeLessThan(blocked!.y);
 
-    await expectOnFirstScreen(popup, "#band-chip", "mark", `suspicious chip ${scheme}`);
-    await expectOnFirstScreen(popup, "#why-factors .why-factor", "mark", `suspicious first factor ${scheme}`);
+    await expectOnFirstScreen(popup, "#band-chip", `suspicious chip ${scheme}`);
+    await expectOnFirstScreen(popup, "#why-factors .why-factor", `suspicious first factor ${scheme}`);
     await popup.close();
     await page.close();
   }
@@ -313,8 +315,8 @@ test("on a look-alike the card and Go to the real site are on the first screen, 
     await expect(popup.locator("#lookalike-on .pp-swap")).toHaveText("0");
     await expect(popup.locator("#btn-goto")).toHaveText("Go to the real site");
     await expect(popup.locator("#btn-report")).toBeVisible();
-    await expectOnFirstScreen(popup, "#lookalike", "card", `look-alike card ${scheme}`);
-    await expectOnFirstScreen(popup, "#btn-goto", "mark", `Go to the real site ${scheme}`);
+    await expectOnFirstScreen(popup, "#lookalike", `look-alike card ${scheme}`);
+    await expectOnFirstScreen(popup, "#btn-goto", `Go to the real site ${scheme}`);
     await popup.close();
     await page.close();
   }
@@ -325,8 +327,8 @@ test("on a look-alike the card and Go to the real site are on the first screen, 
     await expect(popup.locator("#band-chip")).toHaveText("SUSPICIOUS · MEDIUM");
     await expect(popup.locator("#lookalike")).toBeVisible();
     await expect(popup.locator("#protect-card")).toBeVisible();
-    await expectOnFirstScreen(popup, "#lookalike", "card", `suspicious look-alike card ${scheme}`);
-    await expectOnFirstScreen(popup, "#btn-goto", "mark", `suspicious look-alike Go to the real site ${scheme}`);
+    await expectOnFirstScreen(popup, "#lookalike", `suspicious look-alike card ${scheme}`);
+    await expectOnFirstScreen(popup, "#btn-goto", `suspicious look-alike Go to the real site ${scheme}`);
     const card = await popup.locator("#lookalike").boundingBox();
     const why = await popup.locator("#protect-card").boundingBox();
     expect(card!.y, `${scheme}: the look-alike card does not lead`).toBeLessThan(why!.y);
@@ -426,7 +428,7 @@ test("the factor weights add up to the score shown, and the list is never cut wh
   }
 
   // (f) one weight larger than the score and one negative: no bar runs past its
-  // track and the tab never scrolls sideways.
+  // track and the popup never scrolls sideways.
   {
     const host = "risky-overshoot-guard-e2e.com";
     seedSuspicious(host, [
@@ -435,7 +437,7 @@ test("the factor weights add up to the score shown, and the list is never cut wh
     const { popup, page } = await openSite(`https://${host}/`, { icon: ["suspicious"] });
     await expect(popup.locator("#why-factors .wf-fill")).toHaveCount(2);
     const m = await popup.evaluate(() => {
-      const region = document.getElementById("tab-content")!;
+      const region = document.getElementById("popup-scroll")!;
       const bars = [...document.querySelectorAll<HTMLElement>("#why-factors .wf-bar")].map((bar) => {
         const fill = bar.querySelector<HTMLElement>(".wf-fill")!;
         return {
@@ -452,7 +454,7 @@ test("the factor weights add up to the score shown, and the list is never cut wh
       expect(b.fill).toBeLessThanOrEqual(b.track + 0.5);
       expect(b.clips, "the track does not clip its fill").toBe(true);
     }
-    expect(m.over, "the tab scrolls sideways").toBeLessThanOrEqual(0);
+    expect(m.over, "the popup scrolls sideways").toBeLessThanOrEqual(0);
     await popup.close();
     await page.close();
   }

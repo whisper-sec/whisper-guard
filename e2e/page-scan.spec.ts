@@ -28,7 +28,7 @@ import {
   launchExtension,
   makeShieldDist,
   openPopup,
-  selectPopupTab,
+  scrollPopupTo,
   visit,
   waitForIcon,
   type Extension,
@@ -87,7 +87,7 @@ test.afterAll(async () => {
 test("the scan sends the indicators and nothing else of the page", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
 
   // Reachability is part of this feature's contract: the scanner was merged and had no
   // sender, so the listing's old answer was true only because nobody could run
@@ -134,7 +134,7 @@ test("the scan sends the indicators and nothing else of the page", async () => {
 test("should draw unassessed indicators as Not assessed, never the ok chip", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
 
@@ -160,7 +160,7 @@ test("should draw unassessed indicators as Not assessed, never the ok chip", asy
 test("should list flagged rows first, then assessed, then Not assessed", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
   await expect(popup.locator("#iocscan-list .link-row")).toHaveCount(5);
@@ -182,7 +182,7 @@ test("should list flagged rows first, then assessed, then Not assessed", async (
 test("should draw Not assessed without an outline and keep UNKNOWN dashed", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
 
@@ -207,7 +207,7 @@ test("should draw Not assessed without an outline and keep UNKNOWN dashed", asyn
 test("should show the full value of every scan row on hover", async () => {
   const { page, tabId } = await visit(ext, "https://fixture-scan.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "page" });
+  const popup = await openPopup(ext, tabId, { section: "page" });
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
 
@@ -235,7 +235,7 @@ test("should make no explain call when scanning or when a row is clicked", async
   const before = net.requestsTo(GRAPH_READ_HOST).length;
   // Selected after `before` is read, so a selection that sent anything would
   // fall inside the window this test inspects.
-  await selectPopupTab(popup, "page");
+  await scrollPopupTo(popup, "page");
 
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });
@@ -292,7 +292,7 @@ test("CONTROL: a page with no indicators sends nothing at all", async () => {
   const before = net.requestsTo(GRAPH_READ_HOST).length;
   // Selected after `before` is read, so a selection that sent anything would
   // fall inside the window this test inspects.
-  await selectPopupTab(popup, "page");
+  await scrollPopupTo(popup, "page");
 
   await popup.locator("#btn-iocscan").click();
   await expect(popup.locator("#iocscan-summary")).toContainText("found", { timeout: 20_000 });

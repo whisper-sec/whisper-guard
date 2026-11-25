@@ -239,7 +239,7 @@ async function popupShot(
   tabId: number,
   file: string,
   prep?: (p: import("@playwright/test").Page) => Promise<void>,
-  popupTab?: "site" | "page" | "browser",
+  section?: "site" | "page" | "browser",
 ) {
   const popup = await openPopup(ext, tabId);
   // reducedMotion: the live-feed dot and the CHECKING ring breathe, so a
@@ -250,9 +250,9 @@ async function popupShot(
   // dark and carries a light capture of each surface beside it, so the claim
   // is shown rather than asserted; the panel's own protection states are
   // captured in both by e2e/protect.spec.ts.
-  // The popup is a fixed 400 x 600 frame: each picture shows the tab that
+  // The popup is a fixed 400 x 600 frame: each picture shows the part that
   // holds its subject, and `prep` scrolls the subject into view.
-  await settlePopup(popup, { colorScheme: "dark", width: 400, height: 600, popupTab });
+  await settlePopup(popup, { colorScheme: "dark", width: 400, height: 600, section });
   if (prep) await prep(popup);
   await assertScheme(popup, "dark", file);
   await popup.screenshot({ path: join(SHOTS, file) });
@@ -699,7 +699,7 @@ test("popup: the calm 'handled quietly today' line, with the counts that interru
   await setKey(ext, null);
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
-  const popup = await openPopup(ext, tabId, { popupTab: "browser" });
+  const popup = await openPopup(ext, tabId, { section: "browser" });
   await popup.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await popup.setViewportSize({ width: 400, height: 600 });
   // Pinned to the exact number, not merely "not 0". A negated matcher is
