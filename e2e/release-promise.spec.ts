@@ -17,7 +17,6 @@ import { test, expect, type Page } from "@playwright/test";
 import { E2ENetwork, GRAPH_READ_HOST } from "./helpers/servers";
 import {
   allowInIncognito,
-  badgeText,
   extensionPage,
   iconState,
   launchExtension,
@@ -125,11 +124,11 @@ test("should keep the mark across a tab switch after the worker stops", async ()
   await settled(b.tabId, "switch-b-guard-e2e.com");
 
   await stopWorker(ext);
-  // The browser keeps a tab's badge while the worker is stopped; read from the
+  // The browser keeps a tab's title while the worker is stopped; read from the
   // helper page, since the worker handle is unusable until it is rebound.
   const via = await extensionPage(ext);
-  const badgeOf = (id: number) => via.evaluate((t) => chrome.action.getBadgeText({ tabId: t }), id);
-  expect(await badgeOf(a.tabId)).toBe("\u2713");
+  const titleOf = (id: number) => via.evaluate((t) => chrome.action.getTitle({ tabId: t }), id);
+  expect(await titleOf(a.tabId)).toBe("Whisper Guard: no known threat on this site");
   await b.page.bringToFront();
   await a.page.bringToFront();
   await rebindWorker(ext);
@@ -143,7 +142,7 @@ test("should keep the mark across a tab switch after the worker stops", async ()
     await new Promise((r) => setTimeout(r, 50));
   }
   expect([...seen]).toEqual(["benign"]);
-  expect(await badgeText(ext, a.tabId)).toBe("\u2713");
+  expect(await iconState(ext, a.tabId)).toBe("benign");
   await a.page.close();
   await b.page.close();
 });

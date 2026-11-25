@@ -189,7 +189,7 @@ test("Check this site now draws the verdict in place without reloading, and the 
   await expect(popup.locator("#not-checked-view")).toBeVisible();
   await rebindWorker(ext);
   await expect.poll(() => iconState(ext, tabId)).toBe("unknown");
-  expect(await badgeText(ext, tabId)).toBe("?");
+  expect(await badgeText(ext, tabId)).toBe("");
 
   await page.evaluate(() => ((window as unknown as { __marker: number }).__marker = 1));
   await popup.evaluate(() => ((window as unknown as { __marker: number }).__marker = 1));
@@ -205,7 +205,7 @@ test("Check this site now draws the verdict in place without reloading, and the 
   expect(popup.url()).toBe(popupUrl);
 
   await expect.poll(() => iconState(ext, tabId)).toBe("benign");
-  expect(await badgeText(ext, tabId)).toBe("✓");
+  expect(await badgeText(ext, tabId)).toBe("");
   await expect.poll(async () => stateKey(tabId) in (await sessionStore())).toBe(true);
 
   await popup.close();
@@ -231,8 +231,8 @@ test("while the check runs the ring and the bars stand in, and the verdict repla
   await expect(popup.locator(".pp-skel-bar")).toHaveCount(5);
   for (const bar of await popup.locator(".pp-skel-bar").all()) await expect(bar).toBeVisible();
   await expect(popup.locator("#host-row")).toBeHidden();
-  await expect.poll(() => badgeText(ext, tabId)).toBe("…");
-  expect(await iconState(ext, tabId)).toBe("checking");
+  await expect.poll(() => iconState(ext, tabId)).toBe("checking");
+  expect(await badgeText(ext, tabId)).toBe("");
   await reviewPictures(popup, "checking", testInfo);
 
   await expect(popup.locator("#host-row")).toBeVisible({ timeout: 8000 });

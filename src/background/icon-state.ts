@@ -3,12 +3,12 @@
 //
 // Per-tab toolbar icon painting from pre-rendered PNG state sets (no
 // OffscreenCanvas: identical behaviour on every engine). One paint sets a
-// pre-rendered tile, a short text badge and the title; states differ in tile
-// colour, outline and badge text, so hue is never the only channel.
+// pre-rendered tile, clears the badge text and sets the title. The tile carries
+// the whole signal: colour, outline and a drawn symbol, so hue is never the
+// only channel. No state sets badge text or a badge colour.
 
 import { ext } from "../shared/api";
 import type { GraphBand, IconState } from "../shared/types";
-import { TOOLBAR_BADGE, type ToolbarBadge } from "../shared/toolbar-badge";
 
 const SIZES = [16, 32, 48, 128] as const;
 
@@ -51,36 +51,13 @@ const titles: Record<IconState, string> = {
 };
 
 /**
- * Set the tab's badge: ground, text colour, then text. A state without a badge
- * clears the text and never relies on the browser having reset it. Every call
- * has its own guard, so a failed badge call never stops the title that follows.
- * Never throws.
+ * Clear the tab's badge text. The tile draws the symbol, so nothing is added to
+ * the badge; the clear stays so a paint never relies on the browser having reset
+ * it. Never throws, so a failed clear never stops the title that follows.
  */
-async function paintBadge(
-  tabId: number,
-  badge: ToolbarBadge | null,
-  superseded: () => boolean,
-): Promise<void> {
-  if (badge) {
-    if (superseded()) return;
-    try {
-      await ext.action.setBadgeBackgroundColor({ tabId, color: badge.ground });
-    } catch {
-      // best-effort
-    }
-    if (superseded()) return;
-    // Without the call the browser picks a contrasting text colour itself.
-    if (typeof ext.action.setBadgeTextColor === "function") {
-      try {
-        await ext.action.setBadgeTextColor({ tabId, color: badge.ink });
-      } catch {
-        // best-effort
-      }
-    }
-    if (superseded()) return;
-  }
+async function clearBadge(tabId: number): Promise<void> {
   try {
-    await ext.action.setBadgeText({ tabId, text: badge ? badge.text : "" });
+    await ext.action.setBadgeText({ tabId, text: "" });
   } catch {
     // best-effort
   }
@@ -94,7 +71,7 @@ export async function paintIcon(tabId: number, state: IconState): Promise<void> 
   try {
     await ext.action.setIcon({ tabId, path: paths(state) });
     if (superseded()) return;
-    await paintBadge(tabId, TOOLBAR_BADGE[state], superseded);
+    await clearBadge(tabId);
     if (superseded()) return;
     // Last: tests and screen readers take the title as "the paint is done".
     await ext.action.setTitle({ tabId, title: titles[state] });

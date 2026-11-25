@@ -17,10 +17,11 @@ history.
 **No account (fully keyless, works the instant it installs):**
 
 - **Live graph verdict on every site.** The toolbar mark answers "is THIS site
-  safe?" from the Whisper security graph: a green tile with a ✓ for no known
-  threat, an amber tile with a ! for suspicious, a solid red tile with STOP
-  reserved for evidenced-malicious, and an honest dashed-outline UNKNOWN with a
-  ? for the internet's long tail. Never a fake green. Popularity feeds (Tranco
+  safe?" from the Whisper security graph, with the symbol drawn in the tile: a
+  green tile with a check for no known threat, an amber tile with an exclamation
+  mark for suspicious, a solid red tile with a stop sign reserved for
+  evidenced-malicious, and an honest dashed-outline UNKNOWN with a question
+  mark for the internet's long tail. Never a fake green. Popularity feeds (Tranco
   and friends) are treated as good, never as a threat.
 - **The chain: the join path behind the name.** Any product can look a name
   up. Click the mark and Guard walks the path instead, rung by rung: the
@@ -106,9 +107,10 @@ history.
   declined) and nothing else: the record is a category, a count and today's
   date, so it resets on its own and can never learn a site you visited. There
   is no toast and no notification anywhere, because the extension holds no
-  notifications permission at all. The toolbar badge is not a counter and never
-  nags: it shows only the state of the site in the tab (✓, !, STOP, ?, or … while
-  a check runs).
+  notifications permission at all. The toolbar icon is not a counter and never
+  nags: it shows only the state of the site in the tab, drawn in the tile (a
+  check, an exclamation mark, a stop sign, a question mark, or three dots while
+  a check runs). It carries no text badge.
 
 **Signed in (free, one tap, no API key to handle):**
 
@@ -241,8 +243,8 @@ history.
 
 ## How loud Guard is allowed to get
 
-One table decides, for every surface: silent, ambient (the toolbar mark and its
-verdict badge), pre-emptive (hold the action you are taking and show the
+One table decides, for every surface: silent, ambient (the toolbar mark, with its
+symbol drawn in the tile), pre-emptive (hold the action you are taking and show the
 receipts first), conversational (a dismissible word on the page), blocking (the
 full-page stop). Most of the table is silent, and the whole no-evidence row is
 silent, which is where the overwhelming majority of browsing lands. Guard
@@ -353,7 +355,7 @@ npm run typecheck        # strict TypeScript, no emit
 npm run build            # typecheck + build dist/chromium and dist/firefox
 npm run build:chromium   # one target
 npm run package          # zip both targets for store upload
-npm run icons            # regenerate icon PNGs from the brand mark in assets/logo.png (ImageMagick)
+npm run icons            # regenerate the base, not-checked and signed-out icons from assets/logo.png (ImageMagick); the five verdict tiles are designer art and are never regenerated
 npm run psl              # refresh the vendored Public Suffix List snapshot
 ```
 
@@ -451,7 +453,7 @@ src/
   options/     settings, sign-in, privacy panel
   pages/       full-page warning + pre-click check result
 manifests/     manifest.chromium.json, manifest.firefox.json
-icons/         pre-rendered PNG state sets (built from the brand mark in assets/logo.png)
+icons/         pre-rendered PNG state sets (five verdict tiles are designer art, masters in assets/icons/; the rest are built from the brand mark in assets/logo.png)
 ```
 
 Default permissions are deliberately minimal: `activeTab`, `webNavigation`,

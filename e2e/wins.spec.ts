@@ -149,20 +149,20 @@ test("the popup's calm today card: one hero number + the per-category breakdown"
   await page.close();
 });
 
-test("silent and ambient outcomes raise NO toast: no injected UI, no badge beyond the verdict's own, no notifications surface at all", async () => {
+test("silent and ambient outcomes raise NO toast: no injected UI, nothing on the toolbar badge, no notifications surface at all", async () => {
   // Ambient: a MEDIUM page changes the toolbar signal and nothing else
   // (banner settings off => the conversational rung degrades to ambient).
   const amber = await visit(ext, `https://${AMBER}/`);
   await waitForIcon(ext, amber.tabId, ["suspicious"]);
   expect(await amber.page.locator(OVERLAY).count()).toBe(0);
-  // The verdict's own badge stays on the tab; nothing else is added to it.
+  // The tile is the signal; nothing is added to the tab's badge.
   const badges = new Set<string>();
   const until = Date.now() + 1500;
   while (Date.now() < until) {
     badges.add(await badgeText(ext, amber.tabId));
     await new Promise((r) => setTimeout(r, 50));
   }
-  expect([...badges]).toEqual(["!"]);
+  expect([...badges]).toEqual([""]);
   await amber.page.close();
 
   // Silent: a clean off-site click is vetted and waved through untouched.
@@ -173,7 +173,7 @@ test("silent and ambient outcomes raise NO toast: no injected UI, no badge beyon
   await page.waitForURL(`https://${CLEAN}/ok`, { timeout: 15_000 });
   expect(await page.locator(OVERLAY).count()).toBe(0);
   await waitForIcon(ext, tabId, ["benign"]);
-  expect(await badgeText(ext, tabId)).toBe("\u2713");
+  expect(await badgeText(ext, tabId)).toBe("");
 
   // Silent outcomes count nothing and announce nothing; and the extension
   // holds NO notifications capability, so a toast is impossible, not just

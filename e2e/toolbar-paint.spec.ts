@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// One paint sets the tile, the badge and the title, in that order, and the
-// title is last. The REAL src/background/icon-state.ts is bundled with esbuild
-// and loaded under a fake `browser.action` that records every call, so the
-// branches Chromium never takes (a missing text-colour call, a rejected badge
-// call, a tab that moved on mid-paint) are exercised hermetically. No browser,
-// no network.
+// One paint sets the tile, clears the badge text and sets the title, in that
+// order, and the title is last. No state sets badge text or a badge colour.
+// The REAL src/background/icon-state.ts is bundled with esbuild and loaded
+// under a fake `browser.action` that records every call, so the branches
+// Chromium never takes (a rejected badge clear, a tab that moved on mid-paint)
+// are exercised hermetically. No browser, no network.
 
 import { test, expect } from "@playwright/test";
 import { build } from "esbuild";
@@ -68,63 +68,79 @@ test.afterEach(() => {
   delete g["chrome"];
 });
 
-test("a verdict paint sets the tile, then the badge ground, text colour and text, and the title last", async ({}, testInfo) => {
+const ALL_STATES = ["benign", "suspicious", "malicious", "unknown", "checking", "signedout", "neutral"];
+
+const TITLES: Record<string, string> = {
+  benign: "Whisper Guard: no known threat on this site",
+  suspicious: "Whisper Guard: be careful on this site",
+  malicious: "Whisper Guard: STOP, this site is a known threat",
+  unknown: "Whisper Guard: new or low-coverage site, not confirmed either way",
+  checking: "Whisper Guard: checking this site",
+  signedout: "Whisper Guard: on-device protection active; sign in for the live signal",
+  neutral: "Whisper Guard",
+};
+
+test("every state paints the tile, clears the badge text and sets the title last", async ({}, testInfo) => {
+  for (const [i, state] of ALL_STATES.entries()) {
+    const f = fake();
+    const m = await load(testInfo.outputPath(`s${i}`));
+    await m.paintIcon(1, state);
+
+    expect(names(f), state).toEqual(["setIcon", "setBadgeText", "setTitle"]);
+    expect(argOf(f, "setIcon"), state).toEqual({
+      tabId: 1,
+      path: {
+        "16": `icons/${state}-16.png`,
+        "32": `icons/${state}-32.png`,
+        "48": `icons/${state}-48.png`,
+        "128": `icons/${state}-128.png`,
+      },
+    });
+    expect(argOf(f, "setBadgeText"), state).toEqual({ tabId: 1, text: "" });
+    expect(argOf(f, "setTitle"), state).toEqual({ tabId: 1, title: TITLES[state] });
+  }
+});
+
+test("a state's title is the last call and names the state in words", async ({}, testInfo) => {
   const f = fake();
   const m = await load(testInfo.outputPath());
   await m.paintIcon(1, "benign");
-
-  expect(names(f)).toEqual([
-    "setIcon",
-    "setBadgeBackgroundColor",
-    "setBadgeTextColor",
-    "setBadgeText",
-    "setTitle",
-  ]);
-  expect(argOf(f, "setIcon")).toEqual({
-    tabId: 1,
-    path: {
-      "16": "icons/benign-16.png",
-      "32": "icons/benign-32.png",
-      "48": "icons/benign-48.png",
-      "128": "icons/benign-128.png",
-    },
-  });
-  expect(argOf(f, "setBadgeText")).toEqual({ tabId: 1, text: "✓" });
   expect(argOf(f, "setTitle")).toEqual({ tabId: 1, title: "Whisper Guard: no known threat on this site" });
+  expect(f.calls[f.calls.length - 1]![0]).toBe("setTitle");
 });
 
-test("a state without a badge clears the text and makes no colour call", async ({}, testInfo) => {
+test("no state makes a badge colour call, even where the browser offers them", async ({}, testInfo) => {
+  for (const [i, state] of ALL_STATES.entries()) {
+    const f = fake();
+    const m = await load(testInfo.outputPath(`c${i}`));
+    await m.paintIcon(2, state);
+    expect(names(f).filter((n) => n.includes("Color")), state).toEqual([]);
+  }
+});
+
+test("a rejected badge clear does not stop the title", async ({}, testInfo) => {
+  const f = fake();
+  f.action["setBadgeText"] = async () => {
+    throw new Error("the browser refused");
+  };
+  const m = await load(testInfo.outputPath());
+  await m.paintIcon(4, "malicious");
+
+  expect(names(f)).toEqual(["setIcon", "setTitle"]);
+  expect(argOf(f, "setTitle")).toEqual({ tabId: 4, title: "Whisper Guard: STOP, this site is a known threat" });
+});
+
+test("a neutral paint clears the text and sets the neutral title", async ({}, testInfo) => {
   const f = fake();
   const m = await load(testInfo.outputPath());
   await m.paintIcon(2, "neutral");
 
   expect(names(f)).toEqual(["setIcon", "setBadgeText", "setTitle"]);
   expect(argOf(f, "setBadgeText")).toEqual({ tabId: 2, text: "" });
+  expect(argOf(f, "setTitle")).toEqual({ tabId: 2, title: "Whisper Guard" });
 });
 
-test("with no text-colour call in the browser the text and the title are still set", async ({}, testInfo) => {
-  const f = fake();
-  delete f.action["setBadgeTextColor"];
-  const m = await load(testInfo.outputPath());
-  await m.paintIcon(3, "suspicious");
-
-  expect(names(f)).toEqual(["setIcon", "setBadgeBackgroundColor", "setBadgeText", "setTitle"]);
-  expect(argOf(f, "setBadgeText")).toEqual({ tabId: 3, text: "!" });
-});
-
-test("a rejected badge call does not stop the text or the title", async ({}, testInfo) => {
-  const f = fake();
-  f.action["setBadgeBackgroundColor"] = async () => {
-    throw new Error("the browser refused");
-  };
-  const m = await load(testInfo.outputPath());
-  await m.paintIcon(4, "malicious");
-
-  expect(names(f)).toEqual(["setIcon", "setBadgeTextColor", "setBadgeText", "setTitle"]);
-  expect(argOf(f, "setBadgeText")).toEqual({ tabId: 4, text: "STOP" });
-});
-
-test("a tab that is forgotten while the tile is being set gets no badge and no title", async ({}, testInfo) => {
+test("a tab that is forgotten while the tile is being set gets no badge clear and no title", async ({}, testInfo) => {
   const f = fake();
   let release: () => void = () => undefined;
   f.action["setIcon"] = (arg: unknown) =>
