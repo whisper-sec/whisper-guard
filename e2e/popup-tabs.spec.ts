@@ -35,6 +35,8 @@ import {
   type Extension,
   type PopupTab,
 } from "./helpers/extension";
+import { WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
+import { compact3 } from "../src/shared/spark";
 
 let net: E2ENetwork;
 let ext: Extension;
@@ -605,28 +607,68 @@ async function scaleAsked(popup: Page): Promise<void> {
     .toBe(1);
 }
 
+test("the header figure is three significant digits, never more than five characters", () => {
+  const cases: [number, string][] = [
+    [Number.NaN, "-"],
+    [0, "0"],
+    [999, "999"],
+    [999.4, "999"],
+    [999.6, "1.00k"],
+    [12_345, "12.3k"],
+    [1_234_000, "1.23M"],
+    [7_482_240_523, "7.48B"],
+    [9_999_000_000, "10.0B"],
+    [12_340_000_000, "12.3B"],
+    [99_950_000_000, "100B"],
+    [123_456_789_012, "123B"],
+    [999_600_000_000, "1.00T"],
+    [-0.4, "0"],
+    [-7_482_240_523, "-7.48B"],
+  ];
+  for (const [n, text] of cases) expect(compact3(n), `${n}`).toBe(text);
+  // Every count below 1000T, at each power of ten and at each place where
+  // rounding carries into the next digit or the next letter.
+  for (let e = 0; e < 15; e++) {
+    for (const m of [1, 1.005, 2.5, 4.4449, 9.9949, 9.995, 9.999, 9.9999]) {
+      const n = m * 10 ** e;
+      expect(compact3(n).length, `${n} is drawn as "${compact3(n)}"`).toBeLessThanOrEqual(5);
+    }
+  }
+});
+
 for (const scheme of ["dark", "light"] as const) {
-  test(`the header keeps room for one more button beside a 12-character figure (${scheme})`, async () => {
+  test(`the header keeps room for one more button beside the widest figure, as drawn and with wider glyphs (${scheme})`, async () => {
     const { popup, page } = await openSiteWithScale({ nodes: 12_340_000_000 }, scheme);
-    await expect(popup.locator("#scale-nodes")).toHaveText("12.34B", { timeout: 15_000 });
+    await expect(popup.locator("#scale-nodes")).toHaveText("12.3B", { timeout: 15_000 });
     await popup.evaluate(() => document.fonts.ready.then(() => undefined));
-    const m = await popup.locator(".pp-header").evaluate((h) => {
-      const hb = h.getBoundingClientRect();
-      const kids = [...h.children].filter((k) => k.getBoundingClientRect().width > 0);
-      const mids = kids.map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
-      return {
-        spacer: h.querySelector(".spacer")!.getBoundingClientRect().width,
-        height: hb.height,
-        fits: h.scrollWidth <= h.clientWidth,
-        row: Math.max(...mids) - Math.min(...mids) <= 2,
-        text: (h as HTMLElement).innerText.replace(/\s+/g, " "),
-      };
+    const read = (): Promise<{ spacer: number; height: number; fits: boolean; row: boolean; text: string }> =>
+      popup.locator(".pp-header").evaluate((h) => {
+        const hb = h.getBoundingClientRect();
+        const kids = [...h.children].filter((k) => k.getBoundingClientRect().width > 0);
+        const mids = kids.map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
+        return {
+          spacer: h.querySelector(".spacer")!.getBoundingClientRect().width,
+          height: hb.height,
+          fits: h.scrollWidth <= h.clientWidth,
+          row: Math.max(...mids) - Math.min(...mids) <= 2,
+          text: (h as HTMLElement).innerText.replace(/\s+/g, " "),
+        };
+      });
+    const plain = await read();
+    const wider = await withWiderGlyphs(popup, WIDER_EM, read);
+    test.info().annotations.push({
+      type: "room",
+      description: `spacer ${plain.spacer.toFixed(2)} px as drawn, ${wider.spacer.toFixed(2)} px ${WIDER_EM}em wider`,
     });
-    expect(m.text, "the figure read is not the 12-character one").toContain("12.34B nodes");
-    expect(m.spacer, "less than 36 px free beside Re-check and Settings").toBeGreaterThanOrEqual(36);
-    expect(m.height).toBe(52);
-    expect(m.fits, "the header overflows sideways").toBe(true);
-    expect(m.row, "the header wrapped onto a second row").toBe(true);
+    // Ten billion and more is drawn in three digits: five characters, as
+    // wide as any figure the header draws, since the figure is monospaced.
+    expect(plain.text, "the figure read is not the widest one").toContain("12.3B nodes");
+    for (const [how, m] of [["as drawn", plain], [`${WIDER_EM}em wider`, wider]] as const) {
+      expect(m.spacer, `${how}: less than 36 px free beside Re-check and Settings`).toBeGreaterThanOrEqual(36);
+      expect(m.height, `${how}: the header is not 52 px tall`).toBe(52);
+      expect(m.fits, `${how}: the header overflows sideways`).toBe(true);
+      expect(m.row, `${how}: the header wrapped onto a second row`).toBe(true);
+    }
     await popup.close();
     await page.close();
   });

@@ -52,7 +52,7 @@ import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../s
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { cookieDeclinedKey } from "../shared/tab-flags";
 import { initTabs, setPageFlagCount } from "./tabs";
-import { compact, countUp } from "../shared/spark";
+import { compact3, countUp } from "../shared/spark";
 import { timeStrip, type TimeEvent } from "../shared/viz";
 import { shieldActive, shieldGranted } from "../shared/shield-state";
 import { mountTierMeter } from "../shared/tier";
@@ -1105,8 +1105,10 @@ async function loadScale(): Promise<void> {
   const box = $("scale");
   box.hidden = false;
 
+  // Three digits: never more than five characters, so the figure keeps the
+  // header's room for its buttons as the graph grows.
   const nodes = $("scale-nodes");
-  countUp(nodes, sc.nodes, compact);
+  countUp(nodes, sc.nodes, compact3);
 
   // The tooltip carries the full picture, so the masthead can stay a
   // glance: exact figures, the resolvers' window, and when it was measured.

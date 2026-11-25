@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectPopupTab } from "./helpers/extension";
-import { expectBrowserTabFits, expectRoutedCardLayout } from "./helpers/popup-fit";
+import { expectBrowserTabFits, expectRoutedCardLayout, WIDER_EM, withWiderGlyphs } from "./helpers/popup-fit";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(HERE, "../dist/firefox");
@@ -107,13 +107,35 @@ interface Geometry {
   regionOverflow: { tab: string; scrollWidth: number; clientWidth: number }[];
   scaleVisible: boolean;
   dotBox: [number, number];
-  spacer: number;
-  headerHeight: number;
-  headerOverflow: boolean;
-  headerOneRow: boolean;
+  /** The header as drawn, and again with every glyph WIDER_EM wider. */
+  header: HeaderRoom;
+  headerWider: HeaderRoom;
   scaleText: string;
   tierWidthPct: number;
   chainLabels: string[];
+}
+
+interface HeaderRoom {
+  /** Width of the free space beside the graph size: a third 30 px button and its 6 px gap need 36. */
+  spacer: number;
+  height: number;
+  overflow: boolean;
+  oneRow: boolean;
+}
+
+function readHeader(page: Page): Promise<HeaderRoom> {
+  return page.evaluate((): HeaderRoom => {
+    const h = document.querySelector(".pp-header") as HTMLElement;
+    const mids = [...h.children]
+      .filter((k) => k.getBoundingClientRect().width > 0)
+      .map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
+    return {
+      spacer: h.querySelector(".spacer")!.getBoundingClientRect().width,
+      height: h.getBoundingClientRect().height,
+      overflow: h.scrollWidth > h.clientWidth,
+      oneRow: Math.max(...mids) - Math.min(...mids) <= 2,
+    };
+  });
 }
 
 async function measure(browser: Browser, scheme: "dark" | "light", nodes?: number): Promise<Geometry> {
@@ -143,19 +165,8 @@ async function measure(browser: Browser, scheme: "dark" | "light", nodes?: numbe
         const d = document.querySelector("#scale .scale-dot")?.getBoundingClientRect();
         return [d ? d.width : 0, d ? d.height : 0] as [number, number];
       })(),
-      spacer: document.querySelector(".pp-header .spacer")!.getBoundingClientRect().width,
-      headerHeight: document.querySelector(".pp-header")!.getBoundingClientRect().height,
-      headerOverflow: (() => {
-        const h = document.querySelector(".pp-header") as HTMLElement;
-        return h.scrollWidth > h.clientWidth;
-      })(),
-      headerOneRow: (() => {
-        const h = document.querySelector(".pp-header")!;
-        const mids = [...h.children]
-          .filter((k) => k.getBoundingClientRect().width > 0)
-          .map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
-        return Math.max(...mids) - Math.min(...mids) <= 2;
-      })(),
+      header: { spacer: -1, height: -1, overflow: true, oneRow: false },
+      headerWider: { spacer: -1, height: -1, overflow: true, oneRow: false },
       scaleText: document.getElementById("scale-nodes")?.textContent ?? "",
       tierWidthPct: -1,
       regionOverflow: [],
@@ -164,6 +175,11 @@ async function measure(browser: Browser, scheme: "dark" | "light", nodes?: numbe
       ),
     };
   });
+  // The header is the same on every tab: read it as drawn and with wider
+  // glyphs (Linux Chromium, which runs this comparison in CI, already sets
+  // each glyph wider than macOS does, by rounding its advance).
+  g.header = await readHeader(page);
+  g.headerWider = await withWiderGlyphs(page, WIDER_EM, () => readHeader(page));
   // Each panel is laid out only while its tab is selected (a hidden panel
   // measures 0), so the region's sideways overflow is read on each tab, and
   // the tier meter, which sits on This browser, is read once that is chosen.
@@ -247,20 +263,29 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
   }
 });
 
-test("the header keeps 36 px free beside a 12-character figure in Gecko and in Blink, in both schemes", async () => {
+test("the header keeps 36 px free beside the widest figure in Gecko and in Blink, in both schemes, as drawn and with wider glyphs", async () => {
   test.setTimeout(120_000);
   const ff = await firefox.launch();
   const cr = await chromium.launch();
   try {
     for (const [engine, browser] of [["Gecko", ff], ["Blink", cr]] as const) {
       for (const scheme of ["dark", "light"] as const) {
+        // Ten billion and more is drawn in three digits, five characters: as
+        // wide as any figure the header draws (the figure is monospaced).
         const g = await measure(browser, scheme, 12_340_000_000);
         expect(g.scaleVisible, `${engine} ${scheme}: the readout did not appear`).toBe(true);
-        expect(g.scaleText, `${engine} ${scheme}: the 12-character figure was not drawn`).toBe("12.34B");
-        expect(g.spacer, `${engine} ${scheme}: less than 36 px free in the header`).toBeGreaterThanOrEqual(36);
-        expect(g.headerHeight, `${engine} ${scheme}: the header is not 52 px tall`).toBe(52);
-        expect(g.headerOverflow, `${engine} ${scheme}: the header overflows sideways`).toBe(false);
-        expect(g.headerOneRow, `${engine} ${scheme}: the header's parts are not on one row`).toBe(true);
+        expect(g.scaleText, `${engine} ${scheme}: the figure is not three digits`).toBe("12.3B");
+        test.info().annotations.push({
+          type: `${engine} ${scheme}`,
+          description: `spacer ${g.header.spacer.toFixed(2)} px as drawn, ${g.headerWider.spacer.toFixed(2)} px ${WIDER_EM}em wider`,
+        });
+        for (const [how, h] of [["as drawn", g.header], [`${WIDER_EM}em wider`, g.headerWider]] as const) {
+          const at = `${engine} ${scheme}, ${how}`;
+          expect(h.spacer, `${at}: less than 36 px free in the header`).toBeGreaterThanOrEqual(36);
+          expect(h.height, `${at}: the header is not 52 px tall`).toBe(52);
+          expect(h.overflow, `${at}: the header overflows sideways`).toBe(false);
+          expect(h.oneRow, `${at}: the header's parts are not on one row`).toBe(true);
+        }
       }
     }
   } finally {

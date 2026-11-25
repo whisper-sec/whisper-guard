@@ -98,11 +98,12 @@ history.
   depth it allows, read from the graph itself. "Sign in" is then a fact
   about a ceiling you can see, not an advertisement. The size of the graph
   behind every verdict is read live too, in the panel masthead and across
-  the top of the dashboard. The panel shows the graph size, with the
-  resolvers' totals in its tooltip. The pulse line over the trailing 24
-  hours is on the dashboard and the first-run page. No figure about our
-  coverage is ever written into the build: a number typed into a page is
-  stale the day after it ships.
+  the top of the dashboard. The panel shows the graph size in three
+  digits, with the exact figures and the resolvers' totals in its
+  tooltip. The pulse line over the trailing 24 hours is on the dashboard
+  and the first-run page. No figure about our coverage is ever written
+  into the build: a number typed into a page is stale the day after it
+  ships.
 - **A calm tally of what it handled.** One line in the panel counts today's
   quiet wins by category (clicks held, identities verified, cookie prompts
   declined) and nothing else: the record is a category, a count and today's
