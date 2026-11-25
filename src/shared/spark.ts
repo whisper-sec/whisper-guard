@@ -137,3 +137,22 @@ export function compact(n: number): string {
   if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
   return String(Math.round(n));
 }
+
+/**
+ * A big count in three significant digits and a letter: 7.48B, 12.3B, 123B,
+ * 1.00T. A count under 1000T is never more than five characters, so a figure
+ * in a tight row keeps its width as the count grows. The count is rounded
+ * once, before the letter is chosen, so 999.6B reads 1.00T, not 1000B.
+ */
+export function compact3(n: number): string {
+  if (!Number.isFinite(n)) return "-";
+  const r = Number(Math.abs(n).toPrecision(3));
+  const sign = n < 0 && Math.round(r) > 0 ? "-" : "";
+  for (const [unit, letter] of [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "k"]] as const) {
+    if (r >= unit) {
+      const v = r / unit;
+      return `${sign}${v >= 1000 ? String(Math.round(v)) : v.toPrecision(3)}${letter}`;
+    }
+  }
+  return `${sign}${Math.round(r)}`;
+}

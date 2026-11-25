@@ -52,7 +52,7 @@ import { CONSOLE_URL, GRAPH_HOST, GRAPH_TIMEOUT_MS, NAV_DEBOUNCE_MS } from "../s
 import { renderChain, renderChainPending } from "../shared/chain-view";
 import { cookieDeclinedKey } from "../shared/tab-flags";
 import { initTabs, setPageFlagCount } from "./tabs";
-import { compact, countUp, sparkline } from "../shared/spark";
+import { compact3, countUp } from "../shared/spark";
 import { timeStrip, type TimeEvent } from "../shared/viz";
 import { shieldActive, shieldGranted } from "../shared/shield-state";
 import { mountTierMeter } from "../shared/tier";
@@ -1105,8 +1105,10 @@ async function loadScale(): Promise<void> {
   const box = $("scale");
   box.hidden = false;
 
+  // Three digits: never more than five characters, so the figure keeps the
+  // header's room for its buttons as the graph grows.
   const nodes = $("scale-nodes");
-  countUp(nodes, sc.nodes, compact);
+  countUp(nodes, sc.nodes, compact3);
 
   // The tooltip carries the full picture, so the masthead can stay a
   // glance: exact figures, the resolvers' window, and when it was measured.
@@ -1116,15 +1118,6 @@ async function loadScale(): Promise<void> {
     `${sc.nodes.toLocaleString("en")} nodes and ${sc.edges.toLocaleString("en")} edges. ` +
     `${sc.queries.toLocaleString("en")} DNS questions answered in the last ${sc.windowHours}h${lat}. ` +
     `Read live at ${measured.toLocaleTimeString()}${sc.degraded ? " (the endpoint reports degraded input)" : ""}.`;
-
-  // The pulse: the resolvers' own trailing window. A shape, not a chart,
-  // and it refuses to draw at all when there is nothing to show.
-  const spark = sparkline(sc.pulse.slice(-48), {
-    width: 34,
-    height: 14,
-    title: `DNS questions answered per 5 minutes over the last ${sc.windowHours} hours`,
-  });
-  if (spark) $("scale-pulse").replaceChildren(spark);
 }
 
 // ------------------------------------------------------------- the chain

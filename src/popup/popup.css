@@ -28,8 +28,8 @@
       the panel; the accent carries identity and liveness. Everything else
       is ink.
    4. THE PANEL IS ALIVE BEFORE IT IS ASKED. The graph scale in the
-      header, the resolver pulse beside it, the verdict mark arriving and
-      the chain arriving rung by rung all move on their own, because a security surface that changes
+      header, the verdict mark arriving and the chain arriving rung by
+      rung all move on their own, because a security surface that changes
       only when it is clicked reads as switched off. Every one of them
       yields whole to prefers-reduced-motion.
 
@@ -54,13 +54,14 @@ body {
   height: 52px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 14px;
+  gap: 6px;
+  padding: 0 10px 0 14px;
   background: var(--w-surface);
 }
-.pp-header .w-lockup { flex: none; white-space: nowrap; }
+/* As on the boards: 8 px from the knot to the wordmark, 6 px on to GUARD. */
+.pp-header .w-lockup { flex: none; white-space: nowrap; gap: 6px; }
 .pp-header .w-knot { width: 22px; height: 22px; }
-.pp-header .w-wordmark { font: 900 16px/1 var(--w-font-sans); letter-spacing: 0; }
+.pp-header .w-wordmark { font: 900 16px/1 var(--w-font-sans); letter-spacing: 0; margin-left: 2px; }
 .pp-header .w-product {
   font: 700 10.5px/1.2 var(--w-font-sans);
   letter-spacing: 0.08em;
@@ -72,8 +73,8 @@ body {
 
 .icon-btn {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,32 +87,37 @@ body {
 }
 .icon-btn:hover { color: var(--w-text); background: var(--w-hover); }
 
-/* The live scale readout: the size of the graph the verdict came from,
-   and the resolvers' own pulse over the trailing window. Both are read
-   from the public stats endpoint every time the panel opens. */
+/* The live scale readout: a small live dot and the size of the graph the
+   verdict came from, in three digits, read from the public stats endpoint
+   every time the panel opens. It shows only once a figure was read. The
+   resolvers' pulse lives on the dashboard, not here. */
 .scale {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   white-space: nowrap;
   cursor: default;
 }
-.scale-pulse {
+.scale-dot {
+  flex: none;
   display: block;
-  width: 34px;
-  height: 14px;
-  color: var(--w-accent);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--w-accent-stroke);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--w-accent-stroke) 20%, transparent);
 }
-.scale-pulse svg { display: block; }
-.scale-pulse path { stroke-width: 1.4px; }
 /* The figure and its unit read as one lower-case mono run. Ink-dim, not
-   --w-faint: these are words a reader reads. */
+   --w-faint: these are words a reader reads. 10.5 px, half a pixel under the
+   boards: Linux Chromium rounds each glyph's advance to a whole pixel (11 px
+   mono letters come out 7 px wide), and the header must still keep room for
+   a third button there. */
 .scale-figures {
   display: flex;
   align-items: baseline;
   gap: 1ch;
-  font: 400 11px/1 var(--w-mono);
+  font: 400 10.5px/1 var(--w-mono);
   color: var(--w-muted);
 }
 .scale-num, .scale-unit { font: inherit; color: inherit; }
