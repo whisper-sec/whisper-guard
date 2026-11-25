@@ -135,7 +135,8 @@ test("the menu foot reads the installed version, and so does About, and no versi
   await expect(page.locator("#menu-version")).toHaveText(`v${version} · MIT · open source`);
   await expect(page.locator("#about-version")).toHaveText(version);
   await expect(page.locator("#about")).toContainText(`Version ${version}`);
-  const literal = new RegExp(`(^|[^0-9.])${version.replace(/\./g, "\\.")}($|[^0-9])`);
+  // Every regular-expression metacharacter in the version is escaped, not only the dots.
+  const literal = new RegExp(`(^|[^0-9.])${version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^0-9])`);
   for (const file of ["dist/chromium/options.html", "dist/chromium/options.js", "src/options/options.html", "src/options/options.ts"]) {
     expect(readFileSync(resolve(ROOT, file), "utf8"), `${file} holds no version literal`).not.toMatch(literal);
   }
