@@ -1,47 +1,352 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// First run: protection is already on, keyless value first.
+// First run: protection is already on, and three steps make it work fully.
 //
-// THE PAGE IS A STATE, NOT A PREAMBLE. Everything a reader sees here is read
-// at the moment it opens: a real verdict from the live graph, the live size
-// of that graph and the pulse of the resolvers in front of it, and the
-// actual on/off state of every protection off this browser's own settings.
-// The one number that used to be typed into the page - "800+ brands" - is
-// now counted from the corpus the detector actually loaded, so it cannot go
-// stale against the thing it describes.
+// THE PAGE IS A STATE, NOT A PREAMBLE. Every step's state is READ when the
+// page opens and again whenever it could have changed: the toolbar pin from
+// the browser, Active Shield from the stored setting AND the all-sites grant,
+// the account from the stored key. The counter at the top is the number of
+// steps that are done or skipped, so it moves in both directions: a grant
+// taken away in the browser's own site-access control moves it back.
 //
-// Every read fails open and says which one failed. An unreachable statistics
-// endpoint leaves the page making no claim about the graph's size rather
-// than falling back to a remembered figure, and the sample verdict says
-// UNAVAILABLE rather than quietly reading as clean.
+// The side column reads the same way: a real verdict from the live graph,
+// the live size of that graph, and the brand count of the corpus the
+// detector loaded. Nothing in it is typed into the build, and a read that
+// fails says so and shows no number.
 
 import { send, type CheckHostResult } from "../shared/messages";
 import type { GraphScale, Settings } from "../shared/types";
-import { compact, countUp, sparkline } from "../shared/spark";
+import { compact, countUp } from "../shared/spark";
 import { ext } from "../shared/api";
 import { newestRead, shieldActive, shieldGranted } from "../shared/shield-state";
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
-function el(tag: string, cls?: string, text?: string): HTMLElement {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
+type StepState = "done" | "current" | "skipped" | "todo";
+
+const STATE_TEXT: Record<StepState, string> = {
+  done: "Done",
+  current: "Next",
+  skipped: "Skipped",
+  todo: "Not started",
+};
+
+const DECLINED = "Not turned on. Everything else still works. You can turn it on here or in Settings.";
+
+/** What the page knows right now. `null` is "not read (yet)", never a guess. */
+const st = {
+  /** The browser's own answer for the toolbar, or null when it could not be read. */
+  pinned: null as boolean | null,
+  /** The first pin read has finished, so "could not read" is an answer, not a wait. */
+  pinAsked: false,
+  /** The reader's word that Guard is pinned, used only when the browser cannot say. */
+  pinnedByWord: false,
+  shieldOn: false,
+  /** The settings could not be read the last time they were asked for. */
+  settingsUnread: false,
+  /** The last click on the Active Shield button did not end with it on. */
+  declined: false,
+  signedIn: false,
+  /** Step 3 was set aside with Later, for this page only. */
+  skipped: false,
+};
+
+/** A sign-in loop is running (declared up here because render() reads it). */
+let signingIn = false;
+
+// ------------------------------------------------------------ the steps
+
+function stepStates(): { pin: StepState; shield: StepState; account: StepState } {
+  const settled = {
+    pin: st.pinned === true || st.pinnedByWord ? "done" : null,
+    shield: st.shieldOn ? "done" : null,
+    account: st.signedIn ? "done" : st.skipped ? "skipped" : null,
+  } as const;
+  // The current step is the first one that is neither done nor skipped.
+  let currentTaken = false;
+  const pick = (s: StepState | null): StepState => {
+    if (s) return s;
+    if (!currentTaken) {
+      currentTaken = true;
+      return "current";
+    }
+    return "todo";
+  };
+  return { pin: pick(settled.pin), shield: pick(settled.shield), account: pick(settled.account) };
 }
+
+function setResult(id: string, text: string | null): void {
+  const p = $(id);
+  p.hidden = text === null;
+  p.textContent = text ?? "";
+}
+
+function render(): void {
+  const s = stepStates();
+  const ids = { pin: "step-pin", shield: "step-shield", account: "step-account" } as const;
+  let done = 0;
+  for (const key of ["pin", "shield", "account"] as const) {
+    const li = $(ids[key]);
+    li.dataset["state"] = s[key];
+    if (s[key] === "current") li.setAttribute("aria-current", "step");
+    else li.removeAttribute("aria-current");
+    li.querySelector(".step-state")!.textContent = STATE_TEXT[s[key]];
+    if (s[key] === "done" || s[key] === "skipped") done++;
+  }
+  $("setup-count").textContent = `${done} of 3`;
+
+  // Step 1: a read, or the reader's own word when the browser cannot say.
+  const pinDone = s.pin === "done";
+  const unreadable = st.pinAsked && st.pinned === null;
+  if (pinDone) setResult("pin-result", st.pinned === true ? "Pinned. Done." : "You said it is pinned. Done.");
+  else if (unreadable) setResult("pin-result", "Guard could not read whether it is pinned.");
+  else setResult("pin-result", null);
+  $("btn-pinned").hidden = pinDone || !unreadable;
+
+  // Step 2: done only from the setting AND the grant together.
+  const shieldDone = s.shield === "done";
+  $("shield-ask").hidden = shieldDone;
+  if (shieldDone) setResult("shield-result", "Active Shield is on.");
+  else if (st.declined) setResult("shield-result", DECLINED);
+  else if (st.settingsUnread)
+    setResult(
+      "shield-result",
+      "The extension’s own settings could not be read just now, so this step is not claiming Active Shield is on.",
+    );
+  else setResult("shield-result", null);
+
+  // Step 3 and the header block share one account state.
+  setResult(
+    "account-result",
+    s.account === "done"
+      ? "Signed in."
+      : s.account === "skipped"
+        ? "Skipped. You can sign in any time from the toolbar panel or Settings."
+        : null,
+  );
+  // A status from a sign-in that finished elsewhere is not true any more.
+  if (!st.signedIn && !signingIn && !$("device-status").hidden && $("device-status").dataset["done"] === "1") {
+    $("device-status").hidden = true;
+    $("device-status").textContent = "";
+    delete $("device-status").dataset["done"];
+  }
+  $("account-ask").hidden = s.account === "done";
+  $("btn-later").hidden = s.account !== "current" && s.account !== "todo";
+  $("btn-create").hidden = st.signedIn;
+  $("cta-have").hidden = st.signedIn;
+  $("cta-signed-in").hidden = !st.signedIn;
+}
+
+// ----------------------------------------------------------- step 1: pin
+
+const nextPinRead = newestRead();
+
+/**
+ * Whether Guard's icon is on the toolbar, asked of the browser. Chromium 91+
+ * and Firefox 116+ answer it, and this extension requires newer than both.
+ * Firefox starts an action without default_area in its Extensions panel, so
+ * its own answer decides here too: nothing about the browser is assumed.
+ */
+async function readPin(): Promise<void> {
+  const isLatest = nextPinRead();
+  let pinned: boolean | null = null;
+  try {
+    const action = ext.action as unknown as { getUserSettings?: () => Promise<{ isOnToolbar?: unknown }> };
+    if (typeof action?.getUserSettings === "function") {
+      const got = await action.getUserSettings();
+      if (typeof got?.isOnToolbar === "boolean") pinned = got.isOnToolbar;
+    }
+  } catch {
+    pinned = null;
+  }
+  if (!isLatest()) return;
+  st.pinned = pinned;
+  st.pinAsked = true;
+  // The reader's word only stands in for a read that is impossible.
+  if (pinned !== null) st.pinnedByWord = false;
+  render();
+}
+
+$("btn-pinned").addEventListener("click", () => {
+  st.pinnedByWord = true;
+  render();
+});
+
+// The browser says when the pin changes (Chromium 130+); everywhere else the
+// page re-reads when it is looked at again, and slowly while it waits.
+try {
+  const action = ext.action as unknown as { onUserSettingsChanged?: chrome.events.Event<() => void> };
+  action?.onUserSettingsChanged?.addListener(() => void readPin());
+} catch {
+  // No such event: the focus, visibility and timer reads below cover it.
+}
+window.addEventListener("focus", () => void readPin());
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void readPin();
+});
+setInterval(() => {
+  // Only while the last read said "not pinned": no reads once it is pinned,
+  // none when the browser cannot answer (focus and visibility still re-read),
+  // and none for a page nobody can see.
+  if (st.pinned !== false || st.pinnedByWord || document.visibilityState !== "visible") return;
+  void readPin();
+}, 2000);
+
+// ------------------------------------------------------- step 2: shield
+
+const nextShieldRead = newestRead();
+
+/** The brand figure: the corpus the detector loaded, counted; unread says so. */
+function drawBrands(brands: number | null): void {
+  if (brands !== null && brands > 0) {
+    $("brand-count").textContent = brands.toLocaleString("en");
+    $("fig-brands").hidden = false;
+    $("brand-down").hidden = true;
+  } else if (brands === null && !$("fig-brands").hidden) {
+    // A later read failed: keep the number the page already read.
+  } else {
+    $("fig-brands").hidden = true;
+    $("brand-down").hidden = false;
+  }
+}
+
+/** Read the stored settings and the grant together, and draw what they say. */
+async function readShield(): Promise<void> {
+  const isLatest = nextShieldRead();
+  const res = await send<{
+    ok: true;
+    settings: Settings;
+    signedIn: boolean;
+    corpusBrands: number;
+  }>({ kind: "getSettings" }).catch(() => null);
+  const granted = await shieldGranted();
+  // A newer read has started since this one did: let it draw.
+  if (!isLatest()) return;
+  if (!res?.ok) {
+    st.settingsUnread = true;
+    st.shieldOn = false;
+    drawBrands(null);
+  } else {
+    st.settingsUnread = false;
+    st.shieldOn = shieldActive(res.settings, granted);
+    st.signedIn = res.signedIn === true;
+    drawBrands(res.corpusBrands);
+  }
+  if (st.shieldOn) st.declined = false;
+  render();
+  // The first settings read has landed and been drawn (a marker for tests).
+  $("steps").dataset["read"] = "settings";
+}
+
+$("btn-shield").addEventListener("click", () => {
+  // The permission request is the FIRST thing on the click: no await, no
+  // message and no read ahead of it, or the browser no longer sees a user
+  // gesture and (Firefox) refuses it.
+  let asked: Promise<boolean>;
+  try {
+    asked = ext.permissions.request({ origins: ["<all_urls>"] });
+  } catch (e) {
+    asked = Promise.reject(e);
+  }
+  void finishShieldAsk(asked);
+});
+
+async function finishShieldAsk(asked: Promise<boolean>): Promise<void> {
+  const button = $("btn-shield") as HTMLButtonElement;
+  button.disabled = true;
+  st.declined = false;
+  let ok = false;
+  try {
+    if ((await asked) === true) {
+      const stored = await send({ kind: "setSettings", patch: { shield: true } });
+      ok = stored.ok;
+    }
+  } catch {
+    ok = false;
+  }
+  // Declined or refused: nothing was stored. Either way the step is drawn
+  // from a fresh read, so it shows what was granted and stored.
+  st.declined = !ok;
+  await readShield();
+  button.disabled = false;
+}
+
+// A grant or a settings change elsewhere (Settings, the browser's own
+// site-access control) re-reads the state in place. The grant lands before
+// the setting does, so the storage listener settles the final picture.
+ext.permissions.onAdded.addListener(() => void readShield());
+ext.permissions.onRemoved.addListener(() => void readShield());
+ext.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && ("settings" in changes || "apiKey" in changes)) void readShield();
+});
+
+// ------------------------------------------------------ step 3: account
+
+/** Both the header and step 3 start the same sign-in and report in one place. */
+async function signIn(): Promise<void> {
+  if (signingIn) return;
+  signingIn = true;
+  const status = $("device-status");
+  delete status.dataset["done"];
+  status.hidden = false;
+  status.textContent = "Opening the Whisper console...";
+  try {
+    await send({ kind: "signInStart" });
+    for (;;) {
+      const res = await send<{
+        ok: true;
+        device: { phase: string; userCode: string | null; message: string | null };
+      }>({ kind: "signInStatus" });
+      if (!res.ok) return;
+      const d = res.device;
+      if (d.phase === "waiting") {
+        status.textContent = `Approve the sign-in in the console tab (code ${d.userCode ?? "..."}). Waiting...`;
+      } else if (d.phase === "approved") {
+        status.textContent = "Signed in. The live signal is active on every site you visit.";
+        status.dataset["done"] = "1";
+        st.signedIn = true;
+        signingIn = false;
+        render();
+        return;
+      } else if (d.phase === "expired" || d.phase === "error") {
+        status.textContent = d.message ?? "Sign-in did not complete. Try again.";
+        return;
+      } else {
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  } catch {
+    // The worker stopped mid-request: say so, and let the next click start again.
+    status.textContent = "Sign-in did not complete. Try again.";
+  } finally {
+    signingIn = false;
+  }
+}
+
+for (const id of ["btn-create", "btn-signin-link", "btn-signin"]) {
+  $(id).addEventListener("click", () => void signIn());
+}
+
+$("btn-later").addEventListener("click", () => {
+  st.skipped = true;
+  render();
+});
+
+// ------------------------------------------------------- see it work
 
 // The live sample: one real verdict for a well-known host, fetched now.
 // (A fixed public name, never anything about the user's browsing.)
 async function loadSample(): Promise<void> {
   const chip = $("sample-chip");
   const note = $("sample-note");
-  const rail = $("sample-rail");
-  const res = await send<{ ok: true; check: CheckHostResult }>({ kind: "checkHost", host: "github.com" });
+  const res = await send<{ ok: true; check: CheckHostResult }>({ kind: "checkHost", host: "github.com" }).catch(
+    () => ({ ok: false as const }),
+  );
   if (!res.ok || !res.check.verdict) {
     chip.className = "w-chip unknown";
     chip.textContent = "UNAVAILABLE";
-    rail.className = "band-rail unknown";
     note.textContent = res.ok ? (res.check.graphError ?? "the live check is off") : "could not reach Whisper";
     return;
   }
@@ -49,233 +354,26 @@ async function loadSample(): Promise<void> {
   const good = band === "NONE" || band === "LOW" || band === "INFO";
   chip.className = `w-chip ${good ? "ok" : band === "MEDIUM" ? "med" : band === "UNKNOWN" ? "unknown" : "crit"}`;
   chip.textContent = good ? "NO KNOWN THREAT" : band;
-  // The verdict is legible from the left edge before a word is read: the
-  // same rail the panel draws, so the two surfaces say it the same way.
-  rail.className = `band-rail ${good ? "benign" : band === "MEDIUM" ? "suspicious" : band === "UNKNOWN" ? "unknown" : "malicious"}`;
   note.textContent = res.check.verdict.coverage ? `coverage: ${res.check.verdict.coverage}` : "";
 }
 
 /**
- * How big the graph is and how hard the resolvers in front of it are
- * working, both read live.
- *
- * The claim is only made when it was measured: an unreachable endpoint gets
- * a sentence saying so, never a number somebody typed here once.
+ * How big the graph is, read live. The claim is only made when it was
+ * measured: an unreachable endpoint gets a sentence saying so, never a number
+ * somebody typed here once.
  */
 async function loadScale(): Promise<void> {
-  const res = await send<{ ok: true; scale: GraphScale | null }>({ kind: "getScale" });
-  if (!res.ok || !res.scale) {
+  const res = await send<{ ok: true; scale: GraphScale | null }>({ kind: "getScale" }).catch(() => null);
+  if (!res?.ok || !res.scale) {
     $("scale-down").hidden = false;
     return;
   }
-  const sc = res.scale;
-  const box = $("scale");
-  box.hidden = false;
-  countUp($("scale-nodes"), sc.nodes, compact);
-  countUp($("scale-edges"), sc.edges, compact);
-  countUp($("scale-ids"), sc.identities, compact);
-  box.title =
-    `${sc.nodes.toLocaleString("en")} nodes and ${sc.edges.toLocaleString("en")} edges, ` +
-    `${sc.identities.toLocaleString("en")} identities on the network. Read live at ` +
-    `${new Date(sc.updated).toLocaleTimeString()}${sc.degraded ? " (the endpoint reports degraded input)" : ""}.`;
-
-  // The resolvers' own trailing window: a shape, not a chart, and the
-  // primitive refuses to draw at all rather than draw a flat line out of
-  // nothing.
-  const spark = sparkline(sc.pulse.slice(-48), {
-    width: 120,
-    height: 20,
-    fill: 0.16,
-    head: true,
-    title: `DNS questions answered per 5 minutes over the last ${sc.windowHours} hours`,
-  });
-  if (spark) {
-    $("scale-pulse").replaceChildren(spark);
-    $("scale-pulse-cap").textContent =
-      `${sc.queries.toLocaleString("en")} questions answered in the last ${sc.windowHours}h`;
-  } else {
-    $("scale-pulse-cap").textContent = "";
-  }
-}
-
-/**
- * A protection's state, drawn: a filled track when it is on, an empty one
- * when it is off.
- *
- * A word ("on") and a mark say the same thing, but only the mark can be read
- * without reading. Five of these in a column is the whole answer to "what is
- * this extension doing for me right now", which is the only question a first
- * run has to answer.
- */
-function stateMark(on: boolean, title?: string): SVGSVGElement {
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("viewBox", "0 0 26 14");
-  svg.setAttribute("width", "26");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("role", "img");
-  const t = document.createElementNS(NS, "title");
-  t.textContent = title ?? (on ? "on" : "off");
-  svg.appendChild(t);
-  const track = document.createElementNS(NS, "rect");
-  track.setAttribute("x", "0.75");
-  track.setAttribute("y", "0.75");
-  track.setAttribute("width", "24.5");
-  track.setAttribute("height", "12.5");
-  track.setAttribute("rx", "6.25");
-  track.setAttribute("fill", on ? "var(--w-ok)" : "transparent");
-  track.setAttribute("stroke", on ? "var(--w-ok)" : "var(--w-line-strong)");
-  track.setAttribute("stroke-width", "1.5");
-  svg.appendChild(track);
-  const knob = document.createElementNS(NS, "circle");
-  knob.setAttribute("cx", on ? "18.5" : "7.5");
-  knob.setAttribute("cy", "7");
-  knob.setAttribute("r", "3.75");
-  knob.setAttribute("fill", on ? "var(--w-bg)" : "var(--w-line-strong)");
-  svg.appendChild(knob);
-  return svg;
-}
-
-type RowState = "on" | "off" | "needs-shield" | "tab-only";
-
-const MARK_TITLE: Partial<Record<RowState, string>> = {
-  "needs-shield": "needs Active Shield",
-  "tab-only": "only on a tab where you open Guard",
-};
-
-function activeRow(state: boolean | RowState, name: string, detail: string, key?: string): HTMLElement {
-  const st: RowState = state === true ? "on" : state === false ? "off" : state;
-  const row = el("div", `active-row${st === "on" ? "" : " off"}`);
-  if (key) row.dataset["key"] = key;
-  row.dataset["state"] = st;
-  const mark = el("span", "active-mark");
-  mark.appendChild(stateMark(st === "on", MARK_TITLE[st]));
-  row.append(mark, el("span", "active-name", name), el("span", "active-detail", detail));
-  return row;
-}
-
-const nextActiveRead = newestRead();
-
-/** What is actually on, read from this browser's own settings. */
-async function loadActive(): Promise<void> {
-  const isLatest = nextActiveRead();
-  const res = await send<{
-    ok: true;
-    settings: Settings;
-    signedIn: boolean;
-    corpusVersion: number;
-    corpusUpdated: string;
-    corpusBrands: number;
-  }>({ kind: "getSettings" }).catch(() => null);
-  const list = $("active-list");
-  if (!res?.ok) {
-    if (!isLatest()) return;
-    list.replaceChildren(
-      el("p", "w-note", "The extension's own settings could not be read just now, so this page is not claiming what is on."),
-    );
-    return;
-  }
-  const s = res.settings;
-  const granted = await shieldGranted();
-  // A newer read has started since this one did: let it draw.
-  if (!isLatest()) return;
-  const active = shieldActive(s, granted);
-  // A protection that cannot run yet is never drawn on. The stored
-  // preference is untouched; it reads on again once Active Shield is.
-  const gated = (pref: boolean): RowState => (!active ? "needs-shield" : pref ? "on" : "off");
-  // The brand figure is the corpus the detector loaded, counted. When it
-  // could not be counted the sentence simply does not carry a number.
-  const brands = res.corpusBrands > 0 ? `${res.corpusBrands.toLocaleString("en")} heavily phished brands` : "the bundled brand list";
-  // Where the cookie decline can run. Without Active Shield that is only a tab
-  // the reader opened Guard on, so the row is never drawn as fully on.
-  const cookieState: RowState = !s.cookieDecline ? "off" : active ? "on" : "tab-only";
-  const cookieReach =
-    cookieState === "on"
-      ? "Runs on every page. "
-      : cookieState === "tab-only"
-        ? "Runs only on a tab where you open Guard. Active Shield runs it on every page. "
-        : "";
-  list.replaceChildren(
-    activeRow(
-      s.cloudCheck,
-      "Live graph verdict",
-      s.cloudCheck
-        ? "Every site you open is checked against the graph, by name only."
-        : "Turned off: on-device checks still run, nothing leaves this browser.",
-    ),
-    activeRow(true, "Look-alike detector", `On-device, watching ${brands}. Sends nothing.`),
-    activeRow(
-      gated(s.fieldGuard),
-      "Credential-field guard",
-      `${active ? "" : "Needs Active Shield. "}Warns before a password or card is typed into a site the graph does not vouch for.`,
-      "fieldGuard",
-    ),
-    activeRow(
-      cookieState,
-      "Cookie-banner auto-decline",
-      `${cookieReach}Clicks reject, never accept, entirely on this device.`,
-      "cookieDecline",
-    ),
-    activeRow(
-      gated(s.amberBanner),
-      "In-page warning banner",
-      `${active ? "" : "Needs Active Shield. "}Says so on the page itself when a site is only partly trusted.`,
-      "amberBanner",
-    ),
-    activeRow(
-      active,
-      "Active Shield",
-      active
-        ? "Known-bad destinations are blocked before they load."
-        : "Off until you grant it: it needs permission for every site.",
-    ),
-  );
+  $("fig-nodes").hidden = false;
+  countUp($("scale-nodes"), res.scale.nodes, compact);
 }
 
 void loadSample();
 void loadScale();
-void loadActive();
-
-// A grant or a settings change elsewhere (the Settings toggle) re-reads the
-// state in place. The grant lands before the setting does, so the storage
-// listener is what settles the final picture.
-ext.permissions.onAdded.addListener(() => void loadActive());
-ext.permissions.onRemoved.addListener(() => void loadActive());
-ext.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && "settings" in changes) void loadActive();
-});
-
-$("btn-later").addEventListener("click", () => {
-  window.close();
-});
-
-$("btn-dashboard").addEventListener("click", () => {
-  void send({ kind: "openDashboard" });
-});
-
-$("btn-signin").addEventListener("click", async () => {
-  const status = $("device-status");
-  status.hidden = false;
-  status.textContent = "Opening the Whisper console...";
-  await send({ kind: "signInStart" });
-  for (;;) {
-    const res = await send<{
-      ok: true;
-      device: { phase: string; userCode: string | null; message: string | null };
-    }>({ kind: "signInStatus" });
-    if (!res.ok) return;
-    const d = res.device;
-    if (d.phase === "waiting") {
-      status.textContent = `Approve the sign-in in the console tab (code ${d.userCode ?? "..."}). Waiting...`;
-    } else if (d.phase === "approved") {
-      status.textContent = "Signed in. The live signal is active on every site you visit.";
-      return;
-    } else if (d.phase === "expired" || d.phase === "error") {
-      status.textContent = d.message ?? "Sign-in did not complete. Try again.";
-      return;
-    } else {
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-});
+void readShield();
+void readPin();
+render();

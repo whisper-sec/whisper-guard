@@ -489,19 +489,19 @@ test("pre-click context-menu item is registered", async () => {
 
 // ------------------------------------------------------------ first run
 
-test("first-run page: privacy promise + honest scope, opened once on install", async () => {
+test("first-run page: the three-step setup with its privacy line and a live sample, opened once on install", async () => {
   // onInstalled fired when this context loaded the unpacked extension; the
   // welcome tab may have been auto-opened. Assert the page itself renders
-  // the two cards either way.
+  // the steps and the privacy card either way.
   await setKey(ext, MOCK_KEY);
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/firstrun.html`);
   await expect(page.locator("h1")).toHaveText("Guard is protecting you now");
-  await expect(page.locator("main")).toContainText("privacy promise");
-  await expect(page.locator("main")).toContainText("never your history");
-  await expect(page.locator("main")).toContainText("What signing in adds");
-  await expect(page.locator("#btn-signin")).toHaveText("Sign in with Whisper");
-  await expect(page.locator("#btn-later")).toHaveText("Not now");
+  await expect(page.locator("#privacy")).toContainText("Never the page, its path, what you type or your history.");
+  await expect(page.locator("#steps > li")).toHaveCount(3);
+  // Signed in: the sign-in step is done and offers nothing more to press.
+  await expect(page.locator("#step-account")).toHaveAttribute("data-state", "done");
+  await expect(page.locator("#cta-signed-in")).toHaveText("Signed in.");
   // The live sample verdict proves the graph tier keyless-first.
   await expect(page.locator("#sample-chip")).toHaveText("NO KNOWN THREAT", { timeout: 15_000 });
   await page.close();

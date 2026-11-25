@@ -196,6 +196,8 @@
   --w-fill-neutral: #5f5f70;
   /* Ink on the solid amber button. */
   --w-on-warn: #1c1917;
+  /* Ink on a solid --w-accent-line fill (a filled violet button), 4.5:1 or better. */
+  --w-on-accent: #ffffff;
   /* The filled malicious plate. A fill carries white text, so it is a
      darker red than the outline hue above, which is drawn AS text. */
   --w-v-crit: #b8202a;
@@ -284,6 +286,8 @@
   --w-fill-neutral: #8a8aa0;
   /* Ink on the solid amber button. */
   --w-on-warn: #1c1917;
+  /* Ink on a solid --w-accent-line fill (a filled violet button). */
+  --w-on-accent: #ffffff;
   --w-v-crit: #b02525;
 
   --w-cat-search: #2d63ae;

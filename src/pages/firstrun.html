@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Welcome to Whisper Guard</title>
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
@@ -11,103 +12,121 @@
 </head>
 <body>
   <main>
-    <div class="hero">
-      <img src="knot.png" alt="Whisper" class="hero-knot">
-      <div>
+    <header class="head">
+      <img src="knot.png" alt="Whisper" class="head-knot">
+      <div id="head-copy" class="head-copy">
         <h1>Guard is protecting you now</h1>
-        <p class="tagline">No account needed. Nothing to set up.</p>
+        <p class="tagline">It already works with no account. Three quick steps make it work fully.</p>
+      </div>
+      <div id="cta" class="cta">
+        <button id="btn-create" class="btn-fill" type="button">Create free account</button>
+        <p class="cta-line">
+          <span id="cta-have">Have one? <button id="btn-signin-link" class="btn-link" type="button">Sign in</button> · </span>
+          <span id="cta-signed-in" class="cta-signed-in" hidden>Signed in.</span>
+          <span>setup <span id="setup-count" class="mono" aria-live="polite">0 of 3</span></span>
+        </p>
+      </div>
+    </header>
+
+    <div class="grid">
+      <ol id="steps" class="steps">
+        <li id="step-pin" class="step" data-state="todo">
+          <span class="step-dot" aria-hidden="true"><span class="step-num">1</span><svg class="step-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+          <div class="step-body">
+            <div class="step-top">
+              <h2>Pin Guard to your toolbar</h2>
+              <span class="step-state">Not started</span>
+            </div>
+            <p class="step-text">The mark shows each site’s verdict at a glance. Your browser keeps new extensions under the puzzle-piece button until you pin them.</p>
+            <!-- A picture of the toolbar, drawn with tokens: the address bar,
+                 the puzzle-piece button, and Guard's mark once it is pinned. -->
+            <div class="strip" aria-hidden="true">
+              <span class="strip-bar"></span>
+              <span class="strip-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4h4v3a2 2 0 1 0 4 0V4h2v6h-3a2 2 0 1 0 0 4h3v6h-6v-3a2 2 0 1 0-4 0v3H4v-6h3a2 2 0 1 0 0-4H4V4z"></path></svg>
+              </span>
+              <svg class="strip-arrow" width="22" height="14" viewBox="0 0 22 14"><path d="M1 7h18M14 2l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2"></path></svg>
+              <span class="strip-btn strip-guard"><img src="icons/base-32.png" alt="" width="18" height="18"></span>
+            </div>
+            <p id="pin-result" class="step-result ok" hidden></p>
+            <button id="btn-pinned" class="btn-small" type="button" hidden>It’s pinned</button>
+          </div>
+        </li>
+
+        <li id="step-shield" class="step" data-state="todo">
+          <span class="step-dot" aria-hidden="true"><span class="step-num">2</span><svg class="step-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+          <div class="step-body">
+            <div class="step-top">
+              <h2>Turn on Active Shield</h2>
+              <span class="badge">RECOMMENDED</span>
+              <span class="step-state">Not started</span>
+            </div>
+            <p class="step-text">Lets Guard warn you on the page itself: an amber bar on look-alikes, a full stop before phishing pages, and a caution when a flagged site asks for a password or code.</p>
+            <div id="shield-ask" class="ask">
+              <button id="btn-shield" class="btn-fill" type="button">Turn on Active Shield</button>
+              <span class="ask-note">Your browser will ask for permission to show warnings on pages. Guard still only sends site names.</span>
+            </div>
+            <p id="shield-result" class="step-result" hidden></p>
+          </div>
+        </li>
+
+        <li id="step-account" class="step" data-state="todo">
+          <span class="step-dot" aria-hidden="true"><span class="step-num">3</span><svg class="step-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+          <div class="step-body">
+            <div class="step-top">
+              <h2>Create your free account</h2>
+              <span class="badge">UNLOCKS FLEET + PROTECT</span>
+              <span class="step-state">Not started</span>
+            </div>
+            <p class="step-text">See every device on your account in one view, and give this browser its own verifiable Whisper address.</p>
+            <div id="account-ask" class="ask">
+              <button id="btn-signin" class="btn-outline" type="button">Create account or sign in</button>
+              <button id="btn-later" class="btn-text" type="button">Later</button>
+            </div>
+            <p id="account-result" class="step-result" hidden></p>
+            <p id="device-status" class="status" role="status" hidden></p>
+          </div>
+        </li>
+      </ol>
+
+      <div id="side" class="side">
+        <!-- Every claim here is READ as the page opens: a real verdict from
+             the live graph, the graph's size, and the brand count of the
+             corpus the detector loaded. Nothing is typed into this page, so
+             nothing here can be stale, and a read that fails says so
+             instead of falling back to a remembered figure. -->
+        <section class="card" aria-labelledby="see-label">
+          <h2 id="see-label" class="label">SEE IT WORK</h2>
+          <p class="card-text">A real verdict, fetched just now:</p>
+          <div id="sample" class="sample">
+            <div class="sample-row">
+              <span id="sample-host" class="mono sample-host">github.com</span>
+              <span id="sample-chip" class="w-chip unknown">CHECKING…</span>
+            </div>
+            <span id="sample-note" class="w-note"></span>
+          </div>
+          <div class="figures">
+            <div id="fig-nodes" class="figure" hidden>
+              <span id="scale-nodes" class="figure-num mono">-</span>
+              <span class="figure-cap">nodes in the graph</span>
+            </div>
+            <div id="fig-brands" class="figure" hidden>
+              <span id="brand-count" class="figure-num mono">-</span>
+              <span class="figure-cap">brands guarded on-device</span>
+            </div>
+            <p id="scale-down" class="w-note figure-down" hidden>The graph’s size could not be read just now.</p>
+            <p id="brand-down" class="w-note figure-down" hidden>The brand count could not be read just now.</p>
+          </div>
+        </section>
+
+        <section id="privacy" class="card" aria-labelledby="privacy-label">
+          <h2 id="privacy-label" class="label">YOUR PRIVACY</h2>
+          <p id="privacy-main" class="card-text">The only thing about your browsing Guard sends is a site’s <strong>name</strong>, to <code id="privacy-host">graph.whisper.online</code>. Never the page, its path, what you type or your history.</p>
+          <p class="card-small">Your browser may say Guard can “read your browsing activity”. That is how it sees the site name to check it. No telemetry, no analytics.</p>
+          <a id="privacy-link" class="more" href="https://github.com/whisper-sec/whisper-guard#privacy-model" target="_blank" rel="noopener">Read the privacy model →</a>
+        </section>
       </div>
     </div>
-
-    <!-- FIRST RUN IS A STATE, NOT A PREAMBLE.
-         This page used to be three cards of prose about what the extension
-         would do. Everything on it was true and none of it was evidence, so
-         the first thing anyone saw from a security product was a paragraph
-         asking to be believed. Every claim below is now READ at the moment
-         the page opens: a real verdict from the live graph, the live size of
-         that graph and the pulse of the resolvers in front of it, and the
-         actual on/off state of every protection, off this browser's own
-         settings. Nothing here is written into the build, so nothing here
-         can be stale, and when something cannot be read the page says so
-         instead of falling back to a remembered figure. -->
-    <section class="card">
-      <h2>See it work</h2>
-      <p>Every site you visit is checked live against the Whisper security
-      graph. Here is a real verdict, fetched just now:</p>
-      <div id="sample" class="sample">
-        <span id="sample-rail" class="band-rail" aria-hidden="true"></span>
-        <span id="sample-host" class="w-host">github.com</span>
-        <span id="sample-chip" class="w-chip unknown">CHECKING…</span>
-        <span id="sample-note" class="w-note"></span>
-      </div>
-
-      <!-- The graph behind that verdict, and the resolvers in front of it,
-           both measured on load. Never a figure typed into this page: one
-           about our own coverage is stale the day after it ships. -->
-      <div id="scale" class="scale" hidden>
-        <div class="scale-figs">
-          <div class="scale-fig">
-            <span id="scale-nodes" class="scale-num">-</span>
-            <span class="scale-cap">nodes</span>
-          </div>
-          <div class="scale-fig">
-            <span id="scale-edges" class="scale-num">-</span>
-            <span class="scale-cap">edges joining them</span>
-          </div>
-          <div class="scale-fig">
-            <span id="scale-ids" class="scale-num">-</span>
-            <span class="scale-cap">identities on the network</span>
-          </div>
-        </div>
-        <div class="scale-pulse-row">
-          <span id="scale-pulse" class="scale-pulse"></span>
-          <span id="scale-pulse-cap" class="w-note"></span>
-        </div>
-      </div>
-      <p id="scale-down" class="w-note" hidden>The public statistics endpoint
-      could not be read just now, so this page is not claiming a size for the
-      graph. The verdict above was still a live answer.</p>
-    </section>
-
-    <section class="card">
-      <h2>On right now, with no account</h2>
-      <p class="w-note">Read from this browser's own settings as this page
-      opened, not from a list of features. Every one of these can be turned
-      off in the extension's settings.</p>
-      <div id="active-list" class="active-list"></div>
-    </section>
-
-    <section class="card">
-      <h2>Our privacy promise, in plain language</h2>
-      <p>We only ever see a site's <strong>name</strong>, never your history, never the
-      page. The live check sends the hostname of the page you visit to exactly one
-      endpoint, <code>graph.whisper.online</code>, and nothing else: no path, no query,
-      no content. Hostnames are not retained to build a browsing profile. The on-device
-      look-alike protection sends nothing at all, and one switch in settings turns the
-      live check off entirely.</p>
-      <p class="w-note">Your browser may say Whisper Guard can "read your browsing
-      activity". That permission is how we see the site <em>name</em> to check it.
-      We never read the page, never see what you type, and never store your
-      history. There is no telemetry and no analytics in this extension.</p>
-    </section>
-
-    <section class="card">
-      <h2>What signing in adds (free)</h2>
-      <p><strong>With an account:</strong> your whole fleet in one view (every device and
-      agent on your Whisper account), per-endpoint drill-downs with verifiable identity
-      health, protection presets that show you what they would have blocked on your own
-      traffic, and one control that gives this browser its own routable Whisper IPv6
-      address and routes its traffic through it, so it becomes a first-class endpoint
-      that anyone can verify by RDAP.</p>
-      <div class="row gap">
-        <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
-        <button id="btn-dashboard" class="w-btn">Open the dashboard</button>
-        <button id="btn-later" class="w-btn">Not now</button>
-      </div>
-      <div id="device-status" class="w-note status" hidden></div>
-    </section>
-
-    <p class="footer-note">You can revisit all of this any time in the extension's settings.</p>
   </main>
   <script src="firstrun.js"></script>
 </body>
