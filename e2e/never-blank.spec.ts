@@ -43,7 +43,7 @@ const SENTENCE =
   "This can happen when the page was open before Guard started, for example right after an install or update.";
 const BUTTON = "Check this site now";
 const NOTE = "No reload needed. Only the site name is sent.";
-const CHECKING = "Checking this site… usually under a second";
+const CHECKING = "Checking this site…";
 
 /** True when the text holds the hostname as a whole token, never as part of a longer name. */
 function namesHost(text: string, host: string): boolean {
@@ -150,7 +150,9 @@ test("a tab Guard has not checked shows the not-yet-checked card and sends nothi
   const naming = net.log.filter((r) => namesHost(`${r.host} ${r.path} ${r.body}`, host));
   expect(naming).toHaveLength(0);
 
-  // Positive control: the press sends exactly one assess, naming the site.
+  // Positive control: the press sends exactly one assess, naming the site. The
+  // answer is held past the debounce, so the popup's reads start while it is out.
+  net.assessDelayMs.set(host, 1000);
   await popup.locator("#btn-check-now").click();
   await expect(popup.locator("#band-chip")).toHaveText("NO KNOWN THREAT");
   const assessed = net.requestsTo(GRAPH_READ_HOST).filter((r) => r.body.includes("whisper.assess"));

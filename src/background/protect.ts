@@ -179,12 +179,14 @@ export async function protectHost(host: string, withVariants = false): Promise<P
   if (hit && Date.now() - hit.at < COMPOSED_TTL_MS) return hit.p;
 
   let partial = false;
-  const verdict = await assessCached(h).catch((): AssessVerdict => {
-    partial = true;
-    return { host: h, band: "UNKNOWN" as GraphBand, coverage: null, label: null, at: Date.now() };
-  });
-
-  const [who, why, variants] = await Promise.all([
+  // The four reads do not wait on each other: the verdict, who runs the name,
+  // why the verdict says what it says, and (when asked) the look-alikes. The
+  // longest of them is the whole wait.
+  const [verdict, who, why, variants] = await Promise.all([
+    assessCached(h).catch((): AssessVerdict => {
+      partial = true;
+      return { host: h, band: "UNKNOWN" as GraphBand, coverage: null, label: null, at: Date.now() };
+    }),
     fetchWho(h).catch(() => {
       partial = true;
       return { who: null, category: null, where: null, ageDays: null, ok: false };

@@ -201,6 +201,22 @@ export const EGRESS_REQUEST = {
 // Per-tab navigation debounce (SPA route bursts, redirect chains).
 export const NAV_DEBOUNCE_MS = 150;
 
+// How long a check of one site may run, counted from the moment it was
+// scheduled: the navigation debounce, then the graph call's own limit (which
+// covers the whole answer, headers and body), then this much for the worker's
+// on-device pass, its storage reads and the hand-over to a popup. Every
+// waiter (the worker's answer to "Check this site now", the popup's loader)
+// uses this one figure, so none of them gives up before the worker does.
+export const CHECK_SLACK_MS = 1500;
+export const CHECK_LIMIT_MS = NAV_DEBOUNCE_MS + GRAPH_TIMEOUT_MS + CHECK_SLACK_MS;
+// How long the popup waits for the reads behind a verdict (why it says what it
+// says, and who is behind the name) before it draws what it has. The worker
+// runs the verdict, the explain and the walk behind the name side by side, and
+// each graph call is held to the graph limit, headers and body. The walk is
+// the longest: two rounds of calls one after the other. So the longest honest
+// wait is two graph limits, plus the same slack for the hand-over.
+export const EVIDENCE_LIMIT_MS = 2 * GRAPH_TIMEOUT_MS + CHECK_SLACK_MS;
+
 // Pre-emptive click/form-submit interruption. A held click must
 // resolve fast, so the background's keyless assess gets a tighter budget
 // than the nav pipeline's; the content script adds a belt-and-braces cap

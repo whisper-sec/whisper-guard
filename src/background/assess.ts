@@ -9,7 +9,7 @@
 
 import { ASSESS_QUERY } from "../shared/config";
 import type { AssessVerdict, GraphBand } from "../shared/types";
-import { graphQuery } from "./graph-client";
+import { graphQuery, hasKey } from "./graph-client";
 
 const BANDS: ReadonlySet<string> = new Set([
   "CRITICAL",
@@ -57,18 +57,37 @@ export async function assessHosts(
   return out;
 }
 
+/**
+ * The assess calls in flight, by tier and hostname. A second ask for a name
+ * whose call is still running joins that call instead of sending its own: the
+ * navigation check, the popup's reads and a press of "Check this site now" all
+ * ask for the same name at about the same time. The tier is part of the key,
+ * so a keyed call and a keyless one never share an answer.
+ */
+const inFlight = new Map<string, Promise<AssessVerdict>>();
+
 /** Assess one hostname. A missing row degrades to UNKNOWN (fail open). */
 export async function assessHost(host: string): Promise<AssessVerdict> {
-  const map = await assessHosts([host]);
-  return (
-    map.get(host.toLowerCase()) ?? {
-      host: host.toLowerCase(),
-      band: "UNKNOWN",
-      coverage: "no-data",
-      label: null,
-      at: Date.now(),
-    }
-  );
+  const h = host.toLowerCase();
+  const key = `${(await hasKey()) ? "keyed" : "keyless"}|${h}`;
+  const running = inFlight.get(key);
+  if (running) return running;
+  const call = assessHosts([h])
+    .then(
+      (map) =>
+        map.get(h) ?? {
+          host: h,
+          band: "UNKNOWN" as GraphBand,
+          coverage: "no-data",
+          label: null,
+          at: Date.now(),
+        },
+    )
+    .finally(() => {
+      inFlight.delete(key);
+    });
+  inFlight.set(key, call);
+  return call;
 }
 
 /**

@@ -82,45 +82,56 @@ export async function graphQuery(
 
   calls++;
   const ctl = new AbortController();
+  // The time limit covers the whole answer: the headers and the body. It is
+  // cleared only once the body has been read (or the call has failed).
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        ...(key ? { "X-API-Key": key } : {}),
-      },
-      body: JSON.stringify({ query, parameters, timeout: timeoutMs }),
-      signal: ctl.signal,
-    });
-  } catch (e) {
-    throw new GraphError(
+  const failed = (e: unknown): GraphError =>
+    new GraphError(
       ctl.signal.aborted ? "timeout" : "connect",
       ctl.signal.aborted ? "the graph took too long to answer" : `could not reach the graph: ${String(e)}`,
     );
+  let text: string;
+  try {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(key ? { "X-API-Key": key } : {}),
+        },
+        body: JSON.stringify({ query, parameters, timeout: timeoutMs }),
+        signal: ctl.signal,
+      });
+    } catch (e) {
+      throw failed(e);
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      throw new GraphError("auth", "the graph rejected the key; sign in again");
+    }
+    if (res.status === 429) {
+      // The public tier's hourly ceiling, hit. This is a specific, recoverable
+      // state with a specific remedy, and telling a reader "graph unexpected
+      // status: 429" instead of what actually happened is the opaque error
+      // the robustness principle exists to forbid.
+      throw new GraphError(
+        "quota",
+        "this hour's free graph checks are used up; they reset on the hour, and an account raises the ceiling",
+      );
+    }
+    if (res.status >= 500) throw new GraphError("server", `graph server error: ${res.status}`);
+    if (!res.ok) throw new GraphError("server", `graph unexpected status: ${res.status}`);
+
+    try {
+      text = await res.text();
+    } catch (e) {
+      throw failed(e);
+    }
   } finally {
     clearTimeout(timer);
   }
-
-  if (res.status === 401 || res.status === 403) {
-    throw new GraphError("auth", "the graph rejected the key; sign in again");
-  }
-  if (res.status === 429) {
-    // The public tier's hourly ceiling, hit. This is a specific, recoverable
-    // state with a specific remedy, and telling a reader "graph unexpected
-    // status: 429" instead of what actually happened is the opaque error
-    // the robustness principle exists to forbid.
-    throw new GraphError(
-      "quota",
-      "this hour's free graph checks are used up; they reset on the hour, and an account raises the ceiling",
-    );
-  }
-  if (res.status >= 500) throw new GraphError("server", `graph server error: ${res.status}`);
-  if (!res.ok) throw new GraphError("server", `graph unexpected status: ${res.status}`);
-
-  const text = await res.text();
   if (text.length > GRAPH_MAX_RESPONSE_BYTES) {
     throw new GraphError("parse", "graph response too large");
   }
