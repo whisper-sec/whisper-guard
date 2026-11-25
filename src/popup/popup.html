@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
+  <script src="theme-boot.js"></script>
 </head>
 <body>
   <!-- The masthead never scrolls. It carries the product
@@ -29,8 +30,11 @@
       </span>
     </div>
     <button id="btn-refresh" class="icon-btn" title="Re-check this site" aria-label="Re-check this site"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    <button id="btn-theme" class="icon-btn" type="button" title="Theme: Auto (follows your system)" aria-label="Theme: Auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg></button>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M10.43 5.18 L10.66 2.49 L13.34 2.49 L13.57 5.18 A7 7 0 0 1 15.71 6.06 L17.78 4.33 L19.67 6.22 L17.94 8.29 A7 7 0 0 1 18.82 10.43 L21.51 10.66 L21.51 13.34 L18.82 13.57 A7 7 0 0 1 17.94 15.71 L19.67 17.78 L17.78 19.67 L15.71 17.94 A7 7 0 0 1 13.57 18.82 L13.34 21.51 L10.66 21.51 L10.43 18.82 A7 7 0 0 1 8.29 17.94 L6.22 19.67 L4.33 17.78 L6.06 15.71 A7 7 0 0 1 5.18 13.57 L2.49 13.34 L2.49 10.66 L5.18 10.43 A7 7 0 0 1 6.06 8.29 L4.33 6.22 L6.22 4.33 L8.29 6.06 A7 7 0 0 1 10.43 5.18 Z"/><circle cx="12" cy="12" r="3"/></svg></button>
   </header>
+  <!-- Says the new theme after a press: a changed name on a button that keeps focus is not reliably re-read. -->
+  <span id="theme-live" class="pc-sr" aria-live="polite"></span>
 
   <!-- One scrolling region holds three parts, one after the other: This site,
        This page and This browser. Every part is filled when the popup opens,

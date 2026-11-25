@@ -126,12 +126,16 @@ const RECORDER = `(() => {
 
 /** Open the popup for a tab with the recorder in place, and optionally a clock
  *  that runs ahead (only the popup's own reading of the time). */
-async function openWatched(tabId: number, opts: { skewMs?: number; reducedMotion?: boolean } = {}): Promise<Page> {
+async function openWatched(
+  tabId: number,
+  opts: { skewMs?: number; reducedMotion?: boolean; initScript?: string } = {},
+): Promise<Page> {
   const page = await ext.context.newPage();
   if (opts.reducedMotion) await page.emulateMedia({ reducedMotion: "reduce" });
   if (opts.skewMs) {
     await page.addInitScript(`(() => { const real = Date.now.bind(Date); Date.now = () => real() + ${opts.skewMs}; })();`);
   }
+  if (opts.initScript) await page.addInitScript(opts.initScript);
   await page.addInitScript(RECORDER);
   await page.goto(`chrome-extension://${ext.id}/popup.html?tab=${tabId}`);
   return page;
@@ -433,6 +437,92 @@ test("a look-alike card and the session's blocked list show beside the loader wh
   }
   await popup.close();
   await page.close();
+});
+
+test("a look-alike card shows beside the loader when the first answer for the tab carries no detector result but a later one does", async () => {
+  // A name nothing has been checked under, so no cached verdict answers it: the check really runs.
+  const host = `dropbox.com.stand-in-${Date.now()}-guard-e2e.com`;
+  net.setVerdict(host, CLEAN);
+  net.assessDelayMs.set(host, 2500);
+  const { page, tabId } = await visit(ext, `https://${host}/`);
+  await waitForIcon(ext, tabId, ["checking"]);
+  // The popup's first answer for the tab is a stand-in without the detector's result.
+  const popup = await openWatched(tabId, {
+    initScript: `(() => {
+      const orig = chrome.runtime.sendMessage.bind(chrome.runtime);
+      let first = true;
+      window.__stripped = false;
+      chrome.runtime.sendMessage = async (m) => {
+        const res = await orig(m);
+        if (m && m.kind === "getTabState" && first && res && res.tabState) {
+          first = false;
+          res.tabState.detector = null;
+          window.__stripped = true;
+        }
+        return res;
+      };
+    })();`,
+  });
+  try {
+    await expect(popup.locator("#host-row")).toBeVisible({ timeout: 10_000 });
+    expect(await popup.evaluate(() => (window as unknown as { __stripped: boolean }).__stripped), "control: the first answer was stripped").toBe(true);
+    const s = await seen(popup);
+    expect(s.frames.findIndex((f) => f.ring && f.lookalike), "the look-alike card waited for the check").toBeGreaterThanOrEqual(0);
+  } finally {
+    await popup.close();
+    await page.close();
+  }
+});
+
+test("the worker's answer for a tab whose check is scheduled but not begun already carries the look-alike result", async () => {
+  // A name nothing has been checked under, so no cached verdict answers it: the check really runs.
+  const host = `dropbox.com.stand-in-${Date.now()}-guard-e2e.com`;
+  net.setVerdict(host, CLEAN);
+  // The check's lookup of the tab's window kind is held. The check waits on it
+  // before it writes anything to memory, and answering a state read does not,
+  // so every answer for the new tab meanwhile is the worker's stand-in.
+  await ext.sw.evaluate(() => {
+    const g = globalThis as unknown as { __release?: () => void; __tabsGet?: unknown; __held?: number };
+    const tabs = chrome.tabs as unknown as { get: (...a: unknown[]) => Promise<unknown> };
+    const orig = tabs.get.bind(chrome.tabs);
+    g.__tabsGet = orig;
+    g.__held = 0;
+    const gate = new Promise<void>((r) => (g.__release = r));
+    tabs.get = (...a: unknown[]) => {
+      g.__held = (g.__held ?? 0) + 1;
+      return gate.then(() => orig(...a));
+    };
+  });
+  const release = async (): Promise<void> => {
+    await ext.sw.evaluate(() => {
+      const g = globalThis as unknown as { __release?: () => void; __tabsGet?: (...a: unknown[]) => Promise<unknown> };
+      if (g.__tabsGet) (chrome.tabs as unknown as { get: unknown }).get = g.__tabsGet;
+      g.__release?.();
+    });
+  };
+  const held = (): Promise<number> => ext.sw.evaluate(() => (globalThis as unknown as { __held?: number }).__held ?? 0);
+  let page: Page | undefined;
+  try {
+    const visited = await visit(ext, `https://${host}/`);
+    page = visited.page;
+    const tabId = visited.tabId;
+    // Control: the hold engaged, so the check is waiting before its first write.
+    await expect.poll(held, { message: "control: the check never asked for the tab's window" }).toBeGreaterThan(0);
+    const helper = await extensionPage(ext);
+    const ask = (): Promise<{ hostname: string | null; icon: string; detector: { brandDomain?: string } | null; verdict: unknown }> =>
+      helper.evaluate(
+        async (id) => ((await chrome.runtime.sendMessage({ kind: "getTabState", tabId: id })) as { tabState: never }).tabState,
+        tabId,
+      );
+    await expect.poll(async () => (await ask()).hostname, { message: "the worker never named the tab's host" }).toBe(host);
+    const answer = await ask();
+    expect(answer.icon, "control: the answer is the one given while the check is pending").toBe("checking");
+    expect(answer.verdict, "control: no check has finished").toBeNull();
+    expect(answer.detector?.brandDomain, "the answer for a pending check left out the look-alike result").toBe("dropbox.com");
+  } finally {
+    await release();
+    await page?.close();
+  }
 });
 
 // ------------------------------------------------------------- the toolbar

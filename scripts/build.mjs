@@ -49,6 +49,7 @@ for (const [entry, out] of [
   ["src/pages/check-link.ts", "check-link.js"],
   ["src/pages/firstrun.ts", "firstrun.js"],
   ["src/pages/dashboard.ts", "dashboard.js"],
+  ["src/shared/theme-boot.ts", "theme-boot.js"],
   ["src/content/guard.ts", "content.js"],
   ["src/inpage/ioc-collect.ts", "ioc-collect.js"],
 ]) {
@@ -128,7 +129,7 @@ for (const war of manifest.web_accessible_resources ?? []) {
 for (const extra of [
   "content.js", "check-link.html", "warning.html", "firstrun.html", "firstrun.js",
   "popup.js", "options.js", "warning.js", "check-link.js",
-  "dashboard.html", "dashboard.css", "dashboard.js", "theme.css", "knot.png",
+  "dashboard.html", "dashboard.css", "dashboard.js", "theme.css", "theme-boot.js", "knot.png",
 ]) {
   referenced.add(extra);
 }

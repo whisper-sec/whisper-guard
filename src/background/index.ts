@@ -683,6 +683,13 @@ async function lookupTabState(tabId: number): Promise<TabState> {
     stand.eligible = true;
     stand.icon = settings.cloudCheck ? "checking" : "signedout";
     if (settings.cloudCheck) stand.checkStartedAt = checkStartedAt.get(tabId);
+    // The on-device look-alike catch needs no check and writes nothing, so the
+    // panel can draw its card beside the loader from the first answer.
+    try {
+      stand.detector = await detect(hostname, settings.nearMiss, settings.allowlist);
+    } catch {
+      stand.detector = null;
+    }
     return stand;
   }
   const restored = await restoreTabState(tabId);

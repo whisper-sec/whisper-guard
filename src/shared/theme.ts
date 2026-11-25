@@ -19,23 +19,26 @@ import { CATEGORY_HEX, type ReportCategory } from "./report";
 const cache = new Map<string, string>();
 
 // A resolved token is cached because categoryColor() is called once per
-// row on a busy chart. The cache is dropped the moment the reader's
-// colour scheme flips, so it can never hold a stale palette.
-const schemeQuery =
-  typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
+// row on a busy chart. The cache is dropped the moment the page's effective
+// scheme changes, so it can never hold a stale palette. The scheme is the
+// `data-scheme` attribute on <html> (set by theme-boot.js from the reader's
+// choice, and from the system's setting on Auto), so a flip of the system
+// on Auto and a manual pick of Light or Dark are the same event here.
 const themeListeners = new Set<() => void>();
-schemeQuery?.addEventListener("change", () => {
-  cache.clear();
-  for (const fn of themeListeners) {
-    try {
-      fn();
-    } catch {
-      // one bad repaint never stops the others
+if (typeof MutationObserver === "function" && typeof document !== "undefined") {
+  new MutationObserver(() => {
+    cache.clear();
+    for (const fn of themeListeners) {
+      try {
+        fn();
+      } catch {
+        // one bad repaint never stops the others
+      }
     }
-  }
-});
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-scheme"] });
+}
 
-/** Repaint hook: run `fn` whenever the reader's colour scheme flips. */
+/** Repaint hook: run `fn` whenever the page's effective colour scheme changes, for any reason. */
 export function onThemeChange(fn: () => void): void {
   themeListeners.add(fn);
 }

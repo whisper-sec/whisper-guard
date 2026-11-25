@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 
+import type { ThemeChoice } from "./theme-choice";
+
 // The bands the graph emits, verbatim, plus the out-of-coverage sentinel.
 // UNKNOWN is the honest common state and is never dressed up as green.
 export type GraphBand =
@@ -92,6 +94,9 @@ export interface Settings {
   // and honest about itself; one switch turns it off and Guard falls back
   // to on-device checks alone.
   cloudCheck: boolean;
+  // The theme choice for every Guard page: follow the system, or stay on
+  // light or dark. Kept in local storage like the rest, never synced.
+  theme: ThemeChoice;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -103,6 +108,7 @@ export const DEFAULT_SETTINGS: Settings = {
   allowlist: [],
   cookieDecline: true,
   cloudCheck: true,
+  theme: "auto",
 };
 
 // ------------------------------------------------------------- daily wins

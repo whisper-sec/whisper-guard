@@ -28,6 +28,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { E2ENetwork } from "./helpers/servers";
 import { launchExtension, type Extension } from "./helpers/extension";
+import { expectScheme } from "./helpers/theme";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -89,6 +90,7 @@ test("every page paints the kit palette in dark and the light board's palette in
     const tab = await open(page);
     for (const scheme of ["dark", "light"] as const) {
       await tab.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+      await expectScheme(tab, scheme, `${page} follows the ${scheme} system`);
       const want = PALETTE[scheme];
       const got = await tab.evaluate(() => {
         const tok = (n: string): string => getComputedStyle(document.documentElement).getPropertyValue(n).trim();

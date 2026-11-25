@@ -29,6 +29,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
+import { choose, expectScheme, type Choice, type Scheme } from "./helpers/theme";
+import { settledLayout } from "./helpers/popup-fit";
 import {
   launchExtension,
   markHostBlocked,
@@ -61,6 +63,18 @@ const WARNING_STATES: Record<string, string> = {
 /** What the rendered checks open: every page, the warning page once per tone. */
 const ADDRESSES = [...PAGES.filter((p) => p !== "warning.html"), ...Object.keys(WARNING_STATES)];
 
+/**
+ * What the contrast sweeps run under: Auto on each system scheme, and a forced
+ * choice on the opposite system scheme, which is where a forced choice could
+ * most easily leave a page half in one palette. `scheme` is what is drawn.
+ */
+const SCENARIOS: { name: string; choice: Choice; system: Scheme; scheme: Scheme }[] = [
+  { name: "Auto on a dark system", choice: "auto", system: "dark", scheme: "dark" },
+  { name: "Auto on a light system", choice: "auto", system: "light", scheme: "light" },
+  { name: "Light on a dark system", choice: "light", system: "dark", scheme: "light" },
+  { name: "Dark on a light system", choice: "dark", system: "light", scheme: "dark" },
+];
+
 // ------------------------------------------------------------ structure
 
 test("every page declares both schemes and links the shared theme", () => {
@@ -71,6 +85,38 @@ test("every page declares both schemes and links the shared theme", () => {
     );
     expect(html, `${page} must link the shared theme`).toContain('href="theme.css"');
   }
+});
+
+test("every page loads theme-boot.js first: a classic, blocking script in the head, after the shared theme", () => {
+  for (const page of PAGES) {
+    const html = readFileSync(join(DIST, page), "utf8");
+    const lower = html.toLowerCase();
+    const head = html.slice(lower.indexOf("<head"), lower.indexOf("</head>"));
+    const tags = [...head.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
+    const boot = tags.filter((t) => /\bsrc\s*=\s*["']theme-boot\.js["']/i.test(t));
+    expect(boot, `${page} must load theme-boot.js once, inside <head>`).toHaveLength(1);
+    expect(boot[0], `${page}: the boot script must block (no async, defer or module)`).not.toMatch(/\b(async|defer)\b|\btype\s*=/i);
+    expect(head.indexOf("theme-boot.js"), `${page}: theme-boot.js comes after theme.css`).toBeGreaterThan(head.indexOf('href="theme.css"'));
+    // It runs before any of the page's own stylesheets are applied or its body is parsed.
+    expect(head.indexOf('href="theme.css"')).toBeGreaterThan(-1);
+    expect(lower.indexOf("theme-boot.js"), `${page}: before the body`).toBeLessThan(lower.indexOf("<body"));
+  }
+});
+
+test("the build ships theme-boot.js for both browsers", () => {
+  for (const target of ["chromium", "firefox"]) {
+    const file = join(DIST, "..", target, "theme-boot.js");
+    expect(readFileSync(file, "utf8").length, `${target}: theme-boot.js is empty`).toBeGreaterThan(100);
+  }
+});
+
+test("no stylesheet asks the system for a scheme: the page's own attribute decides", () => {
+  const sheets: string[] = [];
+  for (const dir of ["popup", "pages", "options", "shared"]) {
+    for (const f of readdirSync(join(SRC, dir))) if (f.endsWith(".css")) sheets.push(join(SRC, dir, f));
+  }
+  expect(sheets.length, "the stylesheet sweep found nothing to check").toBeGreaterThan(3);
+  for (const f of sheets) expect(readFileSync(f, "utf8"), f).not.toContain("prefers-color-scheme");
 });
 
 test("no stylesheet but theme.css defines a literal colour", () => {
@@ -105,6 +151,9 @@ test.beforeAll(async () => {
   await net.start();
   ext = await launchExtension({ proxyPort: net.proxyPort });
   await markHostBlocked(ext, WARNING_HOST);
+});
+test.afterEach(async () => {
+  await choose(ext, "auto");
 });
 test.afterAll(async () => {
   await ext?.close();
@@ -240,32 +289,36 @@ function expectEverySectionMeasured(
   }
 }
 
-test("the palette really flips, and every rendered glyph clears AA in both schemes", async () => {
+test("the palette really flips, and every rendered glyph clears AA under Auto, Light and Dark", async () => {
   for (const page of ADDRESSES) {
     const tab = await ext.context.newPage();
     await tab.goto(`chrome-extension://${ext.id}/${page}`);
     const state = WARNING_STATES[page];
     if (state !== undefined) await expect(tab.locator("main")).toHaveAttribute("data-state", state);
-    await tab.waitForTimeout(400);
+    await settledLayout(tab);
 
     const grounds: Record<string, string> = {};
-    for (const scheme of ["dark", "light"] as const) {
-      await tab.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-      await tab.waitForTimeout(250);
-      grounds[scheme] = await tab.evaluate(
+    for (const sc of SCENARIOS) {
+      await choose(ext, sc.choice);
+      await tab.emulateMedia({ colorScheme: sc.system, reducedMotion: "reduce" });
+      await expectScheme(tab, sc.scheme, `${page} ${sc.name}`);
+      const ground = await tab.evaluate(
         () => `${getComputedStyle(document.body).backgroundColor}|${getComputedStyle(document.body).color}`,
       );
+      // A forced choice draws exactly what Auto draws under the same scheme.
+      if (grounds[sc.scheme] === undefined) grounds[sc.scheme] = ground;
+      else expect(ground, `${page} ${sc.name} draws a different ground than the other ${sc.scheme} runs`).toBe(grounds[sc.scheme]);
 
       const samples = await measure(tab);
       // CONTROL: a page that rendered nothing has no failing sample either,
       // and every one of these pages paints text before any data arrives.
-      expect(samples.length, `${page} ${scheme}: nothing rendered, so nothing was measured`).toBeGreaterThan(3);
+      expect(samples.length, `${page} ${sc.name}: nothing rendered, so nothing was measured`).toBeGreaterThan(3);
       const bad = samples
         .filter((s) => s.ratio < s.floor)
         .map((s) => `    ${s.ratio.toFixed(2)}:1 (needs ${s.floor}) ${s.what}`);
-      expect(bad, `${page} ${scheme}: text under the AA floor:\n${bad.join("\n")}`).toEqual([]);
+      expect(bad, `${page} ${sc.name}: text under the AA floor:\n${bad.join("\n")}`).toEqual([]);
       // Cold, the popup has no page to check, so This page is not shown at all.
-      if (page === "popup.html") expectEverySectionMeasured(samples, page, scheme, ["site", "browser"]);
+      if (page === "popup.html") expectEverySectionMeasured(samples, page, sc.name, ["site", "browser"]);
     }
 
     // 3. The palette flipped: not the same ground, not the same ink.
@@ -281,7 +334,7 @@ test("the palette really flips, and every rendered glyph clears AA in both schem
  * which are drawn in the saturated half of the palette. So measure them
  * POPULATED too, against a real verdict from the mock graph.
  */
-test("a populated panel and dashboard clear AA in both schemes", async () => {
+test("a populated panel and dashboard clear AA under Auto, Light and Dark", async () => {
   const CLEAN = "intranet-tools-vendor.com";
   const BAD = "paypa1-secure-login.com";
   net.setVerdict(CLEAN, { band: "NONE", coverage: "known-clean", label: "clean" });
@@ -312,17 +365,21 @@ test("a populated panel and dashboard clear AA in both schemes", async () => {
     const { tabId } = await visit(ext, `https://${host}/`);
     await waitForIcon(ext, tabId, ["benign", "malicious", "suspicious", "unknown"]);
     const popup = await openPopup(ext, tabId);
-    await popup.waitForTimeout(900);
+    await popup.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
+    await settledLayout(popup);
     checked.push([`panel:${host}`, popup]);
   }
   const dash = await openDashboard(ext, "browser");
-  await dash.waitForTimeout(2500);
+  await expect(dash.locator("#b-tiles > *").first()).toBeVisible({ timeout: 15_000 });
+  await settledLayout(dash);
   checked.push(["dashboard:browser", dash]);
 
   for (const [what, page] of checked) {
-    for (const scheme of ["dark", "light"] as const) {
-      await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-      await page.waitForTimeout(250);
+    for (const sc of SCENARIOS) {
+      const scheme = sc.name;
+      await choose(ext, sc.choice);
+      await page.emulateMedia({ colorScheme: sc.system, reducedMotion: "reduce" });
+      await expectScheme(page, sc.scheme, `${what} ${sc.name}`);
       const samples = await measure(page);
       // CONTROL: these surfaces carry a verdict chip, a hostname and at
       // least one sentence; a handful of samples means nothing painted and
