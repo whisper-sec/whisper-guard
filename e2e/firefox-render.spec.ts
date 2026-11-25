@@ -116,11 +116,15 @@ interface Geometry {
 }
 
 interface HeaderRoom {
-  /** Width of the free space beside the graph size: a third 30 px button and its 6 px gap need 36. */
+  /** Width of the free space beside the graph size, with all three buttons drawn. */
   spacer: number;
   height: number;
   overflow: boolean;
   oneRow: boolean;
+  /** Each button's box, and where the header's content box (inside its padding) ends. */
+  buttons: { id: string; width: number; height: number; left: number; right: number }[];
+  contentLeft: number;
+  contentRight: number;
 }
 
 function readHeader(page: Page): Promise<HeaderRoom> {
@@ -129,11 +133,19 @@ function readHeader(page: Page): Promise<HeaderRoom> {
     const mids = [...h.children]
       .filter((k) => k.getBoundingClientRect().width > 0)
       .map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
+    const hb = h.getBoundingClientRect();
+    const cs = getComputedStyle(h);
     return {
       spacer: h.querySelector(".spacer")!.getBoundingClientRect().width,
-      height: h.getBoundingClientRect().height,
+      height: hb.height,
       overflow: h.scrollWidth > h.clientWidth,
       oneRow: Math.max(...mids) - Math.min(...mids) <= 2,
+      buttons: ["btn-refresh", "btn-theme", "btn-settings"].map((id) => {
+        const r = document.getElementById(id)!.getBoundingClientRect();
+        return { id, width: r.width, height: r.height, left: r.left, right: r.right };
+      }),
+      contentLeft: hb.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
+      contentRight: hb.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth),
     };
   });
 }
@@ -148,8 +160,7 @@ async function measure(browser: Browser, scheme: "dark" | "light", nodes?: numbe
   await page.addInitScript(SHIM);
   await page.goto(`file://${join(DIST, "popup.html")}`);
   await page.locator("#chain-mount .ch-rung.ch-live").first().waitFor({ timeout: 15_000 });
-  await page.evaluate(() => document.fonts.ready.then(() => undefined));
-  await page.waitForTimeout(600);
+  await settledLayout(page);
 
   const g = await page.evaluate((): Geometry => {
     const disc = document.getElementById("band-glyph");
@@ -165,8 +176,8 @@ async function measure(browser: Browser, scheme: "dark" | "light", nodes?: numbe
         const d = document.querySelector("#scale .scale-dot")?.getBoundingClientRect();
         return [d ? d.width : 0, d ? d.height : 0] as [number, number];
       })(),
-      header: { spacer: -1, height: -1, overflow: true, oneRow: false },
-      headerWider: { spacer: -1, height: -1, overflow: true, oneRow: false },
+      header: { spacer: -1, height: -1, overflow: true, oneRow: false, buttons: [], contentLeft: 0, contentRight: 0 },
+      headerWider: { spacer: -1, height: -1, overflow: true, oneRow: false, buttons: [], contentLeft: 0, contentRight: 0 },
       scaleText: document.getElementById("scale-nodes")?.textContent ?? "",
       tierWidthPct: -1,
       regionOverflow: { scrollWidth: -1, clientWidth: -1 },
@@ -256,7 +267,7 @@ test("the panel renders the same shape in Gecko and in Blink", async () => {
   }
 });
 
-test("the header keeps 36 px free beside the widest figure in Gecko and in Blink, in both schemes, as drawn and with wider glyphs", async () => {
+test("the header draws Re-check, Theme and Settings on one row beside the widest figure, inside its padding, in Gecko and in Blink, in both schemes, as drawn and with wider glyphs", async () => {
   test.setTimeout(120_000);
   const ff = await firefox.launch();
   const cr = await chromium.launch();
@@ -274,7 +285,12 @@ test("the header keeps 36 px free beside the widest figure in Gecko and in Blink
         });
         for (const [how, h] of [["as drawn", g.header], [`${WIDER_EM}em wider`, g.headerWider]] as const) {
           const at = `${engine} ${scheme}, ${how}`;
-          expect(h.spacer, `${at}: less than 36 px free in the header`).toBeGreaterThanOrEqual(36);
+          expect(h.buttons.map((b) => b.id), `${at}: the three buttons are drawn, in order`).toEqual(["btn-refresh", "btn-theme", "btn-settings"]);
+          for (const b of h.buttons) {
+            expect([b.width, b.height], `${at}: ${b.id} is not 30 x 30`).toEqual([30, 30]);
+            expect(b.left, `${at}: ${b.id} starts left of the header's content box`).toBeGreaterThanOrEqual(h.contentLeft - 0.01);
+            expect(b.right, `${at}: ${b.id} runs into the header's right padding`).toBeLessThanOrEqual(h.contentRight + 0.01);
+          }
           expect(h.height, `${at}: the header is not 52 px tall`).toBe(52);
           expect(h.overflow, `${at}: the header overflows sideways`).toBe(false);
           expect(h.oneRow, `${at}: the header's parts are not on one row`).toBe(true);

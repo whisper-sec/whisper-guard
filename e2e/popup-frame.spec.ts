@@ -17,7 +17,7 @@
 //   - the page part says why it is empty, or is not shown, never echoing the
 //     site's own sentence;
 //   - the frame holds in the dark and the light scheme;
-//   - the header is one row, with room for one more button;
+//   - the header is one row, and Re-check, Theme and Settings fit beside the widest figure;
 //   - a soft fade above the footer shows while content runs on below.
 //
 // The popup is opened here as a page of the extension, not as a toolbar
@@ -301,6 +301,8 @@ const HOMES: Record<string, string | null> = {
   "privacy-line": null,
   scale: null,
   "btn-refresh": null,
+  "btn-theme": null,
+  "theme-live": null,
   "btn-settings": null,
 };
 
@@ -720,6 +722,18 @@ test("one header at every scroll position: its parts sit on one row and Re-check
   await page.close();
 });
 
+/** What the header measures: the room left, and where its buttons sit in its content box. */
+interface HeaderFit {
+  spacer: number;
+  height: number;
+  fits: boolean;
+  row: boolean;
+  text: string;
+  buttons: { id: string; width: number; height: number; left: number; right: number }[];
+  contentLeft: number;
+  contentRight: number;
+}
+
 // The popup opened with its graph-size answer replaced, so a test can pick
 // the figure, hold the answer, or make the read fail. Everything else goes to
 // the worker as usual.
@@ -793,21 +807,29 @@ test("the header figure is three significant digits, never more than five charac
 });
 
 for (const scheme of ["dark", "light"] as const) {
-  test(`the header keeps room for one more button beside the widest figure, as drawn and with wider glyphs (${scheme})`, async () => {
+  test(`the header draws Re-check, Theme and Settings on one row beside the widest figure, inside its padding, as drawn and with wider glyphs (${scheme})`, async () => {
     const { popup, page } = await openSiteWithScale({ nodes: 12_340_000_000 }, scheme);
     await expect(popup.locator("#scale-nodes")).toHaveText("12.3B", { timeout: 15_000 });
-    await popup.evaluate(() => document.fonts.ready.then(() => undefined));
-    const read = (): Promise<{ spacer: number; height: number; fits: boolean; row: boolean; text: string }> =>
-      popup.locator(".pp-header").evaluate((h) => {
+    await settledLayout(popup);
+    const read = (): Promise<HeaderFit> =>
+      popup.locator(".pp-header").evaluate((h): HeaderFit => {
         const hb = h.getBoundingClientRect();
+        const cs = getComputedStyle(h);
         const kids = [...h.children].filter((k) => k.getBoundingClientRect().width > 0);
         const mids = kids.map((k) => k.getBoundingClientRect().top + k.getBoundingClientRect().height / 2);
+        const buttons = ["btn-refresh", "btn-theme", "btn-settings"].map((id) => {
+          const r = document.getElementById(id)!.getBoundingClientRect();
+          return { id, width: r.width, height: r.height, left: r.left, right: r.right };
+        });
         return {
           spacer: h.querySelector(".spacer")!.getBoundingClientRect().width,
           height: hb.height,
           fits: h.scrollWidth <= h.clientWidth,
           row: Math.max(...mids) - Math.min(...mids) <= 2,
           text: (h as HTMLElement).innerText.replace(/\s+/g, " "),
+          buttons,
+          contentLeft: hb.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
+          contentRight: hb.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth),
         };
       });
     const plain = await read();
@@ -820,7 +842,12 @@ for (const scheme of ["dark", "light"] as const) {
     // wide as any figure the header draws, since the figure is monospaced.
     expect(plain.text, "the figure read is not the widest one").toContain("12.3B nodes");
     for (const [how, m] of [["as drawn", plain], [`${WIDER_EM}em wider`, wider]] as const) {
-      expect(m.spacer, `${how}: less than 36 px free beside Re-check and Settings`).toBeGreaterThanOrEqual(36);
+      expect(m.buttons.map((b) => b.id), `${how}: the three buttons are drawn, in order`).toEqual(["btn-refresh", "btn-theme", "btn-settings"]);
+      for (const b of m.buttons) {
+        expect([b.width, b.height], `${how}: ${b.id} is not 30 x 30`).toEqual([30, 30]);
+        expect(b.left, `${how}: ${b.id} starts left of the header's content box`).toBeGreaterThanOrEqual(m.contentLeft - 0.01);
+        expect(b.right, `${how}: ${b.id} runs into the header's right padding`).toBeLessThanOrEqual(m.contentRight + 0.01);
+      }
       expect(m.height, `${how}: the header is not 52 px tall`).toBe(52);
       expect(m.fits, `${how}: the header overflows sideways`).toBe(true);
       expect(m.row, `${how}: the header wrapped onto a second row`).toBe(true);

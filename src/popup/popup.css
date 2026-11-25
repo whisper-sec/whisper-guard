@@ -577,11 +577,7 @@ button.pp-link { background: none; border: 0; padding: 0; text-align: left; curs
   border-radius: 999px;
   padding: 3px 8px;
 }
-.pp-identity .w-chip.ok { color: var(--w-ok); background: color-mix(in srgb, var(--w-ok-fill) 14%, transparent); }
-/* In daylight a lighter tint keeps the word above 4.5:1 on the pale ground. */
-@media (prefers-color-scheme: light) {
-  .pp-identity .w-chip.ok { background: color-mix(in srgb, var(--w-ok-fill) 8%, transparent); }
-}
+.pp-identity .w-chip.ok { color: var(--w-ok); background: var(--w-ok-chip); }
 .pp-identity .w-chip.accent { color: var(--w-accent); background: var(--w-accent-soft); }
 .pp-identity .w-chip.unknown {
   color: var(--w-text-2);

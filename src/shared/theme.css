@@ -16,9 +16,10 @@
    Rules the tokens encode:
 
    - BOTH THEMES, EVERY SURFACE. The palette is defined dark-first on
-     :root and flipped whole under prefers-color-scheme: light. Nothing
-     hard-codes a colour outside this file, so a surface cannot be
-     dark-only by accident.
+     :root and flipped whole on :root[data-scheme="light"], an attribute
+     theme-boot.js sets on every page from the reader's choice (Auto,
+     Light or Dark; Auto follows the system). Nothing hard-codes a colour
+     outside this file, so a surface cannot be dark-only by accident.
    - --w-faint NEVER CARRIES MEANING. It is the console's ink-mute and it
      measures 2.3:1 to 3.1:1 on our surfaces in both themes, below the
      4.5:1 floor everywhere. Labels, marks and decoration only; a sentence
@@ -178,6 +179,8 @@
   --w-ok: #34d399;
   /* The green and the amber as FILLS: grounds, borders and dots, never text. */
   --w-ok-fill: #10b981;
+  /* The tint behind the identity chip's word; lighter in daylight so the word keeps above 4.5:1. */
+  --w-ok-chip: color-mix(in srgb, var(--w-ok-fill) 14%, transparent);
   --w-v-low-fill: #f59e0b;
   /* The amber fill lightened 12% toward white: the hover of the solid amber
      button, under --w-on-warn ink (8.9:1). */
@@ -223,76 +226,77 @@
    around white cards on a cool grey field, status hues darkened just
    enough to keep their contrast on white. A red that reads as red on
    black is pink on white, and a verdict must not soften with the lights. */
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
+/* The root is drawn light only when the page says so: theme-boot.js sets
+   data-scheme from the reader's choice (and the system, on Auto) before the
+   first frame. No stylesheet asks the system itself. */
+:root[data-scheme="light"] {
+  color-scheme: light;
 
-    --w-bg: #f4f4f8;
-    --w-surface: #ffffff;
-    --w-card: #ffffff;
-    --w-elev: #ececf3;
-    --w-hover: #e9e9f1;
+  --w-bg: #f4f4f8;
+  --w-surface: #ffffff;
+  --w-card: #ffffff;
+  --w-elev: #ececf3;
+  --w-hover: #e9e9f1;
 
-    --w-line: #e4e4ee;
-    --w-line-strong: #c4c4d6;
+  --w-line: #e4e4ee;
+  --w-line-strong: #c4c4d6;
 
-    --w-text: #1a1a2e;
-    --w-muted: #5f5f70;
-    --w-text-2: #4a4a5c;
-    --w-faint: #9a9ab0;
+  --w-text: #1a1a2e;
+  --w-muted: #5f5f70;
+  --w-text-2: #4a4a5c;
+  --w-faint: #9a9ab0;
 
-    --w-accent: #5b3fc4;
-    --w-accent-line: #6a4bd6;
-    /* Thin accent strokes drawn as marks, such as the arc of a spinner. */
-    --w-accent-stroke: #6a4bd6;
-    /* A link's hover colour: one step darker than --w-accent. */
-    --w-accent-hover: #432d96;
-    --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 12%, transparent);
-    /* Daylight: a pale violet stop to near-white; --w-on-grad-2 is 6.7:1 on --w-grad-a. */
-    --w-grad-a: #f3f0fd;
-    --w-grad-b: #fbfaff;
-    --w-on-grad-2: #5a4c86;
+  --w-accent: #5b3fc4;
+  --w-accent-line: #6a4bd6;
+  /* Thin accent strokes drawn as marks, such as the arc of a spinner. */
+  --w-accent-stroke: #6a4bd6;
+  /* A link's hover colour: one step darker than --w-accent. */
+  --w-accent-hover: #432d96;
+  --w-accent-soft: color-mix(in srgb, var(--w-accent-line) 12%, transparent);
+  /* Daylight: a pale violet stop to near-white; --w-on-grad-2 is 6.7:1 on --w-grad-a. */
+  --w-grad-a: #f3f0fd;
+  --w-grad-b: #fbfaff;
+  --w-on-grad-2: #5a4c86;
 
-    /* The status hues, each dark enough to clear 4.5:1 on --w-elev
-       (#ececf3) and on --w-hover (#e9e9f1), the lowest-contrast grounds a
-       chip sits on here. Guard draws short status WORDS in them (a chip is
-       a word plus a colour, never a colour alone), so it pays the few
-       points to clear the text floor outright. Measured, not assumed, on
-       --w-elev / --w-hover: ok 4.73 / 4.60, low 4.73 / 4.61, med 4.76 /
-       4.64, high 4.65 / 4.53. */
-    --w-ok: #0c7753;
-    /* Fills only. In light this green is 2.5:1 on white, so it is mixed into
-       a tint and never drawn as a mark or as text. */
-    --w-ok-fill: #10b981;
-    --w-v-low-fill: #b7791f;
-    /* Hover of the solid amber button, under --w-on-warn ink (5.7:1). */
-    --w-v-low-fill-hover: #c0893a;
-    --w-v-none: #7a7a90;
-    --w-v-info: #5b3fc4;
-    --w-v-low: #8b6004;
-    --w-v-med: #aa4c0c;
-    --w-v-high: #c53030;
-    /* The red as a FILL: the dot on a tab, and the base of red tints. Never text. */
-    --w-v-high-fill: #ef4444;
-    /* The unknown share of a bar and its swatch: a neutral fill, 3:1 on a card. */
-    --w-fill-neutral: #8a8aa0;
-    /* Ink on the solid amber button. */
-    --w-on-warn: #1c1917;
-    --w-v-crit: #b02525;
+  /* The status hues, each dark enough to clear 4.5:1 on --w-elev
+     (#ececf3) and on --w-hover (#e9e9f1), the lowest-contrast grounds a
+     chip sits on here. Guard draws short status WORDS in them (a chip is
+     a word plus a colour, never a colour alone), so it pays the few
+     points to clear the text floor outright. Measured, not assumed, on
+     --w-elev / --w-hover: ok 4.73 / 4.60, low 4.73 / 4.61, med 4.76 /
+     4.64, high 4.65 / 4.53. */
+  --w-ok: #0c7753;
+  /* Fills only. In light this green is 2.5:1 on white, so it is mixed into
+     a tint and never drawn as a mark or as text. */
+  --w-ok-fill: #10b981;
+  --w-ok-chip: color-mix(in srgb, var(--w-ok-fill) 8%, transparent);
+  --w-v-low-fill: #b7791f;
+  /* Hover of the solid amber button, under --w-on-warn ink (5.7:1). */
+  --w-v-low-fill-hover: #c0893a;
+  --w-v-none: #7a7a90;
+  --w-v-info: #5b3fc4;
+  --w-v-low: #8b6004;
+  --w-v-med: #aa4c0c;
+  --w-v-high: #c53030;
+  /* The red as a FILL: the dot on a tab, and the base of red tints. Never text. */
+  --w-v-high-fill: #ef4444;
+  /* The unknown share of a bar and its swatch: a neutral fill, 3:1 on a card. */
+  --w-fill-neutral: #8a8aa0;
+  /* Ink on the solid amber button. */
+  --w-on-warn: #1c1917;
+  --w-v-crit: #b02525;
 
-    --w-cat-search: #2d63ae;
-    --w-cat-ads: #96308f;
-    --w-cat-media: #6b46c1;
-    --w-cat-social: #b4266b;
-    --w-cat-work: #146b8a;
-    --w-cat-platform: #5b52c4;
-    --w-cat-cloud: #1a7ba6;
-    --w-cat-cdn: #35699f;
-    --w-cat-infrastructure: #8a6410;
-    --w-cat-unresolved: #6b7280;
-  }
+  --w-cat-search: #2d63ae;
+  --w-cat-ads: #96308f;
+  --w-cat-media: #6b46c1;
+  --w-cat-social: #b4266b;
+  --w-cat-work: #146b8a;
+  --w-cat-platform: #5b52c4;
+  --w-cat-cloud: #1a7ba6;
+  --w-cat-cdn: #35699f;
+  --w-cat-infrastructure: #8a6410;
+  --w-cat-unresolved: #6b7280;
 }
-
 * { box-sizing: border-box; }
 
 body {

@@ -58,6 +58,16 @@ import { compact3, countUp } from "../shared/spark";
 import { timeStrip, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
+import {
+  applyTheme,
+  nextTheme,
+  normalizeTheme,
+  THEME_PENDING_ATTR,
+  themeName,
+  themeTitle,
+  writeThemeMirror,
+  type ThemeChoice,
+} from "../shared/theme-choice";
 import { CANVAS_MONO, onThemeChange, redrawWhenMonoLoads, themeColor } from "../shared/theme";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -1769,6 +1779,54 @@ function showPagePart(what: "cards" | "live-off" | "hidden"): void {
   $("panel-page").hidden = what === "hidden";
 }
 
+/**
+ * The theme button: its name and tooltip say the current choice, and a press
+ * moves Auto, Light, Dark, Auto. The choice is drawn on this page at once, and
+ * the background keeps it (local storage, never synced). The name follows the
+ * page's own attribute, so a choice made in another Guard page shows here too.
+ */
+function initThemeButton(): void {
+  const btn = $("btn-theme");
+  const live = $("theme-live");
+  const root = document.documentElement;
+  const choice = (): ThemeChoice => normalizeTheme(root.getAttribute("data-theme"));
+  const show = (): void => {
+    btn.setAttribute("aria-label", themeName(choice()));
+    btn.setAttribute("title", themeTitle(choice()));
+  };
+  show();
+  new MutationObserver(show).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+  btn.addEventListener("click", () => {
+    const next = nextTheme(choice());
+    applyTheme(next);
+    writeThemeMirror(next);
+    live.textContent = themeName(next);
+    // Count the write while it is in flight, so its late echo from storage is
+    // not taken for a newer choice. When the last one is done, storage is
+    // read once and the page draws what it says.
+    const left = Number(root.getAttribute(THEME_PENDING_ATTR)) + 1;
+    root.setAttribute(THEME_PENDING_ATTR, String(left));
+    void send({ kind: "setSettings", patch: { theme: next } })
+      .catch(() => undefined)
+      .then(async () => {
+        const rest = Number(root.getAttribute(THEME_PENDING_ATTR)) - 1;
+        if (rest > 0) return void root.setAttribute(THEME_PENDING_ATTR, String(rest));
+        root.removeAttribute(THEME_PENDING_ATTR);
+        try {
+          const got = await chrome.storage.local.get("settings");
+          const stored = (got["settings"] as { theme?: unknown } | undefined)?.theme;
+          // A press made while that read ran is newer than the read.
+          if (root.hasAttribute(THEME_PENDING_ATTR)) return;
+          const truth = normalizeTheme(stored);
+          writeThemeMirror(truth);
+          applyTheme(truth);
+        } catch {
+          // keep what is drawn
+        }
+      });
+  });
+}
+
 async function init(): Promise<void> {
   // First, before any await: the popup opens at the top, and the fade
   // follows the scroll while a check is in flight and when the page's state
@@ -1781,6 +1839,7 @@ async function init(): Promise<void> {
     const open = ($("exp-neighborhood") as HTMLDetailsElement).open;
     if (open && state?.hostname) void loadNeighborhood(state.hostname);
   });
+  initThemeButton();
   $("btn-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("btn-refresh").addEventListener("click", () => window.location.reload());
   $("btn-check-now").addEventListener("click", () => void checkNow());

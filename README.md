@@ -212,8 +212,10 @@ history.
   way out. Routing is never a dead end, and the same button turns it off.
 - Sign-in is the RFC 8628 device flow: you approve in the Whisper console and
   the extension receives its credential. You never see or paste a key.
-- **Every surface follows your system's colour scheme**, light or dark, and
-  every one of them is the Whisper design system in the browser: its colours
+- **Every Guard page follows your system's colour scheme**, light or dark, unless
+  you pick one with the theme button in the panel's header (Auto, Light or
+  Dark; the pick stays on this browser and is never synced), and every one of
+  them is the Whisper design system in the browser: its colours
   and its two typefaces, on the console's type scale, spacing and component
   grammar, so moving between the console and the extension is moving inside
   one product. The fonts (Lato and JetBrains Mono) ship inside the package;
