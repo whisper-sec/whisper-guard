@@ -101,10 +101,10 @@ history.
   behind every verdict is read live too, in the panel masthead and across
   the top of the dashboard. The panel shows the graph size in three
   digits, with the exact figures and the resolvers' totals in its
-  tooltip. The pulse line over the trailing 24 hours is on the dashboard
-  and the first-run page. No figure about our coverage is ever written
-  into the build: a number typed into a page is stale the day after it
-  ships.
+  tooltip. The pulse line over the trailing 24 hours is on the dashboard.
+  The first-run page shows the graph's size beside a live verdict. No figure
+  about our coverage is ever written into the build: a number typed into a
+  page is stale the day after it ships.
 - **A calm tally of what it handled.** One line in the panel counts today's
   quiet wins by category (clicks held, identities verified, cookie prompts
   declined) and nothing else: the record is a category, a count and today's
@@ -311,8 +311,8 @@ public identity verification all work with no key.
   identity of your own endpoints, and only receives IP literals of those
   endpoints, never a browsing hostname. `nic.whisper.online` serves the public
   network statistics document, which is how the live size of the graph reaches
-  the panel and the dashboard, and the resolvers' pulse reaches the
-  dashboard and the first-run page: a plain GET of a public file, with no
+  the panel, the dashboard and the first-run page, and the resolvers' pulse
+  reaches the dashboard: a plain GET of a public file, with no
   query string, no header, no body and no cookie, so nothing about you can
   ride on it. The alternative was writing a coverage figure into the build,
   where it would be stale the day after it shipped.

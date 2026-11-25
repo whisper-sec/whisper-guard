@@ -2,10 +2,11 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The credential-field guard and the in-page banner cannot run until Active
-// Shield is on (the setting AND the all-sites grant). Neither the first-run
-// page nor Settings may draw them on before then, and the stored preference
-// must survive. The cookie decline runs without Active Shield, but only on a
-// tab where Guard is opened, so both pages say where it can run. The grant
+// Shield is on (the setting AND the all-sites grant). Settings may not draw
+// them on before then, and the stored preference must survive. The cookie
+// decline runs without Active Shield, but only on a tab where Guard is opened,
+// so Settings says where it can run. The first-run page's Active Shield step
+// reads the same two-part gate and is covered in firstrun.spec.ts. The grant
 // arrives install-time via makeShieldDist; the default dist holds no grant.
 //
 // Taking the grant away while a page is open is done for real: a required host
@@ -91,8 +92,6 @@ const gate = (page: Page) => ({
 const settled = (page: Page) =>
   page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 
-const row = (page: Page, key: string) => page.locator(`.active-row[data-key=${key}]`);
-
 // Read through the background's own reader, from an extension page: a fresh
 // profile has no stored record yet, so the defaults are the preference.
 async function stored(page: Page): Promise<Record<string, unknown>> {
@@ -114,18 +113,6 @@ test.describe("no all-sites grant", () => {
     await setSettings(ext, { shield: false });
   });
 
-  test("first run: field guard and banner read 'needs Active Shield' when no all-sites grant is held", async () => {
-    const page = await open(ext, "firstrun.html");
-    // CONTROL: a row that does not depend on Active Shield reads on, so the list rendered.
-    await expect(page.locator(".active-row", { hasText: "Look-alike detector" })).toHaveAttribute("data-state", "on");
-    for (const key of ["fieldGuard", "amberBanner"]) {
-      await expect(row(page, key)).toHaveAttribute("data-state", "needs-shield");
-      await expect(row(page, key)).toContainText(/needs Active Shield/i);
-      await expect(row(page, key).locator("svg title")).toHaveText("needs Active Shield");
-    }
-    await page.close();
-  });
-
   test("settings: banner and field-guard sub-toggles are unchecked, disabled and say 'needs Active Shield' without the grant", async () => {
     const page = await open(ext, "options.html");
     for (const [id, note] of [
@@ -143,14 +130,8 @@ test.describe("no all-sites grant", () => {
     await page.close();
   });
 
-  test("cookie decline: on a fresh profile both pages say it runs only on a tab where Guard is opened", async () => {
+  test("cookie decline: on a fresh profile settings says it runs only on a tab where Guard is opened", async () => {
     // Nothing is stored yet: the defaults are what a new install shows.
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
-    await expect(row(first, "cookieDecline")).toContainText(/only on a tab where you open Guard/i);
-    await expect(row(first, "cookieDecline")).toContainText("Clicks reject, never accept, entirely on this device.");
-    await expect(row(first, "cookieDecline").locator("svg title")).toHaveText("only on a tab where you open Guard");
-    await first.close();
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
     await expect(opts.locator("#opt-cookiedecline")).toBeEnabled();
@@ -160,11 +141,8 @@ test.describe("no all-sites grant", () => {
     await opts.close();
   });
 
-  test("cookie decline: switched off it reads off on both pages", async () => {
+  test("cookie decline: switched off it reads off in settings", async () => {
     await setSettings(ext, { cookieDecline: false });
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "off");
-    await first.close();
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-cookiedecline")).not.toBeChecked();
     await expect(opts.locator("#cookiedecline-reach")).toBeAttached();
@@ -174,16 +152,11 @@ test.describe("no all-sites grant", () => {
     await setSettings(ext, { cookieDecline: true });
   });
 
-  test("Active Shield set on without the grant: the Active Shield row and both protections read not on", async () => {
+  test("Active Shield set on without the grant: settings reads the switch and both protections as not on", async () => {
     await setSettings(ext, { shield: true, amberBanner: true, fieldGuard: true });
     const probe = await open(ext, "options.html");
     expect(await granted(probe)).toBe(false);
     await probe.close();
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "needs-shield");
-    await expect(row(first, "amberBanner")).toHaveAttribute("data-state", "needs-shield");
-    await expect(first.locator(".active-row", { has: first.locator(".active-name", { hasText: /^Active Shield$/ }) })).toHaveAttribute("data-state", "off");
-    await first.close();
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-shield")).not.toBeChecked();
     for (const id of ["#opt-banner", "#opt-fieldguard"]) {
@@ -207,13 +180,8 @@ test.describe("all-sites grant held", () => {
     await ext?.close();
   });
 
-  test("first run and settings: holding the grant with Active Shield switched off still reads 'needs Active Shield'", async () => {
+  test("settings: holding the grant with Active Shield switched off still reads 'needs Active Shield'", async () => {
     await setSettings(ext, { shield: false });
-    const first = await open(ext, "firstrun.html");
-    for (const key of ["fieldGuard", "amberBanner"]) {
-      await expect(row(first, key)).toHaveAttribute("data-state", "needs-shield");
-    }
-    await first.close();
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-shield")).not.toBeChecked();
     await expect(opts.locator("#opt-banner")).toBeDisabled();
@@ -221,13 +189,8 @@ test.describe("all-sites grant held", () => {
     await opts.close();
   });
 
-  test("first run and settings: with Active Shield on and granted, field guard and banner read on", async () => {
+  test("settings: with Active Shield on and granted, field guard and banner read on", async () => {
     await setSettings(ext, { shield: true, amberBanner: true, fieldGuard: true });
-    const first = await open(ext, "firstrun.html");
-    for (const key of ["fieldGuard", "amberBanner"]) {
-      await expect(row(first, key)).toHaveAttribute("data-state", "on");
-    }
-    await first.close();
     const opts = await open(ext, "options.html");
     for (const [id, note] of [
       ["#opt-banner", "#banner-needs"],
@@ -238,16 +201,6 @@ test.describe("all-sites grant held", () => {
       await expect(opts.locator(note)).toBeHidden();
     }
     await opts.close();
-  });
-
-  test("first run: an open page flips to on when Active Shield is switched on", async () => {
-    await setSettings(ext, { shield: false });
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "needs-shield");
-    await setSettings(ext, { shield: true });
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "on");
-    await expect(row(first, "amberBanner")).toHaveAttribute("data-state", "on");
-    await first.close();
   });
 
   test("settings: switching Active Shield on enables the two sub-toggles without a reload", async () => {
@@ -262,12 +215,8 @@ test.describe("all-sites grant held", () => {
     await opts.close();
   });
 
-  test("cookie decline: grant held with Active Shield off reads as only on a tab where Guard is opened", async () => {
+  test("settings: cookie decline with the grant held and Active Shield off reads as only on a tab where Guard is opened", async () => {
     await setSettings(ext, { shield: false, cookieDecline: true });
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
-    await expect(row(first, "cookieDecline")).toContainText(/only on a tab where you open Guard/i);
-    await first.close();
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
     await expect(opts.locator("#opt-cookiedecline")).toBeEnabled();
@@ -275,25 +224,23 @@ test.describe("all-sites grant held", () => {
     await opts.close();
   });
 
-  test("cookie decline: with Active Shield on and granted both pages read as running on every page", async () => {
+  test("settings: cookie decline with Active Shield on and granted reads as running on every page", async () => {
     await setSettings(ext, { shield: true, cookieDecline: true });
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "on");
-    await expect(row(first, "cookieDecline")).toContainText("Runs on every page.");
-    await expect(row(first, "cookieDecline")).toContainText("Clicks reject, never accept, entirely on this device.");
-    await expect(row(first, "cookieDecline")).not.toContainText(/only on a tab/i);
-    await first.close();
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
     await expect(opts.locator("#cookiedecline-reach")).toHaveText("Runs on every page.");
     await opts.close();
   });
 
-  test("cookie decline: with the setting off it reads off even when Active Shield is on", async () => {
+  test("settings: with the cookie decline off it reads off and shows no reach note, even when Active Shield is on and granted", async () => {
     await setSettings(ext, { shield: true, cookieDecline: false });
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "off");
-    await first.close();
+    const opts = await open(ext, "options.html");
+    // Only the settings read can draw this: the switch is unchecked on first paint.
+    await expect(opts.locator("#opt-shield")).toBeChecked();
+    await expect(opts.locator("#opt-cookiedecline")).not.toBeChecked();
+    await expect(opts.locator("#cookiedecline-reach")).toBeHidden();
+    await expect(opts.locator("#cookiedecline-reach")).toHaveText("");
+    await opts.close();
     await setSettings(ext, { cookieDecline: true });
   });
 
@@ -307,14 +254,6 @@ test.describe("all-sites grant held", () => {
     await opts.close();
   });
 
-  test("first run: the cookie decline row flips to every page when Active Shield is switched on", async () => {
-    await setSettings(ext, { shield: false, cookieDecline: true });
-    const first = await open(ext, "firstrun.html");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
-    await setSettings(ext, { shield: true });
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "on");
-    await first.close();
-  });
 });
 
 test.describe("all-sites grant withdrawn while a page is open", () => {
@@ -331,20 +270,6 @@ test.describe("all-sites grant withdrawn while a page is open", () => {
   });
   test.afterEach(async () => {
     await setSiteAccess(ext, "ON_ALL_SITES");
-  });
-
-  test("first run: both protections and the cookie decline reach flip back without a reload", async () => {
-    const first = await open(ext, "firstrun.html");
-    for (const key of ["fieldGuard", "amberBanner", "cookieDecline"]) {
-      await expect(row(first, key)).toHaveAttribute("data-state", "on");
-    }
-    await setSiteAccess(ext, "ON_CLICK");
-    for (const key of ["fieldGuard", "amberBanner"]) {
-      await expect(row(first, key)).toHaveAttribute("data-state", "needs-shield");
-    }
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
-    await expect(row(first, "cookieDecline")).toContainText(/only on a tab where you open Guard/i);
-    await first.close();
   });
 
   test("settings: both sub-toggles and the cookie decline note flip back without a reload", async () => {
@@ -367,26 +292,6 @@ test.describe("all-sites grant withdrawn while a page is open", () => {
     expect(s["amberBanner"]).toBe(true);
     expect(s["fieldGuard"]).toBe(true);
     await opts.close();
-  });
-
-  test("first run: a slow earlier read cannot put the protections back on after the grant is gone", async () => {
-    const first = await openHeld(ext, "firstrun.html");
-    const g = gate(first);
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "on");
-    await g.arm();
-    // Read 1: started while granted, answered "granted", then held.
-    await setSettings(ext, { nearMiss: true });
-    await expect.poll(g.held).toBe(1);
-    // Read 2: the grant is withdrawn and the page draws the newer state.
-    await setSiteAccess(ext, "ON_CLICK");
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "needs-shield");
-    expect(await granted(first)).toBe(false);
-    await g.release();
-    await settled(first);
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "needs-shield");
-    await expect(row(first, "amberBanner")).toHaveAttribute("data-state", "needs-shield");
-    await expect(row(first, "cookieDecline")).toHaveAttribute("data-state", "tab-only");
-    await first.close();
   });
 
   test("settings: a slow earlier read cannot put the protections back on after the grant is gone", async () => {
@@ -437,16 +342,6 @@ test.describe("all-sites grant withdrawn while a page is open", () => {
     await expect(opts.locator("#fieldguard-needs")).toBeVisible();
     await expect(opts.locator("#cookiedecline-reach")).toHaveText(/only on a tab where you open Guard/i);
     await opts.close();
-  });
-
-  test("first run: when the settings read rejects, the page says it could not read them and draws no row as on", async () => {
-    const first = await openHeld(ext, "firstrun.html");
-    await expect(row(first, "fieldGuard")).toHaveAttribute("data-state", "on");
-    await gate(first).rejectSettings();
-    await setSiteAccess(ext, "ON_CLICK");
-    await expect(first.locator("#active-list .w-note")).toContainText(/could not be read/i);
-    await expect(first.locator(".active-row")).toHaveCount(0);
-    await first.close();
   });
 
   test("settings: switching Active Shield on and off never changes the stored banner and field-guard preferences", async () => {
