@@ -736,7 +736,12 @@ export function mountProtectControl(opts: ProtectControlOptions): ProtectControl
 
   return {
     async refresh(): Promise<void> {
-      await apply(await currentEgress());
+      try {
+        await apply(await currentEgress());
+      } catch {
+        // The background did not answer (stopped mid-request): keep what is
+        // drawn rather than claim a state nothing has read.
+      }
     },
     status(): EgressStatus {
       return last;
