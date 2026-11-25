@@ -58,16 +58,8 @@ import { compact3, countUp } from "../shared/spark";
 import { timeStrip, type TimeEvent } from "../shared/viz";
 import { mountTierMeter } from "../shared/tier";
 import { mountProtectControl, type ProtectControl } from "../shared/protect-control";
-import {
-  applyTheme,
-  nextTheme,
-  normalizeTheme,
-  THEME_PENDING_ATTR,
-  themeName,
-  themeTitle,
-  writeThemeMirror,
-  type ThemeChoice,
-} from "../shared/theme-choice";
+import { chooseTheme } from "../shared/theme-press";
+import { nextTheme, normalizeTheme, themeName, themeTitle, type ThemeChoice } from "../shared/theme-choice";
 import { CANVAS_MONO, onThemeChange, redrawWhenMonoLoads, themeColor } from "../shared/theme";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -1798,32 +1790,8 @@ function initThemeButton(): void {
   new MutationObserver(show).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
   btn.addEventListener("click", () => {
     const next = nextTheme(choice());
-    applyTheme(next);
-    writeThemeMirror(next);
+    chooseTheme(next);
     live.textContent = themeName(next);
-    // Count the write while it is in flight, so its late echo from storage is
-    // not taken for a newer choice. When the last one is done, storage is
-    // read once and the page draws what it says.
-    const left = Number(root.getAttribute(THEME_PENDING_ATTR)) + 1;
-    root.setAttribute(THEME_PENDING_ATTR, String(left));
-    void send({ kind: "setSettings", patch: { theme: next } })
-      .catch(() => undefined)
-      .then(async () => {
-        const rest = Number(root.getAttribute(THEME_PENDING_ATTR)) - 1;
-        if (rest > 0) return void root.setAttribute(THEME_PENDING_ATTR, String(rest));
-        root.removeAttribute(THEME_PENDING_ATTR);
-        try {
-          const got = await chrome.storage.local.get("settings");
-          const stored = (got["settings"] as { theme?: unknown } | undefined)?.theme;
-          // A press made while that read ran is newer than the read.
-          if (root.hasAttribute(THEME_PENDING_ATTR)) return;
-          const truth = normalizeTheme(stored);
-          writeThemeMirror(truth);
-          applyTheme(truth);
-        } catch {
-          // keep what is drawn
-        }
-      });
   });
 }
 

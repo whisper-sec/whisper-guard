@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Whisper Guard settings</title>
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
@@ -10,133 +11,199 @@
   <script src="theme-boot.js"></script>
 </head>
 <body>
-  <main>
-    <div class="w-lockup brand">
-      <img src="knot.png" alt="Whisper" class="w-knot">
-      <span class="w-wordmark">Whisper</span>
-      <span class="w-product">Guard</span>
-    </div>
+  <div class="shell">
+    <nav class="menu" aria-label="Settings sections">
+      <div class="w-lockup brand">
+        <img src="knot.png" alt="" class="w-knot">
+        <span class="w-wordmark">Whisper</span>
+        <span class="w-product">Guard</span>
+      </div>
+      <ul class="menu-links">
+        <li><a href="#protection">Protection</a></li>
+        <li><a href="#account">Account</a></li>
+        <li><a href="#browser">This browser</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+        <li><a href="#about">About</a></li>
+      </ul>
+      <span class="menu-foot" id="menu-version"></span>
+    </nav>
 
-    <section class="card">
-      <h2>Privacy, in one paragraph</h2>
-      <p>We only ever see a site's <strong>name</strong>, never your history, never the
-      page. The live safety check sends the hostname of the page you visit to
-      <code>graph.whisper.online</code>, whether or not you have an account, and nothing
-      else: no path, no query, no content. Hostnames are used only to answer the check
-      and are not retained to build a browsing profile. The on-device look-alike
-      protection sends nothing at all, and one switch below turns the live check off
-      entirely. Endpoint identity checks send only IP literals of your own endpoints
-      to <code>rdap.whisper.online</code>. There is no telemetry and no analytics in
-      this extension.</p>
-    </section>
+    <main>
+      <section id="protection" aria-labelledby="h-protection">
+        <h1 id="h-protection">Protection</h1>
+        <p class="lead">Each switch takes effect at once. Everything here works without an account.</p>
+        <p class="notice" id="settings-down" role="status" hidden>The extension’s own settings could not be read just now, so the switches here are not claiming what is on.</p>
 
-    <section class="card">
-      <h2>Live safety check</h2>
-      <label class="toggle">
-        <input type="checkbox" id="opt-cloudcheck">
-        <span>Check every site against the Whisper security graph (hostname only, to one
-        endpoint). Off means on-device look-alike protection only.</span>
-      </label>
-    </section>
-
-    <section class="card">
-      <h2>Account</h2>
-      <div id="account-signedout">
-        <p>Sign in free to unlock your fleet: every device and agent on your Whisper
-        account, per-endpoint drill-downs, and the option to route this browser through
-        Whisper egress. You approve in the Whisper console; you never handle an API key.</p>
-        <button id="btn-signin" class="w-btn primary">Sign in with Whisper</button>
-        <span id="device-status" class="w-note"></span>
-        <details class="fallback">
-          <summary>I have a key (advanced)</summary>
-          <div class="row gap">
-            <input id="key-input" type="password" placeholder="paste a key" autocomplete="off">
-            <button id="btn-savekey" class="w-btn">Save</button>
+        <div class="card rows">
+          <div class="set-row">
+            <div class="set-text">
+              <label class="set-name" for="opt-cloudcheck">Live graph verdict</label>
+              <span class="set-line" id="d-cloudcheck">Checks each site’s name against the Whisper graph. Off means the on-device look-alike check only.</span>
+            </div>
+            <input type="checkbox" role="switch" class="w-switch" id="opt-cloudcheck" disabled aria-describedby="d-cloudcheck">
           </div>
-        </details>
-      </div>
-      <div id="account-signedin" hidden>
-        <p>Signed in. The fleet dashboard and this browser's own Whisper identity are unlocked.</p>
-        <div class="row gap">
-          <button id="btn-dashboard" class="w-btn">Open dashboard</button>
-          <button id="btn-console" class="w-btn">Open the console</button>
-          <button id="btn-signout" class="w-btn">Sign out</button>
+
+          <div class="set-row">
+            <div class="set-text">
+              <span class="set-name" id="n-lookalike">Look-alike detection</span>
+              <span class="set-line" id="lookalike-line">Catches homoglyphs, TLD swaps and combosquats of the bundled brand list, on this device.</span>
+            </div>
+            <span class="set-state" id="lookalike-state">Always on</span>
+          </div>
+          <div class="set-row sub">
+            <div class="set-text">
+              <label class="set-name" for="opt-nearmiss">Also flag near-miss spellings, one keystroke away (may be noisier)</label>
+            </div>
+            <input type="checkbox" role="switch" class="w-switch" id="opt-nearmiss" disabled>
+          </div>
+
+          <div class="set-row">
+            <div class="set-text">
+              <span class="set-name" id="n-hold">Hold dangerous clicks</span>
+              <span class="set-line" id="d-hold">Pauses a click or form going to a known-bad site and shows the evidence first. Fails open if the graph is slow.</span>
+              <span class="set-line" id="hold-note" hidden>With Live graph verdict off, it holds only clicks to sites a recent check already flagged.</span>
+            </div>
+            <span class="set-state" id="hold-state"></span>
+          </div>
+
+          <div class="set-row featured">
+            <div class="set-text">
+              <span class="set-name"><label for="opt-shield">Active Shield</label> <span class="w-chip accent pill">RECOMMENDED</span></span>
+              <span class="set-line" id="d-shield">Shows warnings on the page: the amber look-alike bar, the full-page stop and the password-field caution. Asks your browser for on-page permission.</span>
+            </div>
+            <input type="checkbox" role="switch" class="w-switch" id="opt-shield" disabled aria-describedby="d-shield">
+          </div>
+          <div class="set-row sub">
+            <div class="set-text">
+              <label class="set-name" for="opt-banner">Show the amber caution banner on look-alike and suspicious sites</label>
+              <span class="w-note needs-shield" id="banner-needs" hidden>needs Active Shield</span>
+            </div>
+            <input type="checkbox" role="switch" class="w-switch" id="opt-banner" disabled aria-describedby="banner-needs">
+          </div>
+          <div class="set-row sub">
+            <div class="set-text">
+              <label class="set-name" for="opt-fieldguard">Show a caution when a password field is focused on a flagged site</label>
+              <span class="w-note needs-shield" id="fieldguard-needs" hidden>needs Active Shield</span>
+            </div>
+            <input type="checkbox" role="switch" class="w-switch" id="opt-fieldguard" disabled aria-describedby="fieldguard-needs">
+          </div>
+
+          <div class="set-row">
+            <div class="set-text">
+              <label class="set-name" for="opt-cookiedecline">Decline cookie prompts</label>
+              <span class="set-line" id="d-cookie">Presses a banner’s own reject button. Never accepts, and leaves alone a wall that asks you to subscribe.</span>
+              <span class="w-note" id="cookiedecline-reach" hidden></span>
+            </div>
+            <input type="checkbox" role="switch" class="w-switch" id="opt-cookiedecline" disabled aria-describedby="cookiedecline-reach d-cookie">
+          </div>
         </div>
-      </div>
-    </section>
 
-    <section class="card">
-      <h2>Protect this browser</h2>
-      <p>One control gives this browser its own routable Whisper IPv6 address
-      and sends its traffic out through it, so it joins your fleet as a device and anyone can
-      check that address by RDAP. Off by default. Turning it on asks for the browser's proxy
-      permission. Tailnet and private-network destinations connect directly, and private
-      windows are routed only when Whisper Guard is allowed in them. WebRTC is hardened to
-      proxied-only on Chromium. The control lives in the toolbar panel and on the
-      dashboard - it is the same control in both places.</p>
-      <div class="row gap">
-        <button id="btn-egress-dash" class="w-btn small">Open it on the dashboard</button>
-        <span id="egress-state" class="w-note"></span>
-      </div>
-    </section>
+        <div class="pair">
+          <div class="card">
+            <h2>Trusted sites</h2>
+            <p class="w-note"><label for="opt-allowlist">One domain per line. Whisper Guard will never flag these.</label></p>
+            <textarea id="opt-allowlist" rows="4" spellcheck="false" disabled></textarea>
+          </div>
+          <div class="card">
+            <h2>Brand list</h2>
+            <p class="w-note" id="corpus-info"></p>
+            <div class="set-row compact">
+              <div class="set-text">
+                <label class="set-name" for="opt-corpusupdate">Check daily for a newer signed brand list (only get.whisper.online is contacted; no browsing data is sent)</label>
+              </div>
+              <input type="checkbox" role="switch" class="w-switch" id="opt-corpusupdate" disabled>
+            </div>
+            <div class="row gap">
+              <button id="btn-corpusnow" class="w-btn small" type="button">Update now</button>
+              <span id="corpus-status" class="w-note"></span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <section class="card">
-      <h2>Active Shield</h2>
-      <label class="toggle">
-        <input type="checkbox" id="opt-shield">
-        <span>Warn me on the page before dangerous login pages and guard my password
-        fields. Turning this on asks the browser for permission to act on the pages
-        you visit; it is used only to draw the warning, never to read the page or
-        widen what leaves the browser.</span>
-      </label>
-      <label class="toggle sub">
-        <input type="checkbox" id="opt-banner" aria-describedby="banner-needs">
-        <span>Show the amber caution banner on look-alike and suspicious sites
-        <span class="w-note needs-shield" id="banner-needs" hidden>needs Active Shield</span></span>
-      </label>
-      <label class="toggle sub">
-        <input type="checkbox" id="opt-fieldguard" aria-describedby="fieldguard-needs">
-        <span>Show a caution when a password field is focused on a flagged site
-        <span class="w-note needs-shield" id="fieldguard-needs" hidden>needs Active Shield</span></span>
-      </label>
-      <label class="toggle">
-        <input type="checkbox" id="opt-cookiedecline" aria-describedby="cookiedecline-reach">
-        <span>Decline cookie pop-ups for me. Where Guard runs on the page, it clicks the
-        banner's own "Reject all" / "necessary only" button, never "accept", and if it
-        is not sure, it leaves the page alone. Entirely on this device; nothing about
-        the page leaves the browser.
-        <span class="w-note" id="cookiedecline-reach" hidden></span></span>
-      </label>
-    </section>
+      <section id="account" aria-labelledby="h-account">
+        <h2 class="section-title" id="h-account">Account</h2>
+        <div class="card">
+          <div id="account-signedout">
+            <p>Sign in free to unlock your fleet: every device and agent on your Whisper
+            account, per-endpoint drill-downs, and the option to route this browser through
+            Whisper egress. You approve in the Whisper console; you never handle an API key.</p>
+            <button id="btn-signin" class="w-btn primary" type="button">Sign in with Whisper</button>
+            <span id="device-status" class="w-note"></span>
+            <details class="fallback">
+              <summary>I have a key (advanced)</summary>
+              <div class="row gap">
+                <input id="key-input" type="password" placeholder="paste a key" autocomplete="new-password" aria-label="API key">
+                <button id="btn-savekey" class="w-btn" type="button">Save</button>
+              </div>
+            </details>
+          </div>
+          <div id="account-signedin" hidden>
+            <p class="signed"><strong>Signed in</strong><span id="account-identities" class="w-note" hidden></span></p>
+            <div class="row gap wrap">
+              <button id="btn-console" class="w-btn primary" type="button">Open console ↗</button>
+              <button id="btn-dashboard" class="w-btn" type="button">Open dashboard</button>
+              <button id="btn-signout" class="w-btn" type="button">Sign out</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <section class="card">
-      <h2>Detection</h2>
-      <label class="toggle">
-        <input type="checkbox" id="opt-nearmiss">
-        <span>Also flag near-miss spellings, one keystroke away (may be noisier)</span>
-      </label>
-      <h3>Trusted sites</h3>
-      <p class="w-note">One domain per line. Whisper Guard will never flag these.</p>
-      <textarea id="opt-allowlist" rows="4" spellcheck="false"></textarea>
-    </section>
+      <section id="browser" aria-labelledby="h-browser">
+        <h2 class="section-title" id="h-browser">This browser</h2>
+        <div class="card">
+          <!-- Filled by shared/protect-control.ts, the one implementation of this control. -->
+          <div id="protect-control"></div>
+        </div>
+        <div class="card rows">
+          <div class="set-row">
+            <div class="set-text">
+              <span class="set-name" id="n-theme">Theme</span>
+              <span class="set-line">Auto follows your system. The choice applies to every Whisper Guard page.</span>
+            </div>
+            <div class="seg" id="theme-choice" role="group" aria-labelledby="n-theme">
+              <button type="button" id="theme-auto" data-theme-choice="auto" aria-pressed="false">Auto</button>
+              <button type="button" id="theme-light" data-theme-choice="light" aria-pressed="false">Light</button>
+              <button type="button" id="theme-dark" data-theme-choice="dark" aria-pressed="false">Dark</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    <section class="card">
-      <h2>Brand corpus</h2>
-      <p class="w-note" id="corpus-info"></p>
-      <label class="toggle">
-        <input type="checkbox" id="opt-corpusupdate">
-        <span>Check daily for a newer signed brand corpus (only the corpus host is
-        contacted; no browsing data is sent)</span>
-      </label>
-      <div class="row gap">
-        <button id="btn-corpusnow" class="w-btn small">Update now</button>
-        <span id="corpus-status" class="w-note"></span>
-      </div>
-    </section>
+      <section id="privacy" aria-labelledby="h-privacy">
+        <h2 class="section-title" id="h-privacy">Privacy</h2>
+        <p class="lead">The only thing about your browsing Guard sends is a site’s <strong>name</strong>, to <code>graph.whisper.online</code>. Never the page, its path, what you type or your history.</p>
+        <div class="card">
+          <h3 class="w-label">What leaves this browser</h3>
+          <dl class="leaves">
+            <div><dt>Site names, for the live check</dt><dd class="host">graph.whisper.online</dd></div>
+            <div><dt>Signed in: your account’s devices and routing, with your key, never a site name</dt><dd class="host">graph.whisper.online</dd></div>
+            <div><dt>Sign-in only</dt><dd class="host">console.whisper.security</dd></div>
+            <div><dt>Signed brand-list updates</dt><dd class="host">get.whisper.online</dd></div>
+            <div><dt>Your own devices’ addresses, to verify them</dt><dd class="host">rdap.whisper.online</dd></div>
+            <div><dt>Public network statistics, a plain download</dt><dd class="host">nic.whisper.online</dd></div>
+            <div class="never"><dt>Pages, paths, history, typing</dt><dd class="never-word">never</dd></div>
+          </dl>
+          <p class="w-note">“Open console ↗” opens the Whisper console, edr.whisper.security.</p>
+          <p class="w-note">A page scan you start sends only the site names it finds on the page.</p>
+          <p class="w-note">With Protect this browser on, your page loads leave through your Whisper address.</p>
+          <p class="w-note">No telemetry, no analytics, no sync.</p>
+        </div>
+      </section>
 
-    <p class="footer-note">Whisper Guard is an open-source client of the Whisper
-    security graph. <a href="https://whisper.online" target="_blank" rel="noopener">whisper.online</a></p>
-  </main>
+      <section id="about" aria-labelledby="h-about">
+        <h2 class="section-title" id="h-about">About</h2>
+        <div class="card">
+          <p class="about-name">Whisper Guard</p>
+          <p>Version <span id="about-version" class="w-mono"></span></p>
+          <p><a href="https://github.com/whisper-sec/whisper-guard/blob/main/LICENSE" target="_blank" rel="noopener">MIT licence</a>
+          · <a href="https://github.com/whisper-sec/whisper-guard" target="_blank" rel="noopener">Source</a></p>
+          <p class="w-note">Whisper Guard is an open-source client of the Whisper
+          security graph. <a href="https://whisper.online" target="_blank" rel="noopener">whisper.online</a></p>
+        </div>
+      </section>
+    </main>
+  </div>
   <script src="options.js"></script>
 </body>
 </html>

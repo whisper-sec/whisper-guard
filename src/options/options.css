@@ -3,35 +3,130 @@
    Options layout on top of the shared theme. No colour is defined here;
    every token comes from theme.css and flips with the reader's scheme. */
 
-body { font-size: 12.5px; line-height: 1.6; }
+body { font-size: 13px; line-height: 1.6; }
 
-main { max-width: 680px; margin: 0 auto; padding: 28px 20px 60px; }
+/* ------------------------------------------------------------- frame */
 
-.brand { margin-bottom: 18px; }
+.shell { display: flex; align-items: flex-start; min-height: 100vh; }
 
-h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; letter-spacing: 0.01em; }
-h3 { font-size: 12.5px; margin: 14px 0 4px; color: var(--w-muted); font-weight: 600; }
+.menu {
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: 260px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 16px;
+  background: var(--w-surface);
+  border-right: 1px solid var(--w-line);
+}
+.brand { padding: 0 10px 22px; }
+.menu-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.menu-links a {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--w-muted);
+  font-size: 14px;
+  text-decoration: none;
+}
+.menu-links a:hover { background: var(--w-hover); color: var(--w-text); }
+.menu-links a[aria-current="true"] { background: var(--w-accent-soft); color: var(--w-text); font-weight: 700; }
+.menu-foot { margin-top: auto; padding: 0 12px; font: 11.5px/1.4 var(--w-mono); color: var(--w-muted); }
+
+main { flex: 1; min-width: 0; max-width: 860px; padding: 36px 48px 60px; }
+
+section { margin-bottom: 40px; }
+/* The last section can still be scrolled to the top of the window. */
+section#about { min-height: 70vh; margin-bottom: 0; }
+
+h1 { font-size: 28px; font-weight: 900; line-height: 1.2; margin: 0 0 6px; }
+.section-title { font-size: 22px; font-weight: 900; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
+.lead { color: var(--w-muted); font-size: 14px; margin: 0 0 18px; }
+.lead strong { color: var(--w-text); }
 
 .card {
   background: var(--w-card);
   border: 1px solid var(--w-line);
-  border-radius: 6px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  border-radius: 14px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
 }
 .card p { margin: 0 0 10px; }
+.card.rows { padding: 0; }
 
 code { background: var(--w-elev); padding: 1px 5px; border-radius: 4px; font-family: var(--w-mono); }
 
-.toggle { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0; cursor: pointer; }
-.toggle.sub { margin-left: 26px; }
-.toggle.sub input:disabled { cursor: default; }
-.toggle.sub:has(input:disabled) { cursor: default; }
-.toggle .needs-shield { margin-left: 6px; }
-.toggle input { margin-top: 3px; flex: none; accent-color: var(--w-accent); }
+.notice {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--w-v-low);
+  border-radius: 8px;
+  color: var(--w-v-low);
+}
+.notice[hidden] { display: none; }
+
+/* -------------------------------------------------------------- rows */
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--w-line);
+}
+.set-row:last-child { border-bottom: 0; }
+.set-row.sub { padding-top: 12px; padding-bottom: 12px; padding-left: 44px; }
+.set-row.featured { background: var(--w-accent-soft); }
+.set-row.compact { padding: 8px 0; border-bottom: 0; }
+.set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.set-name { font-size: 15px; font-weight: 700; color: var(--w-text); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+label.set-name, .set-name label { cursor: pointer; }
+.sub .set-name, .compact .set-name { font-size: 13px; font-weight: 400; }
+.set-line { font-size: 13px; color: var(--w-muted); }
+.set-state { flex: none; font-size: 13px; font-weight: 700; color: var(--w-ok); }
+.pill { letter-spacing: 0.06em; font-size: 10.5px; }
+
+/* The switch: the real checkbox, drawn as a track and a knob. */
+.w-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  position: relative;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--w-elev);
+  border: 1px solid var(--w-line-strong);
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.w-switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--w-muted);
+  transition: transform 0.12s, background-color 0.12s;
+}
+.w-switch:checked { background: var(--w-accent-line); border-color: var(--w-accent-line); }
+.w-switch:checked::before { background: var(--w-on-accent); transform: translateX(20px); }
+.w-switch:disabled { opacity: 0.55; cursor: not-allowed; }
+.w-switch:focus-visible { outline: 2px solid var(--w-accent-line); outline-offset: 2px; border-color: var(--w-accent-line); }
+
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pair .card { margin-bottom: 0; }
 
 .row { display: flex; align-items: center; }
 .gap { gap: 8px; }
+.wrap { flex-wrap: wrap; }
 
 textarea, input[type="password"] {
   width: 100%;
@@ -44,8 +139,56 @@ textarea, input[type="password"] {
 }
 input[type="password"] { width: auto; flex: 1; }
 
-.fallback { margin-top: 10px; border-top: 0; }
+.fallback { margin-top: 10px; }
 .fallback summary { color: var(--w-muted); cursor: pointer; font-size: 12px; }
 .fallback .row { margin-top: 8px; }
 
-.footer-note { color: var(--w-muted); font-size: 11px; text-align: center; }
+.signed { display: flex; flex-direction: column; gap: 2px; font-size: 14.5px; }
+.signed .w-note { font-size: 12.5px; }
+
+/* A three-way choice: three buttons, the pressed one filled. */
+.seg { display: inline-flex; flex: none; border: 1px solid var(--w-line-strong); border-radius: 8px; }
+.seg button {
+  font: 500 12.5px/1.4 var(--w-font-sans);
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--w-muted);
+  border: 0;
+  border-right: 1px solid var(--w-line-strong);
+  cursor: pointer;
+}
+.seg button:first-child { border-radius: 7px 0 0 7px; }
+.seg button:last-child { border-right: 0; border-radius: 0 7px 7px 0; }
+.seg button:hover { background: var(--w-hover); color: var(--w-text); }
+.seg button[aria-pressed="true"] { background: var(--w-accent-line); color: var(--w-on-accent); font-weight: 700; }
+
+/* ---------------------------------------------------------- privacy */
+
+.leaves { margin: 10px 0 14px; display: grid; gap: 8px; }
+.leaves > div { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
+.leaves dt { min-width: 0; }
+.leaves dd { margin: 0; text-align: right; }
+.leaves .host { font: 12px/1.5 var(--w-mono); color: var(--w-accent); overflow-wrap: anywhere; }
+.leaves .never dt { color: var(--w-muted); }
+.leaves .never-word { font-size: 12px; font-weight: 700; color: var(--w-ok); }
+
+.about-name { font-size: 15px; font-weight: 700; }
+
+/* ------------------------------------------------------------ narrow
+   The menu stacks above the content as a wrapped row of links. This is
+   also what the browser's embedded options dialog gets. */
+
+@media (max-width: 760px) {
+  .shell { display: block; }
+  .menu { position: static; width: auto; height: auto; flex-direction: column; border-right: 0; border-bottom: 1px solid var(--w-line); padding: 16px; }
+  .brand { padding-bottom: 8px; }
+  .menu-links { flex-direction: row; flex-wrap: wrap; }
+  .menu-foot { margin-top: 6px; }
+  main { padding: 24px 16px 40px; }
+  section#about { min-height: 0; }
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  .set-row { padding: 14px 16px; }
+  .set-row.sub { padding-left: 28px; }
+  .leaves > div { flex-direction: column; gap: 0; }
+  .leaves dd { text-align: left; }
+}

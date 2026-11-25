@@ -154,7 +154,10 @@ test.describe("no all-sites grant", () => {
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
     await expect(opts.locator("#opt-cookiedecline")).toBeEnabled();
-    await expect(opts.locator("#opt-cookiedecline")).toHaveAttribute("aria-describedby", "cookiedecline-reach");
+    // The switch is described by the reach note and by the row's explanation line.
+    const describedBy = ((await opts.locator("#opt-cookiedecline").getAttribute("aria-describedby")) ?? "").split(/\s+/);
+    expect(describedBy).toContain("cookiedecline-reach");
+    expect(describedBy).toContain("d-cookie");
     await expect(opts.locator("#cookiedecline-reach")).toBeVisible();
     await expect(opts.locator("#cookiedecline-reach")).toHaveText(/only on a tab where you open Guard/i);
     await opts.close();
@@ -254,7 +257,9 @@ test.describe("all-sites grant held", () => {
     await setSettings(ext, { shield: false });
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-banner")).toBeDisabled();
-    await opts.locator("#opt-shield").check();
+    // The box stays unchecked until the grant is decided, so press it and wait for the checked state.
+    await opts.locator("#opt-shield").click();
+    await expect(opts.locator("#opt-shield")).toBeChecked();
     await expect(opts.locator("#opt-banner")).toBeEnabled();
     await expect(opts.locator("#opt-banner")).toBeChecked();
     await expect(opts.locator("#opt-fieldguard")).toBeEnabled();
@@ -301,7 +306,9 @@ test.describe("all-sites grant held", () => {
     await setSettings(ext, { shield: false, cookieDecline: true });
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#cookiedecline-reach")).toHaveText(/only on a tab where you open Guard/i);
-    await opts.locator("#opt-shield").check();
+    // The box stays unchecked until the grant is decided, so press it and wait for the checked state.
+    await opts.locator("#opt-shield").click();
+    await expect(opts.locator("#opt-shield")).toBeChecked();
     await expect(opts.locator("#cookiedecline-reach")).toHaveText("Runs on every page.");
     await expect(opts.locator("#opt-cookiedecline")).toBeChecked();
     await opts.close();
@@ -453,7 +460,9 @@ test.describe("all-sites grant withdrawn while a page is open", () => {
     await setSettings(ext, { shield: false, amberBanner: true, fieldGuard: true });
     const opts = await open(ext, "options.html");
     await expect(opts.locator("#opt-banner")).toBeDisabled();
-    await opts.locator("#opt-shield").check();
+    // The box stays unchecked until the grant is decided, so press it and wait for the checked state.
+    await opts.locator("#opt-shield").click();
+    await expect(opts.locator("#opt-shield")).toBeChecked();
     await expect(opts.locator("#opt-banner")).toBeEnabled();
     let s = await stored(opts);
     expect(s["shield"]).toBe(true);
@@ -465,6 +474,315 @@ test.describe("all-sites grant withdrawn while a page is open", () => {
     expect(s["shield"]).toBe(false);
     expect(s["amberBanner"]).toBe(true);
     expect(s["fieldGuard"]).toBe(true);
+    await opts.close();
+  });
+});
+
+// ------------------------------------------------ settings: carried fixes
+
+/** Open a page with the HOLD wrapper and one more script that runs right after it. */
+async function openWith(ext: Extension, file: string, then: () => void): Promise<Page> {
+  const page = await ext.context.newPage();
+  await page.addInitScript(HOLD);
+  await page.addInitScript(then);
+  await page.goto(`chrome-extension://${ext.id}/${file}`);
+  return page;
+}
+
+const SETTING_BOXES = ["#opt-cloudcheck", "#opt-nearmiss", "#opt-shield", "#opt-banner", "#opt-fieldguard", "#opt-cookiedecline", "#opt-corpusupdate"];
+
+test.describe("settings: a failed read says so and locks the switches", () => {
+  let ext: Extension;
+  test.beforeAll(async () => {
+    ext = await launchExtension({ dist: makeShieldDist() });
+  });
+  test.afterAll(async () => {
+    await ext?.close();
+  });
+  test.beforeEach(async () => {
+    await setSettings(ext, { shield: true, amberBanner: true, fieldGuard: true, cookieDecline: true, nearMiss: false, cloudCheck: true, corpusAutoUpdate: true });
+  });
+
+  for (const how of ["resolves not ok", "rejects"] as const) {
+    test(`with the all-sites grant held and the read that ${how}, the note shows and no switch or the trusted sites list can be changed`, async () => {
+      const opts = await openHeld(ext, "options.html");
+      await expect(opts.locator("#opt-banner")).toBeChecked();
+      await expect(opts.locator("#settings-down")).toBeHidden();
+      await (how === "rejects" ? gate(opts).rejectSettings() : gate(opts).failSettings());
+      await setSettings(ext, { nearMiss: true });
+      await expect(opts.locator("#settings-down")).toBeVisible();
+      await expect(opts.locator("#settings-down")).toHaveText(
+        "The extension’s own settings could not be read just now, so the switches here are not claiming what is on.",
+      );
+      for (const id of [...SETTING_BOXES, "#opt-allowlist"]) await expect(opts.locator(id), id).toBeDisabled();
+      await opts.close();
+    });
+  }
+
+  test("a page that opens with the read failing shows the note and every switch locked", async () => {
+    const opts = await openWith(ext, "options.html", () => {
+      (window as unknown as { __gate: { rejectSettings: boolean } }).__gate.rejectSettings = true;
+    });
+    await expect(opts.locator("#settings-down")).toBeVisible();
+    for (const id of [...SETTING_BOXES, "#opt-allowlist"]) await expect(opts.locator(id), id).toBeDisabled();
+    await opts.close();
+  });
+
+  test("the next successful read hides the note and draws every switch from the stored settings", async () => {
+    const opts = await openHeld(ext, "options.html");
+    await expect(opts.locator("#opt-banner")).toBeChecked();
+    await gate(opts).rejectSettings();
+    await setSettings(ext, { nearMiss: true });
+    await expect(opts.locator("#settings-down")).toBeVisible();
+    await opts.evaluate(() => {
+      const g = (window as unknown as { __gate: { rejectSettings: boolean; failSettings: boolean } }).__gate;
+      g.rejectSettings = false;
+      g.failSettings = false;
+    });
+    await setSettings(ext, { nearMiss: true, cloudCheck: false, cookieDecline: false, corpusAutoUpdate: false, amberBanner: false, allowlist: ["kept.example"] });
+    await expect(opts.locator("#settings-down")).toBeHidden();
+    for (const id of SETTING_BOXES) await expect(opts.locator(id), id).toBeEnabled();
+    await expect(opts.locator("#opt-allowlist")).toBeEnabled();
+    await expect(opts.locator("#opt-nearmiss")).toBeChecked();
+    await expect(opts.locator("#opt-cloudcheck")).not.toBeChecked();
+    await expect(opts.locator("#opt-cookiedecline")).not.toBeChecked();
+    await expect(opts.locator("#opt-corpusupdate")).not.toBeChecked();
+    await expect(opts.locator("#opt-banner")).not.toBeChecked();
+    await expect(opts.locator("#opt-fieldguard")).toBeChecked();
+    await expect(opts.locator("#opt-allowlist")).toHaveValue("kept.example");
+    await opts.close();
+    await setSettings(ext, { allowlist: [] });
+  });
+});
+
+test.describe("settings: Active Shield waits for the grant to be decided", () => {
+  let ext: Extension;
+  test.beforeAll(async () => {
+    ext = await launchExtension();
+  });
+  test.afterAll(async () => {
+    await ext?.close();
+  });
+  test.beforeEach(async () => {
+    await setSettings(ext, { shield: false });
+  });
+
+  /** Stands in front of permissions.request; counts every permission and settings event after load. */
+  const PROMPT = (mode: "reject" | "hold") => {
+    const p = { mode, calls: 0, events: 0, answer: (_v: boolean) => undefined as void };
+    (window as unknown as { __prompt: typeof p }).__prompt = p;
+    (chrome.permissions as { request: unknown }).request = () => {
+      p.calls++;
+      if (p.mode === "reject") return Promise.reject(new Error("the browser could not ask"));
+      return new Promise<boolean>((res) => {
+        p.answer = res as (v: boolean) => void;
+      });
+    };
+    chrome.permissions.onAdded.addListener(() => p.events++);
+    chrome.permissions.onRemoved.addListener(() => p.events++);
+  };
+  const openPrompt = async (mode: "reject" | "hold"): Promise<Page> => {
+    const page = await ext.context.newPage();
+    await page.addInitScript(PROMPT, mode);
+    await page.goto(`chrome-extension://${ext.id}/options.html`);
+    await expect(page.locator("#corpus-info")).toHaveText(/.+/);
+    return page;
+  };
+  const prompt = (page: Page) => ({
+    calls: () => page.evaluate(() => (window as any).__prompt.calls as number),
+    events: () => page.evaluate(() => (window as any).__prompt.events as number),
+    answer: (v: boolean) => page.evaluate((x) => (window as any).__prompt.answer(x), v),
+  });
+
+  test("while the permission prompt is open the Active Shield box is not checked and cannot be pressed again", async () => {
+    const opts = await openPrompt("hold");
+    await opts.locator("#opt-shield").click();
+    await expect.poll(prompt(opts).calls).toBe(1);
+    await expect(opts.locator("#opt-shield")).not.toBeChecked();
+    await expect(opts.locator("#opt-shield")).toBeDisabled();
+    await prompt(opts).answer(false);
+    await expect(opts.locator("#opt-shield")).toBeEnabled();
+    await expect(opts.locator("#opt-shield")).not.toBeChecked();
+    expect((await stored(opts))["shield"]).toBe(false);
+    await opts.close();
+  });
+
+  test("when the permission request rejects, the box reads unchecked and enabled, shield is not stored on, and no later event fires", async () => {
+    const opts = await openPrompt("reject");
+    await opts.locator("#opt-shield").click();
+    await expect.poll(prompt(opts).calls).toBe(1);
+    await expect(opts.locator("#opt-shield")).toBeEnabled();
+    await expect(opts.locator("#opt-shield")).not.toBeChecked();
+    await settled(opts);
+    await expect(opts.locator("#opt-shield")).not.toBeChecked();
+    expect((await stored(opts))["shield"]).toBe(false);
+    expect(await prompt(opts).events()).toBe(0);
+    await opts.close();
+  });
+});
+
+test.describe("settings: the Active Shield box while the prompt is open", () => {
+  let ext: Extension;
+  test.beforeAll(async () => {
+    ext = await launchExtension();
+  });
+  test.afterAll(async () => {
+    await ext?.close();
+  });
+  test.beforeEach(async () => {
+    await setSettings(ext, { shield: false, nearMiss: false });
+  });
+
+  const PROMPT_HELD = () => {
+    const p = { calls: 0, answer: (_v: boolean) => undefined as void };
+    (window as unknown as { __prompt: typeof p }).__prompt = p;
+    (chrome.permissions as { request: unknown }).request = () => {
+      p.calls++;
+      return new Promise<boolean>((res) => {
+        p.answer = res as (v: boolean) => void;
+      });
+    };
+  };
+  const openHeldPrompt = async (): Promise<Page> => {
+    const page = await ext.context.newPage();
+    await page.addInitScript(PROMPT_HELD);
+    await page.goto(`chrome-extension://${ext.id}/options.html`);
+    await expect(page.locator("#opt-shield")).toBeEnabled();
+    return page;
+  };
+  const calls = (page: Page) => page.evaluate(() => (window as any).__prompt.calls as number);
+  const answer = (page: Page, v: boolean) => page.evaluate((x) => (window as any).__prompt.answer(x), v);
+
+  test("a settings change made elsewhere while the prompt is open leaves the box disabled, so it cannot open a second request", async () => {
+    const opts = await openHeldPrompt();
+    await opts.locator("#opt-shield").click();
+    await expect.poll(() => calls(opts)).toBe(1);
+    await expect(opts.locator("#opt-shield")).toBeDisabled();
+    await setSettings(ext, { nearMiss: true });
+    // The redraw that change causes has run once the other switch shows it.
+    await expect(opts.locator("#opt-nearmiss")).toBeChecked();
+    await settled(opts);
+    await expect(opts.locator("#opt-shield")).toBeDisabled();
+    expect(await calls(opts)).toBe(1);
+    await answer(opts, false);
+    await expect(opts.locator("#opt-shield")).toBeEnabled();
+    await opts.close();
+  });
+
+  test("the keyboard: Space on the focused Active Shield switch, then the answer, leaves the switch focused again", async () => {
+    const opts = await openHeldPrompt();
+    await opts.locator("#opt-shield").focus();
+    await opts.keyboard.press("Space");
+    await expect.poll(() => calls(opts)).toBe(1);
+    await expect(opts.locator("#opt-shield")).toBeDisabled();
+    await answer(opts, false);
+    await expect(opts.locator("#opt-shield")).toBeEnabled();
+    await expect(opts.locator("#opt-shield")).toBeFocused();
+    await expect(opts.locator("#opt-shield")).not.toBeChecked();
+    await opts.close();
+  });
+});
+
+test.describe("settings: the first read", () => {
+  let ext: Extension;
+  test.beforeAll(async () => {
+    ext = await launchExtension({ dist: makeShieldDist() });
+  });
+  test.afterAll(async () => {
+    await ext?.close();
+  });
+
+  test("every switch and the trusted sites list are disabled until the first read is drawn, and enabled after it", async () => {
+    await setSettings(ext, { shield: true, amberBanner: true, fieldGuard: true });
+    const opts = await openWith(ext, "options.html", () => {
+      (window as unknown as { __gate: { hold: boolean } }).__gate.hold = true;
+    });
+    const g = gate(opts);
+    await expect.poll(g.held).toBe(1);
+    for (const id of [...SETTING_BOXES, "#opt-allowlist"]) await expect(opts.locator(id), `${id} before the read`).toBeDisabled();
+    await g.release();
+    for (const id of [...SETTING_BOXES, "#opt-allowlist"]) await expect(opts.locator(id), `${id} after the read`).toBeEnabled();
+    await opts.close();
+  });
+
+  test("a refresh superseded by a newer one writes no trusted sites, and the newest draws them", async () => {
+    await setSettings(ext, { allowlist: [] });
+    // The first refresh waits after it has read an empty list; the stored list
+    // then changes, and the newer read draws it. The older one finishes last.
+    const opts = await openWith(ext, "options.html", () => {
+      (window as unknown as { __gate: { hold: boolean } }).__gate.hold = true;
+    });
+    const g = gate(opts);
+    await expect.poll(g.held).toBe(1);
+    await setSettings(ext, { allowlist: ["newer.example"] });
+    await expect(opts.locator("#opt-allowlist")).toHaveValue("newer.example");
+    await g.release();
+    await settled(opts);
+    await expect(opts.locator("#opt-allowlist")).toHaveValue("newer.example");
+    await expect(opts.locator("#opt-allowlist")).toBeEnabled();
+    await opts.close();
+    await setSettings(ext, { allowlist: [] });
+  });
+
+  test("a failed save leaves no key in the key field, and the field is not offered to a password manager as a login", async () => {
+    const page = await ext.context.newPage();
+    await page.addInitScript(() => {
+      const real = chrome.runtime.sendMessage.bind(chrome.runtime) as (...a: unknown[]) => unknown;
+      (chrome.runtime as { sendMessage: unknown }).sendMessage = (m: { kind?: string }, ...rest: unknown[]) =>
+        m?.kind === "saveKey" ? Promise.reject(new Error("the worker stopped mid-request")) : real(m, ...rest);
+    });
+    await page.goto(`chrome-extension://${ext.id}/options.html`);
+    await expect(page.locator("#key-input")).toHaveAttribute("autocomplete", "new-password");
+    await page.locator("#account-signedout summary").click();
+    await page.locator("#key-input").fill("not-a-real-key-for-this-test");
+    await page.locator("#btn-savekey").click();
+    await expect(page.locator("#key-input")).toHaveValue("");
+    await page.close();
+  });
+});
+
+test.describe("settings: only the newest read draws the switches", () => {
+  let ext: Extension;
+  test.beforeAll(async () => {
+    ext = await launchExtension({ dist: makeShieldDist() });
+  });
+  test.afterAll(async () => {
+    await ext?.close();
+  });
+  test.beforeEach(async () => {
+    await setSettings(ext, { shield: true, nearMiss: false, cookieDecline: true, corpusAutoUpdate: true, cloudCheck: true });
+  });
+
+  test("a read superseded while it waits writes none of the four switches", async () => {
+    // The first contains() call (the page's own first read) is held after the
+    // settings were read, so it carries the old values.
+    const opts = await openWith(ext, "options.html", () => {
+      (window as unknown as { __gate: { hold: boolean } }).__gate.hold = true;
+    });
+    const g = gate(opts);
+    await expect.poll(g.held).toBe(1);
+    await setSettings(ext, { nearMiss: true, cookieDecline: false, corpusAutoUpdate: false, cloudCheck: false });
+    await expect(opts.locator("#opt-nearmiss")).toBeChecked();
+    await expect(opts.locator("#opt-cloudcheck")).not.toBeChecked();
+    await g.release();
+    await settled(opts);
+    await expect(opts.locator("#opt-nearmiss")).toBeChecked();
+    await expect(opts.locator("#opt-cookiedecline")).not.toBeChecked();
+    await expect(opts.locator("#opt-corpusupdate")).not.toBeChecked();
+    await expect(opts.locator("#opt-cloudcheck")).not.toBeChecked();
+    await expect(opts.locator("#hold-state")).toHaveText("Limited");
+    await opts.close();
+  });
+
+  test("after a settings change made elsewhere the four switches match storage without a reload", async () => {
+    const opts = await open(ext, "options.html");
+    await expect(opts.locator("#opt-cloudcheck")).toBeChecked();
+    await setSettings(ext, { nearMiss: true, cookieDecline: false, corpusAutoUpdate: false, cloudCheck: false });
+    await expect(opts.locator("#opt-nearmiss")).toBeChecked();
+    await expect(opts.locator("#opt-cookiedecline")).not.toBeChecked();
+    await expect(opts.locator("#opt-corpusupdate")).not.toBeChecked();
+    await expect(opts.locator("#opt-cloudcheck")).not.toBeChecked();
+    await expect(opts.locator("#hold-state")).toHaveText("Limited");
     await opts.close();
   });
 });
