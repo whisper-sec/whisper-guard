@@ -76,3 +76,39 @@ export function focusRing(el: HTMLElement): void {
     el.style.outlineOffset = "";
   });
 }
+
+/**
+ * Edges and fills of the field caution card, one tone per case. Each value is
+ * a translucent colour composited over the card ground, written as the solid
+ * result because the card draws over arbitrary pages.
+ */
+export const CAUTION_TONE = {
+  /** rgba(245,158,11,0.55) over #0d0d1a */
+  amberEdge: "#8d5d12",
+  /** the kind named inside a flagged-site sentence */
+  amberText: "#fbbf24",
+  /** the neutral edge used after a click-through (same as ONPAGE.lineStrong) */
+  neutralEdge: "#34343f",
+  /** rgba(239,68,68,0.10) over #0d0d1a: the fill of the recovery-phrase card and its caret */
+  dangerFill: "#24121e",
+} as const;
+
+/** The SVG namespace, for the close icon (built with createElementNS, never markup). */
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** A 14 px X icon in `currentColor`, hidden from assistive technology. */
+export function closeIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2.4");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M6 6l12 12M18 6L6 18");
+  svg.appendChild(path);
+  return svg;
+}

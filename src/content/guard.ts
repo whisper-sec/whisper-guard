@@ -26,7 +26,7 @@
 import { LOGO_DATAURI } from "../shared/brand";
 import { PREEMPT_DECIDE_TIMEOUT_MS } from "../shared/config";
 import { armConsent } from "./consent";
-import { FONT_MONO, FONT_SANS, ONPAGE, el, focusRing, markImg } from "./onpage-style";
+import { CAUTION_TONE, FONT_MONO, FONT_SANS, ONPAGE, closeIcon, el, focusRing, markImg } from "./onpage-style";
 import { extractHostname } from "../shared/hostname";
 import {
   linkTarget,
@@ -325,15 +325,80 @@ if (!w[FLAG]) {
         warnedKinds.add(kind);
 
         const root = mount();
-        const tip = document.createElement("div");
+        const secret = kind === "secret";
+        // One tone per case: danger for a recovery phrase or key, neutral
+        // after a click-through, amber for a flagged or look-alike site.
+        const neutral = !secret && !cfg.brandDomain && cfg.afterAllow === true;
+        const fill = secret ? CAUTION_TONE.dangerFill : ONPAGE.card;
+        const edge = secret
+          ? `2px solid ${ONPAGE.high}`
+          : `1px solid ${neutral ? CAUTION_TONE.neutralEdge : CAUTION_TONE.amberEdge}`;
+        const tip = el(
+          "div",
+          "w-caution",
+          [
+            "position:fixed", "box-sizing:border-box",
+            `background:${fill}`, `color:${ONPAGE.text}`, `border:${edge}`,
+            "border-radius:10px", "padding:12px 14px",
+            "display:flex", "gap:10px", "align-items:flex-start",
+            "box-shadow:0 12px 32px rgba(0,0,0,0.35)",
+            `font-family:${FONT_SANS}`,
+          ].join(";"),
+        );
         tip.setAttribute("role", "alert");
-        tip.style.cssText = [
-          "position:fixed",
-          "max-width:340px", "background:#7F1D1D", "color:#FEE2E2",
-          "font:13px/1.5 system-ui,sans-serif", "padding:10px 12px",
-          "border-radius:8px", "box-shadow:0 4px 16px rgba(0,0,0,.5)",
-        ].join(";");
-        tip.textContent = fieldWarning(kind, cfg);
+
+        // The caret points at the field: on the top edge when the card sits
+        // below it, on the bottom edge when the card sits above it.
+        const caret = el(
+          "div",
+          "w-caution-caret",
+          [
+            "position:absolute", "width:12px", "height:12px", "box-sizing:border-box",
+            `background:${fill}`, "left:22px", "transform:rotate(45deg)",
+          ].join(";"),
+        );
+        tip.appendChild(caret);
+
+        const mark = markImg(18);
+        mark.style.marginTop = "2px";
+        tip.appendChild(mark);
+
+        const text = el(
+          "div",
+          "w-caution-text",
+          `flex:1;min-width:0;font-size:${secret ? 15 : 13.5}px;line-height:1.45;overflow-wrap:anywhere;${
+            secret ? "font-weight:900" : ""
+          }`,
+        );
+        const sentence = fieldWarning(kind, cfg);
+        const named = KIND_COPY[kind];
+        const flagged = !secret && !cfg.brandDomain && !neutral;
+        const at = flagged ? sentence.indexOf(named) : -1;
+        if (at >= 0) {
+          // Only the flagged case names the kind in its own colour.
+          text.appendChild(document.createTextNode(sentence.slice(0, at)));
+          const strong = el("strong", null, `color:${CAUTION_TONE.amberText};font-weight:700`, named);
+          text.appendChild(strong);
+          text.appendChild(document.createTextNode(sentence.slice(at + named.length)));
+        } else {
+          text.textContent = sentence;
+        }
+        tip.appendChild(text);
+
+        const close = el(
+          "button",
+          "w-caution-close",
+          [
+            "flex:none", "width:28px", "height:28px", "padding:0", "margin:-4px -6px -4px 0",
+            "border:0", "background:transparent", `color:${ONPAGE.muted}`, "cursor:pointer",
+            "display:flex", "align-items:center", "justify-content:center",
+          ].join(";"),
+        );
+        close.type = "button";
+        close.setAttribute("aria-label", "Dismiss");
+        close.appendChild(closeIcon());
+        focusRing(close);
+        tip.appendChild(close);
 
         // Follow the field. The tip used to be positioned once, so on any
         // page long enough to scroll it stayed behind while the field it was
@@ -341,21 +406,61 @@ if (!w[FLAG]) {
         // be there instead.
         const place = (): void => {
           const rect = t.getBoundingClientRect();
-          tip.style.top = `${Math.max(8, rect.top - 56)}px`;
-          tip.style.left = `${Math.max(8, rect.left)}px`;
+          const vw = document.documentElement.clientWidth;
+          const vh = document.documentElement.clientHeight;
+          tip.style.maxWidth = `${Math.min(340, vw - 16)}px`;
+          const cardW = tip.offsetWidth;
+          const h = tip.offsetHeight;
+          const left = Math.max(8, Math.min(rect.left, vw - 8 - cardW));
+          tip.style.left = `${left}px`;
+          // Below the field if it fits, else above if it fits, else the side
+          // with more room; then keep the whole card inside the window.
+          const roomBelow = vh - 8 - (rect.bottom + 10);
+          const roomAbove = rect.top - 10 - 8;
+          const above = roomBelow >= h ? false : roomAbove >= h ? true : roomAbove > roomBelow;
+          const wanted = above ? rect.top - 10 - h : rect.bottom + 10;
+          const top = Math.max(8, Math.min(wanted, Math.max(8, vh - 8 - h)));
+          tip.style.top = `${top}px`;
+          // The caret shows only while the card sits next to the field on
+          // the chosen side.
+          const adjacent = above ? top + h <= rect.top - 4 : top >= rect.bottom + 4;
+          caret.style.display = adjacent ? "block" : "none";
+          // Point at the field even when the card was pushed in from an edge.
+          caret.style.left = `${Math.max(10, Math.min(rect.left + 16 - left, cardW - 22))}px`;
+          // Borders are inside the caret's 12 px box, drawn before rotation.
+          caret.style.borderStyle = "none";
+          caret.style.borderWidth = "0";
+          if (above) {
+            caret.style.top = "";
+            caret.style.bottom = "-7px";
+            caret.style.borderRight = edge;
+            caret.style.borderBottom = edge;
+          } else {
+            caret.style.bottom = "";
+            caret.style.top = "-7px";
+            caret.style.borderLeft = edge;
+            caret.style.borderTop = edge;
+          }
         };
-        place();
         const opts = { passive: true, capture: true } as const;
-        window.addEventListener("scroll", place, opts);
-        window.addEventListener("resize", place, opts);
+        let timer = 0;
         const drop = (): void => {
           window.removeEventListener("scroll", place, opts);
           window.removeEventListener("resize", place, opts);
+          clearTimeout(timer);
           tip.remove();
+          root.host.remove();
         };
+        close.addEventListener("click", (e) => {
+          if (!e.isTrusted) return;
+          drop();
+        });
 
         root.appendChild(tip);
-        setTimeout(drop, 8000);
+        place();
+        window.addEventListener("scroll", place, opts);
+        window.addEventListener("resize", place, opts);
+        timer = window.setTimeout(drop, 8000);
       },
       true,
     );
