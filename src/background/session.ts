@@ -2,7 +2,7 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The session's running list of risky hosts (for the popup's "This session"
-// drawer and the optional badge count). Session-scoped storage only: it
+// drawer). Session-scoped storage only: it
 // evaporates when the browser closes, is never synced, and never leaves
 // the device.
 

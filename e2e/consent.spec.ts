@@ -251,12 +251,12 @@ test("OneTrust-like banner: declined via the CMP's own reject handle; accept unt
   await expect.poll(winCount, { timeout: 5000 }).toBe(1);
 
   // One click per document, ever: nothing more happens, and the win is
-  // SILENT: no injected Whisper UI, nothing added to the verdict's badge, nothing to dismiss.
+  // SILENT: no injected Whisper UI, nothing added to the toolbar badge, nothing to dismiss.
   await page.waitForTimeout(700);
   expect(await clicks(page)).toEqual(["onetrust-reject-all-handler"]);
   expect(await winCount()).toBe(1);
   expect(await page.locator(OVERLAY).count()).toBe(0);
-  expect(await badgeText(ext, tabId)).toBe("\u2713");
+  expect(await badgeText(ext, tabId)).toBe("");
   await page.close();
 });
 

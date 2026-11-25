@@ -4,7 +4,7 @@
 // Launch the REAL built extension in Chromium and give tests first-class
 // access to its service worker: storage, tab lookup, and the per-tab icon
 // state. The icon state is read through chrome.action.getTitle, which the
-// icon painter sets last in every paint, after the tile and the badge, so
+// icon painter sets last in every paint, after the tile and the badge clear, so
 // title text is a faithful 1:1 readout of the painted icon without reaching
 // into internals.
 
@@ -309,20 +309,6 @@ export async function iconState(ext: Extension, tabId: number): Promise<IconStat
 /** The per-tab toolbar badge text ("" when the tab shows none). */
 export async function badgeText(ext: Extension, tabId: number): Promise<string> {
   return ext.sw.evaluate(async (id: number) => chrome.action.getBadgeText({ tabId: id }), tabId);
-}
-
-/** The per-tab badge ground and text colour, each as [r, g, b, a]. */
-export async function badgeColors(
-  ext: Extension,
-  tabId: number,
-): Promise<{ ground: number[]; ink: number[] }> {
-  return ext.sw.evaluate(async (id: number) => {
-    const [ground, ink] = await Promise.all([
-      chrome.action.getBadgeBackgroundColor({ tabId: id }),
-      chrome.action.getBadgeTextColor({ tabId: id }),
-    ]);
-    return { ground: Array.from(ground), ink: Array.from(ink) };
-  }, tabId);
 }
 
 /** Poll until the icon settles on one of the given states. */

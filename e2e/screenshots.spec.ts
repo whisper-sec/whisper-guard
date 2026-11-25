@@ -17,7 +17,6 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOOLBAR_BADGE } from "../src/shared/toolbar-badge";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
 import {
   launchExtension,
@@ -261,29 +260,22 @@ async function popupShot(
 }
 
 test("toolbar icon states strip", async () => {
-  // The badge is not part of a tile file and no test can capture a real
-  // toolbar, so each cell draws the badge as a chip BESIDE the small tiles,
-  // from the product's own table; it does not claim where a browser puts it.
+  // The symbol is drawn in each tile file; no test can capture a real toolbar,
+  // so each cell shows the tile files on a light and a dark ground.
   const cells: [IconState, string, string][] = [
-    ["benign", "BENIGN: green tile and ring, \u2713 badge", "no known threat (not a warranty)"],
-    ["suspicious", "SUSPICIOUS: amber tile and ring, ! badge", "be careful; look-alikes land here"],
-    ["malicious", "MALICIOUS: red tile, white mark, STOP badge", "evidenced threat; STOP"],
-    ["unknown", "UNKNOWN: dark tile, dashed outline, ? badge", "the honest common state"],
-    ["checking", "CHECKING: violet tile and ring, \u2026 badge", "verdict in flight (<300ms typical)"],
-    ["neutral", "NOT CHECKED: muted tile, no badge", "pages with no public hostname: browser pages, files, local addresses"],
-    ["signedout", "SIGNED OUT: dim mark, lock, no badge", "on-device protection still active"],
+    ["benign", "BENIGN: green tile and ring, check badge", "no known threat (not a warranty)"],
+    ["suspicious", "SUSPICIOUS: amber tile and ring, exclamation badge", "be careful; look-alikes land here"],
+    ["malicious", "MALICIOUS: red tile, white mark, stop-sign badge", "evidenced threat; STOP"],
+    ["unknown", "UNKNOWN: dark tile, dashed outline, question-mark badge", "the honest common state"],
+    ["checking", "CHECKING: violet tile and ring, three-dot badge", "verdict in flight (<300ms typical)"],
+    ["neutral", "NOT CHECKED: muted tile, no symbol", "pages with no public hostname: browser pages, files, local addresses"],
+    ["signedout", "SIGNED OUT: dim mark, lock", "on-device protection still active"],
   ];
-  const swatch = (s: IconState, ground: string): string => {
-    const badge = TOOLBAR_BADGE[s];
-    const chip = badge
-      ? `<span class="chip" style="background:${badge.ground};color:${badge.ink}">${badge.text}</span>`
-      : `<span class="nobadge">no badge</span>`;
-    return `<div class="swatch" style="background:${ground}">
+  const swatch = (s: IconState, ground: string): string =>
+    `<div class="swatch" style="background:${ground}">
         <img src="file://${ICONS}/${s}-16.png" width="16" height="16" alt="${s} 16px">
         <img src="file://${ICONS}/${s}-32.png" width="32" height="32" alt="${s} 32px">
-        ${chip}
       </div>`;
-  };
   const rows = cells
     .map(
       ([s, label, sub]) => `
@@ -302,11 +294,9 @@ test("toolbar icon states strip", async () => {
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;max-width:900px}
     .cell{background:#0d0d1a;border:1px solid #1e1e33;border-radius:12px;padding:18px;text-align:center}
     .swatch{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;padding:8px;border-radius:8px}
-    .chip{font:700 11px system-ui;padding:2px 6px;border-radius:9px;min-width:12px}
-    .nobadge{font:11px system-ui;color:#777790}
     .label{font-weight:600;margin-top:10px}
     .sub{color:#9a9ab0;font-size:12px;margin-top:4px}
-  </style><h1>Whisper Guard: toolbar states (128px tile; the 16px and 32px tiles on a light and a dark ground; the badge the browser draws on the tile)</h1><div class="grid">${rows}</div>`;
+  </style><h1>Whisper Guard: toolbar states (128px tile; the 16px and 32px tiles on a light and a dark ground; the symbol is drawn in the tile)</h1><div class="grid">${rows}</div>`;
   const tmp = join(mkdtempSync(join(tmpdir(), "whisper-guard-shots-")), "toolbar.html");
   writeFileSync(tmp, html);
   const page = await ext.context.newPage();

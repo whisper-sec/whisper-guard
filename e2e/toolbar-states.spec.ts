@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
-// Each toolbar state is a tile plus a short text badge, set in one paint with
-// the title last. The expected texts and colours are typed here on purpose:
-// the spec pins what a person sees, not what the product's own table says.
-// A browser toolbar cannot be read, so the badge is read back through the
-// extension API and the tile through the shipped PNG files.
+// Each toolbar state is a tile with its symbol drawn in; the badge text stays
+// empty and the title names the state in words. The badge is read back through
+// the extension API and the tile through the shipped PNG files. A browser
+// toolbar cannot be read.
 
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { E2ENetwork, MOCK_API_KEY } from "./helpers/servers";
 import {
-  badgeColors,
   badgeText,
   DIST_CHROMIUM,
   extensionPage,
@@ -32,14 +30,11 @@ const DIST_FIREFOX = join(DIST_CHROMIUM, "..", "firefox");
 let net: E2ENetwork;
 let ext: Extension;
 
-const WHITE = [255, 255, 255, 255];
-const DARK_INK = [6, 6, 12, 255];
-
-const CASES: { host: string; state: IconState; text: string; ground: number[]; ink: number[] }[] = [
-  { host: "badge-clean-guard-e2e.com", state: "benign", text: "✓", ground: [52, 211, 153, 255], ink: DARK_INK },
-  { host: "badge-medium-guard-e2e.com", state: "suspicious", text: "!", ground: [245, 158, 11, 255], ink: [28, 25, 23, 255] },
-  { host: "badge-critical-guard-e2e.com", state: "malicious", text: "STOP", ground: [184, 32, 42, 255], ink: WHITE },
-  { host: "badge-norow-guard-e2e.com", state: "unknown", text: "?", ground: [195, 195, 205, 255], ink: DARK_INK },
+const CASES: { host: string; state: IconState }[] = [
+  { host: "badge-clean-guard-e2e.com", state: "benign" },
+  { host: "badge-medium-guard-e2e.com", state: "suspicious" },
+  { host: "badge-critical-guard-e2e.com", state: "malicious" },
+  { host: "badge-norow-guard-e2e.com", state: "unknown" },
 ];
 
 const SLOW_HOST = "badge-slow-guard-e2e.com";
@@ -71,46 +66,38 @@ test.afterAll(async () => {
 });
 
 for (const c of CASES) {
-  test(`the ${c.state} badge stays with its tile, also on a second page of the same site`, async () => {
+  test(`the ${c.state} tile shows no badge text, also on a second page of the same site`, async () => {
     const { page, tabId } = await visit(ext, `https://${c.host}/`);
     await waitForIcon(ext, tabId, [c.state]);
-    expect(await badgeText(ext, tabId)).toBe(c.text);
-    expect(await badgeColors(ext, tabId)).toEqual({ ground: c.ground, ink: c.ink });
+    expect(await badgeText(ext, tabId)).toBe("");
 
     await navigateInTab(page, `https://${c.host}/second`);
     await waitForIcon(ext, tabId, [c.state]);
     // Past the navigation debounce, so a stale read of the first page cannot pass.
     await page.waitForTimeout(600);
     expect(await iconState(ext, tabId)).toBe(c.state);
-    expect(await badgeText(ext, tabId)).toBe(c.text);
-    expect(await badgeColors(ext, tabId)).toEqual({ ground: c.ground, ink: c.ink });
+    expect(await badgeText(ext, tabId)).toBe("");
     await page.close();
   });
 }
 
-test("a tab being checked shows the checking badge and then its verdict's badge", async () => {
+test("a tab being checked shows the checking tile and then its verdict's tile, with no badge text", async () => {
   net.assessDelayMs.set(SLOW_HOST, 2000);
   const { page, tabId } = await visit(ext, `https://${SLOW_HOST}/`);
   await waitForIcon(ext, tabId, ["checking"]);
-  expect(await badgeText(ext, tabId)).toBe("…");
-  expect((await badgeColors(ext, tabId)).ground).toEqual([125, 92, 224, 255]);
+  expect(await badgeText(ext, tabId)).toBe("");
 
   await waitForIcon(ext, tabId, ["benign"]);
-  expect(await badgeText(ext, tabId)).toBe("✓");
+  expect(await badgeText(ext, tabId)).toBe("");
   await page.close();
 });
 
 test("a page that is not checked has no badge", async () => {
   const { page, tabId } = await visit(ext, `https://${MOVING_HOST}/`);
   await waitForIcon(ext, tabId, ["benign"]);
-  expect(await badgeText(ext, tabId)).toBe("✓");
 
   await navigateInTab(page, `chrome-extension://${ext.id}/options.html`);
-  const deadline = Date.now() + 8000;
-  while (Date.now() < deadline) {
-    if ((await badgeText(ext, tabId)) === "" && (await iconState(ext, tabId)) === "neutral") break;
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  await waitForIcon(ext, tabId, ["neutral"]);
   // Sampled past the debounce: the default title equals this state's title,
   // so only samples taken after the paint prove it.
   const seen = new Set<string>();
@@ -123,10 +110,10 @@ test("a page that is not checked has no badge", async () => {
   await page.close();
 });
 
-test("the badge is cleared when a tab moves to a state without one and no page loads", async () => {
+test("the badge text stays empty when a tab moves to another state and no page loads", async () => {
   const { page, tabId } = await visit(ext, `https://${SWITCH_HOST}/`);
   await waitForIcon(ext, tabId, ["benign"]);
-  expect(await badgeText(ext, tabId)).toBe("✓");
+  expect(await badgeText(ext, tabId)).toBe("");
 
   const via = await extensionPage(ext);
   try {
@@ -182,29 +169,55 @@ function expectColour(px: Px, hex: string, tol: number, what: string): void {
   expect(Math.abs(px.b - b), `${what}: blue (${px.b})`).toBeLessThanOrEqual(tol);
 }
 
-const TILES: { state: IconState; ground: string; edge: string }[] = [
-  { state: "benign", ground: "#0c3d2e", edge: "#10b981" },
-  { state: "suspicious", ground: "#4a3105", edge: "#f59e0b" },
-  { state: "malicious", ground: "#b8202a", edge: "#b8202a" },
-  { state: "unknown", ground: "#1a1a2e", edge: "#8888a0" },
-  { state: "checking", ground: "#1d1240", edge: "#7d5ce0" },
-  { state: "neutral", ground: "#1a1a2e", edge: "#1a1a2e" },
+// The five verdict tiles are inset: column 0 of the 32 px tile (and of the 16 px
+// tile, half) is transparent, the rim starts at column 2, and the ground sits
+// inside it. Coordinates were read from the shipped files. `ink` is the mark
+// colour and `badge` the ground of the drawn symbol in the tile's corner.
+interface Tile {
+  state: IconState;
+  ground: string;
+  /** The ring (rim) colour read at 32 px (2, 16); equal to the ground where there is none. */
+  rim: string;
+  /** Ground of the drawn symbol, at 32 px. */
+  badge: { at: [number, number]; hex: string };
+  /** Mark colour at 128 px (52, 40). */
+  ink: string;
+}
+
+const TILES: Tile[] = [
+  { state: "benign", ground: "#0b2a22", rim: "#10b981", badge: { at: [22, 22], hex: "#34d399" }, ink: "#9b7cf0" },
+  { state: "suspicious", ground: "#4a3105", rim: "#f59e0b", badge: { at: [22, 22], hex: "#f59e0b" }, ink: "#9b7cf0" },
+  { state: "malicious", ground: "#b8202a", rim: "#b8202a", badge: { at: [22, 22], hex: "#ef4444" }, ink: "#ffffff" },
+  { state: "unknown", ground: "#1a1a2e", rim: "#8888a0", badge: { at: [23, 26], hex: "#c3c3cd" }, ink: "#ffffff" },
+  { state: "checking", ground: "#1d1240", rim: "#7d5ce0", badge: { at: [22, 22], hex: "#7d5ce0" }, ink: "#9b7cf0" },
 ];
 
 for (const t of TILES) {
-  test(`the ${t.state} tile carries its ground and its outline at 16 and 32 px`, async () => {
-    const [edge32, ground32] = await readTile(`icons/${t.state}-32.png`, [[0, 16], [3, 16]]);
-    expectColour(edge32!, t.edge, 20, "32 px, left edge");
-    expectColour(ground32!, t.ground, 20, "32 px, inside the outline");
-    const [ground16] = await readTile(`icons/${t.state}-16.png`, [[1, 8]]);
-    expectColour(ground16!, t.ground, 32, "16 px, inside the outline");
+  test(`the ${t.state} tile carries its ground, rim, drawn symbol and mark at 16 and 32 px`, async () => {
+    const [outside32, rim32, ground32, badge32] = await readTile(`icons/${t.state}-32.png`, [[0, 16], [2, 16], [5, 16], t.badge.at]);
+    expect(outside32!.a, "32 px, column 0 is transparent").toBe(0);
+    expectColour(rim32!, t.rim, 20, "32 px, rim");
+    expectColour(ground32!, t.ground, 20, "32 px, inside the rim");
+    expectColour(badge32!, t.badge.hex, 20, "32 px, drawn symbol ground");
+    const [ground16] = await readTile(`icons/${t.state}-16.png`, [[2, 8]]);
+    expectColour(ground16!, t.ground, 32, "16 px, inside the rim");
+    const [mark128] = await readTile(`icons/${t.state}-128.png`, [[52, 40]]);
+    expectColour(mark128!, t.ink, 20, "128 px, mark");
   });
 }
 
-test("the unknown outline is dashed: a dash on the top edge, ground in the gap", async () => {
-  const [dash, gap] = await readTile("icons/unknown-32.png", [[16, 0], [10, 0]]);
-  expectColour(dash!, "#8888a0", 20, "top edge, middle");
-  expectColour(gap!, "#1a1a2e", 20, "top edge, in a gap");
+test("the not-checked tile carries its ground to the edge at 16 and 32 px", async () => {
+  const [edge32, ground32] = await readTile("icons/neutral-32.png", [[0, 16], [3, 16]]);
+  expectColour(edge32!, "#1a1a2e", 20, "32 px, left edge");
+  expectColour(ground32!, "#1a1a2e", 20, "32 px, inside");
+  const [ground16] = await readTile("icons/neutral-16.png", [[1, 8]]);
+  expectColour(ground16!, "#1a1a2e", 32, "16 px, inside");
+});
+
+test("the unknown outline is dashed: a dash on the top rim, ground in the gap", async () => {
+  const [dash, gap] = await readTile("icons/unknown-32.png", [[9, 2], [13, 2]]);
+  expectColour(dash!, "#8888a0", 20, "row 2, in a dash");
+  expectColour(gap!, "#1a1a2e", 20, "row 2, in a gap");
 });
 
 test("the not-checked tile is not the listing icon", () => {
