@@ -215,3 +215,59 @@ export const SCROLL_TO_BUTTONS_FN = `function () {
     overflowY: getComputedStyle(this.getElementById("w-overlay")).overflowY,
     vw: document.documentElement.clientWidth, vh: document.documentElement.clientHeight };
 }`;
+
+/** What the field caution tests read from inside the closed root. */
+export interface CautionSnapshot {
+  role: string | null;
+  childTags: string[];
+  card: {
+    rect: Rect;
+    backgroundColor: string;
+    borderWidth: string;
+    borderColor: string;
+    borderStyle: string;
+    borderRadius: string;
+    position: string;
+  };
+  sentence: { text: string; fontSize: string; fontWeight: string; color: string; strongText: string | null; strongColor: string | null };
+  caret: {
+    rect: Rect;
+    backgroundColor: string;
+    borders: { top: string; right: string; bottom: string; left: string };
+  } | null;
+  dismiss: { label: string | null; type: string | null; rect: Rect } | null;
+  markAlt: string | null;
+}
+
+/** The caution card, its caret, sentence and close button, in one round trip. */
+export const CAUTION_FN = `function () {
+  const rect = (el) => { const b = el.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height }; };
+  const card = this.getElementById("w-caution");
+  if (!card) return null;
+  const cs = getComputedStyle(card);
+  const sentence = this.getElementById("w-caution-text");
+  const ss = sentence ? getComputedStyle(sentence) : null;
+  const strong = sentence ? sentence.querySelector("strong") : null;
+  const caretEl = this.getElementById("w-caution-caret");
+  const cc = caretEl ? getComputedStyle(caretEl) : null;
+  const close = this.getElementById("w-caution-close");
+  const mark = card.querySelector("img");
+  return {
+    role: card.getAttribute("role"),
+    childTags: Array.from(card.children).filter((c) => c.id !== "w-caution-caret").map((c) => c.tagName.toLowerCase()),
+    card: { rect: rect(card), backgroundColor: cs.backgroundColor, borderWidth: cs.borderTopWidth, borderColor: cs.borderTopColor,
+      borderStyle: cs.borderTopStyle, borderRadius: cs.borderTopLeftRadius, position: cs.position },
+    sentence: sentence ? { text: (sentence.textContent || "").trim(), fontSize: ss.fontSize, fontWeight: ss.fontWeight, color: ss.color,
+      strongText: strong ? strong.textContent : null, strongColor: strong ? getComputedStyle(strong).color : null } : null,
+    caret: caretEl ? { rect: rect(caretEl), backgroundColor: cc.backgroundColor,
+      borders: { top: cc.borderTopWidth, right: cc.borderRightWidth, bottom: cc.borderBottomWidth, left: cc.borderLeftWidth } } : null,
+    dismiss: close ? { label: close.getAttribute("aria-label"), type: close.getAttribute("type"), rect: rect(close) } : null,
+    markAlt: mark ? mark.getAttribute("alt") : null,
+  };
+}`;
+
+/** Click the caution's close button with a real (trusted) click, at its centre. */
+export const CLOSE_CENTRE_FN = `function () {
+  const b = this.getElementById("w-caution-close").getBoundingClientRect();
+  return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+}`;
