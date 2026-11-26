@@ -41,7 +41,8 @@ export type BgRequest =
   // worker reads the address itself.
   | { kind: "checkTab"; tabId: number }
   | { kind: "getSession" }
-  | { kind: "getBlock"; host: string }
+  // `rule` is the value the block rule's redirect put in the page's address, if any.
+  | { kind: "getBlock"; host: string; rule?: string }
   | { kind: "getSettings" }
   | { kind: "setSettings"; patch: Partial<Settings> }
   | { kind: "signInStart" }
@@ -209,7 +210,9 @@ export type BgResponse =
   | { ok: true; hosts: string[] } // the session block ledger (listBlocked)
   // Whether Guard stopped this host this session, and the brand its own
   // on-device check found for it (null when none, and when not blocked).
-  | { ok: true; block: { blocked: boolean; brand: string | null; brandDomain: string | null } }
+  // `beforeLoad` is true only when the host is blocked and the page arrived
+  // through the block rule's redirect, which fires before any request leaves.
+  | { ok: true; block: { blocked: boolean; brand: string | null; brandDomain: string | null; beforeLoad: boolean } }
   | { ok: true }
   | { ok: false; error: string; nokey?: boolean; nohost?: boolean; exhausted?: boolean };
 

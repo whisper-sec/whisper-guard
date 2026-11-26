@@ -128,7 +128,7 @@ function detailLine(text: string): HTMLElement {
   return el;
 }
 
-function rungEl(r: ChainRung, index: number, host?: string): HTMLElement {
+function rungEl(r: ChainRung, index: number, host?: string, emptyText?: string): HTMLElement {
   const row = document.createElement("li");
   row.className = `ch-rung${STATE_CLASS[r.state]}${TONE_CLASS[r.tone]}`;
   // The stagger is a CSS custom property rather than a per-element
@@ -150,9 +150,12 @@ function rungEl(r: ChainRung, index: number, host?: string): HTMLElement {
 
   const value = document.createElement("span");
   value.className = "ch-value";
-  value.textContent = r.value ?? "-";
+  // A join the graph answered with nothing may be worded by the caller, so a
+  // surface can say the one thing it means; the three states stay distinct.
+  const said = r.state === "empty" && emptyText !== undefined ? emptyText : r.value;
+  value.textContent = said ?? "-";
   // The full string for a name too long for 400 pixels.
-  if (r.value) value.title = r.value;
+  if (said) value.title = said;
 
   body.append(label, value);
 
@@ -193,6 +196,8 @@ export interface ChainViewOptions {
   completeness?: boolean;
   /** Let rungs expand. Default true; pass false for a static capture. */
   expandable?: boolean;
+  /** The words for a join the graph answered with nothing. Default: each rung's own. */
+  emptyText?: string;
 }
 
 /**
@@ -234,7 +239,7 @@ export function renderChain(
   const list = document.createElement("ol");
   list.className = "ch-spine";
   const host = opts.expandable === false ? undefined : chain.host;
-  chain.rungs.forEach((r, i) => list.appendChild(rungEl(r, i, host)));
+  chain.rungs.forEach((r, i) => list.appendChild(rungEl(r, i, host, opts.emptyText)));
   frag.appendChild(list);
 
   // The graph's own account of how it made the vendor attribution. Shown

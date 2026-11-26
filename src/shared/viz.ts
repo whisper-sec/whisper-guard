@@ -5,7 +5,7 @@
 //
 // Every label-and-value pair on a security surface is a question the page
 // declined to answer: what is the PICTURE of that fact? These are the
-// answers. Nine primitives, each one a shape whose geometry carries a real
+// answers. Eight primitives, each one a shape whose geometry carries a real
 // measurement, so a reader sees the size of a thing before reading its
 // number.
 //
@@ -666,130 +666,7 @@ export function flowJoin(
 }
 
 // ===========================================================================
-// 7. chainSpine - the seven-rung join path as a drawn path
-// ===========================================================================
-
-export interface SpineRung {
-  label: string;
-  /** live | empty | unavailable, drawn as three different marks. */
-  state: "live" | "empty" | "unavailable";
-  tone?: Tone;
-  /** Set on the rung that carries the finding, drawn larger. */
-  pivotal?: boolean;
-}
-
-export interface ChainSpineOptions {
-  width?: number;
-  title?: string;
-  /** Draw horizontally (the wide surfaces) rather than vertically. */
-  horizontal?: boolean;
-}
-
-/**
- * The seven rungs as a graphic, distinct from the row list that carries the
- * values. It exists for the surfaces where the whole chain must land in one
- * glance and there is no room for seven rows: a reader sees how far the
- * walk got, where it broke, and which rung carries the risk, before reading
- * a single word.
- *
- * The three states get three MARKS, not three colours: a filled node, a
- * hollow node, and a cross. Colour alone cannot carry a distinction this
- * load-bearing, because roughly one reader in twelve will not see it.
- */
-export function chainSpine(rungs: SpineRung[], opts: ChainSpineOptions = {}): SVGSVGElement | null {
-  if (rungs.length < 2) return null;
-  const w = opts.width ?? 280;
-  const h = opts.horizontal === false ? rungs.length * 20 : 40;
-  const svg = frame(w, h, opts.title);
-
-  const padX = 10;
-  const y = 14;
-  const step = (w - padX * 2) / (rungs.length - 1);
-
-  rungs.forEach((r, i) => {
-    if (i === rungs.length - 1) return;
-    const next = rungs[i + 1];
-    const broken = r.state !== "live" || next?.state !== "live";
-    const seg = svgEl("line");
-    attrs(seg, {
-      x1: padX + i * step, y1: y, x2: padX + (i + 1) * step, y2: y,
-      stroke: broken ? "var(--w-line)" : "var(--w-accent-line)",
-      "stroke-width": broken ? 1 : 1.75,
-      ...(broken ? { "stroke-dasharray": "2 2" } : {}),
-    });
-    svg.appendChild(seg);
-  });
-
-  rungs.forEach((r, i) => {
-    const x = padX + i * step;
-    const tone = TONE_VAR[r.tone ?? "accent"];
-    const rad = r.pivotal ? 5.5 : 3.75;
-    // The element the tooltip belongs to, tracked explicitly. It used to be
-    // taken as svg.lastElementChild, which on a pivotal live rung is the
-    // HALO drawn after the node, so the hover target and the mark the
-    // reader is pointing at were different elements.
-    let node: SVGElement;
-    if (r.state === "unavailable") {
-      // A cross, because "we could not read this" must never look like a
-      // quiet node. This is the state that becomes an outage rendering as
-      // safety when it is drawn the same as a value.
-      const g = svgEl("g");
-      for (const [dx, dy] of [[-3, -3], [-3, 3]] as const) {
-        const l = svgEl("line");
-        attrs(l, {
-          x1: x + dx, y1: y + dy, x2: x - dx, y2: y - dy,
-          stroke: "var(--w-v-low)", "stroke-width": 1.5, "stroke-linecap": "round",
-        });
-        g.appendChild(l);
-      }
-      svg.appendChild(g);
-      node = g;
-    } else {
-      const c = svgEl("circle");
-      attrs(c, {
-        cx: x, cy: y, r: rad,
-        fill: r.state === "live" ? tone : "var(--w-bg)",
-        stroke: r.state === "live" ? "none" : "var(--w-line-strong)",
-        "stroke-width": 1.25,
-      });
-      svg.appendChild(c);
-      node = c;
-      if (r.pivotal && r.state === "live") {
-        const halo = svgEl("circle");
-        attrs(halo, {
-          cx: x, cy: y, r: rad + 3, fill: "none", stroke: tone,
-          "stroke-width": 1, opacity: 0.45,
-        });
-        svg.appendChild(halo);
-      }
-    }
-    const tt = svgEl("title");
-    tt.textContent = `${r.label}: ${r.state}`;
-    node.appendChild(tt);
-
-    const t = svgEl("text");
-    // The end labels anchor to their own edge rather than to their node.
-    // Centred, the first and last labels run off the viewBox and are
-    // silently clipped, which turned "PRESENT AT" into "PRESENT" - a
-    // shortened label that still reads as a whole word is the worst kind
-    // of truncation, because nothing about it looks wrong.
-    const first = i === 0;
-    const last = i === rungs.length - 1;
-    attrs(t, {
-      x: first ? 0 : last ? w : x,
-      y: h - 8,
-      "text-anchor": first ? "start" : last ? "end" : "middle",
-      fill: r.pivotal ? "var(--w-text)" : "var(--w-muted)",
-      "font-size": 6.5, "letter-spacing": "0.06em",
-    });
-    t.textContent = r.label.toUpperCase();
-    svg.appendChild(t);
-  });
-  return svg;
-}
-
-// ===========================================================================
-// 8. countMarks - a small count drawn as the count, one mark per thing
+// 7. countMarks - a small count drawn as the count, one mark per thing
 // ===========================================================================
 
 /** Past this many marks the eye stops counting and the picture starts
@@ -845,7 +722,7 @@ export function countMarks(n: number, opts: CountMarksOptions = {}): SVGSVGEleme
 }
 
 // ===========================================================================
-// 9. pulseTrack - the live one, and honest when nothing is arriving
+// 8. pulseTrack - the live one, and honest when nothing is arriving
 // ===========================================================================
 
 export interface PulseTrackOptions {

@@ -6,20 +6,21 @@
 // verdict (novel-bad). Back always works, Escape works, and the page never
 // traps: for a block Guard made, continue-anyway is one honest click.
 //
-// THE ARGUMENT IS NOW DRAWN.
+// THE ARGUMENT IS SHOWN, NOT ASSERTED.
 //
-// This page is the one moment the whole product exists for, and it used to
-// make its entire case in a four-row label-and-value table. That is the
-// weakest possible form for it, because the reader standing here is deciding
-// whether to believe us and click through anyway, and a table of four
-// strings is indistinguishable from any blocklist's opinion.
+// This page is the one moment the whole product exists for, and the reader
+// standing here is deciding whether to believe us and click through anyway.
+// A blocklist entry is one hop and reads as an opinion. What we have that a
+// blocklist does not is the JOIN, so the join is what this page shows: the
+// walk from the name to the building as a spine of seven bars and as rows,
+// and the facts that decide most of these cases as three figures a reader
+// takes in at a glance: how new the name is, how many other hosts around it
+// are already flagged, and how many reasons the graph cites.
 //
-// What we have that a blocklist does not is the JOIN. So the join is what
-// this page shows: the walk from the name to the building, drawn as a spine
-// the reader can take in at a glance and read down for the values, with the
-// two facts that decide most of these cases (how new the name is, how much
-// of its neighbourhood is already flagged) drawn as quantities rather than
-// written as numbers.
+// The words claim only what Guard knows. "Listed for credential phishing" is
+// said only when the graph's own threat label says phishing, and "nothing on
+// it has loaded" only when the page was reached through the block rule that
+// redirects before any request leaves.
 //
 // Everything here is best-effort and says so. The block stands on its own
 // if the graph is unreachable, and "we could not read this" never renders
@@ -27,8 +28,6 @@
 
 import { send, type BgResponse } from "../shared/messages";
 import { renderChain } from "../shared/chain-view";
-import { countMarks, ratioBar } from "../shared/viz";
-import { chainSpine, type SpineRung } from "../shared/viz";
 import type { Protection, SiteChain } from "../shared/types";
 
 const params = new URLSearchParams(window.location.search);
@@ -36,10 +35,13 @@ const named = (params.get("host") ?? "").toLowerCase();
 /** Only a value shaped like a hostname is treated as one, and shown. */
 const host = /^[a-z0-9._:[\]-]{1,253}$/.test(named) ? named : "";
 
-/** The age below which the product itself calls a name brand new. Drawn as
- *  a marker on the age scale so the reader sees the threshold, not just the
- *  verdict it produced. */
+/** The age below which the product itself calls a name brand new. A name
+ *  younger than this is drawn in the hot ink. */
 const NEW_DOMAIN_DAYS = 32;
+
+/** The value the block rule's redirect put in this address, if any. It is
+ *  only sent to the background, which says whether it is the real one. */
+const ruleValue = params.get("rule") ?? "";
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 
@@ -81,6 +83,7 @@ const mainEl = document.querySelector("main") as HTMLElement;
 const continueBtn = $("btn-continue") as HTMLButtonElement;
 const backBtn = $("btn-back");
 const realBtn = $("btn-real") as HTMLAnchorElement;
+const bandEl = $("band");
 const framed = window.top !== window.self;
 
 function setHeading(lines: string[]): void {
@@ -88,30 +91,96 @@ function setHeading(lines: string[]): void {
   h.replaceChildren(...lines.flatMap((l, i) => (i === 0 ? [l] : [document.createElement("br"), l])));
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** The stop sign: an octagon with a bar. Drawn here, not shipped as an
+ *  image, so its colours are the theme's. */
+function stopSign(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", "96");
+  svg.setAttribute("height", "96");
+  svg.setAttribute("viewBox", "0 0 96 96");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Stop");
+  const OCTAGON = "M30 4h36l26 26v36L66 92H30L4 66V30z";
+  const fill = document.createElementNS(SVG_NS, "path");
+  fill.setAttribute("d", OCTAGON);
+  fill.setAttribute("class", "stop-fill");
+  const edge = document.createElementNS(SVG_NS, "path");
+  edge.setAttribute("d", OCTAGON);
+  edge.setAttribute("class", "stop-edge");
+  const bar = document.createElementNS(SVG_NS, "rect");
+  bar.setAttribute("x", "26");
+  bar.setAttribute("y", "44");
+  bar.setAttribute("width", "44");
+  bar.setAttribute("height", "8");
+  bar.setAttribute("rx", "2");
+  bar.setAttribute("class", "stop-bar");
+  svg.append(fill, edge, bar);
+  return svg;
+}
+
 /** Show a state with nothing of the block in it. No evidence, no way past. */
 function showNeutral(state: Exclude<PageState, "stopped">): void {
   const t = NEUTRAL[state];
-  $("glyph").textContent = "\u24D8";
+  $("glyph").textContent = "ⓘ";
   setHeading([t.heading]);
   $("detail").textContent = t.detail;
   $("privacy").textContent = t.privacy;
   continueBtn.textContent = t.cont;
   continueBtn.disabled = true;
-  backBtn.textContent = "\u2190 Go back";
+  backBtn.textContent = "← Go back";
   realBtn.hidden = true;
+  bandEl.hidden = true;
   $("evidence").hidden = true;
   mainEl.dataset["state"] = state;
 }
 
+/** What the background told us about the block, kept so the sentence can be
+ *  worded again when the graph's own label arrives. */
+let blockBrand: string | null = null;
+let blockBrandDomain: string | null = null;
+/** The graph's threat label, once read. Null until then, and when it has none. */
+let threatLabel: string | null = null;
+
+/** The first sentence says only what Guard knows. A brand the background
+ *  found wins; "credential phishing" needs the graph's own label to say
+ *  phishing. The category of the host's vendor says nothing about threats and
+ *  is never used here. */
+function claim(): string {
+  if (blockBrandDomain) return ` is flagged as a known threat impersonating ${blockBrand ?? blockBrandDomain}.`;
+  if (threatLabel !== null && /phish/i.test(threatLabel)) {
+    return " is listed for credential phishing in the Whisper security graph.";
+  }
+  return " is flagged as a known threat in the Whisper security graph.";
+}
+
+/** The second sentence. "Nothing on it has loaded" is said only when the
+ *  background confirmed the page arrived through the block rule's redirect,
+ *  which fires before any request leaves. The address alone never decides it. */
+let beforeLoad = false;
+function reach(): string {
+  return beforeLoad ? " Nothing on it has loaded." : " It was blocked before any credentials could be entered.";
+}
+
+function renderDetail(): void {
+  const name = document.createElement("span");
+  name.className = "host";
+  name.textContent = host;
+  $("detail").replaceChildren(name, claim() + reach());
+}
+
 /** The stop, as before. `brand` and `brandDomain` are the background's own. */
-function showStopped(brand: string | null, brandDomain: string | null): void {
-  $("glyph").textContent = "\u2B22";
+function showStopped(brand: string | null, brandDomain: string | null, confirmedBeforeLoad: boolean): void {
+  beforeLoad = confirmedBeforeLoad;
+  blockBrand = brand;
+  blockBrandDomain = brandDomain;
+  threatLabel = null;
+  $("glyph").replaceChildren(stopSign());
   setHeading(["Whisper stopped a dangerous page", "before you could enter your password."]);
-  $("detail").textContent = brandDomain
-    ? `${host} is flagged as a known threat impersonating ${brand ?? brandDomain}. It was blocked before any credentials could be entered.`
-    : `${host} is flagged as a known threat in the Whisper security graph. It was blocked before any credentials could be entered.`;
-  $("privacy").textContent = `Privacy: only "${host}" was checked. Your browsing stays yours.`;
-  backBtn.textContent = "\u2190 Back to safety";
+  renderDetail();
+  $("privacy").textContent = `Privacy: only “${host}” was checked.`;
+  backBtn.textContent = "← Back to safety";
   if (brandDomain) {
     realBtn.hidden = false;
     realBtn.textContent = `Go to the real ${brandDomain}`;
@@ -120,6 +189,21 @@ function showStopped(brand: string | null, brandDomain: string | null): void {
   continueBtn.textContent = "I understand the risk, continue anyway";
   continueBtn.disabled = false;
   mainEl.dataset["state"] = "stopped";
+  // Back to safety is the default action: Enter takes it. Focus moves only
+  // once the actions are shown, which the state above does.
+  backBtn.focus();
+}
+
+/** The band line: the graph's own label and band, nothing it did not say. */
+function showBand(p: Protection): void {
+  // A band of UNKNOWN or NONE is the graph saying it has nothing to rate, so
+  // it is left out; the label, if the graph gave one, still shows alone.
+  const label = p.label?.trim() ?? "";
+  const rated = p.band !== "UNKNOWN" && p.band !== "NONE";
+  const parts = [label.toUpperCase(), rated ? p.band : ""].filter((x) => x !== "");
+  if (parts.length === 0) return;
+  bandEl.textContent = parts.join(" · ");
+  bandEl.hidden = false;
 }
 
 function backToSafety(): void {
@@ -148,107 +232,72 @@ continueBtn.addEventListener("click", async () => {
   }
 });
 
-// ------------------------------------------------------------ drawn metrics
+// ------------------------------------------------------------ the figures
 
-/** One drawn metric: an eyebrow, the mark, and the words for the mark. */
-function metric(box: HTMLElement, label: string, mark: SVGElement | null, caption: string, tone?: string): void {
-  const head = document.createElement("div");
-  head.className = "ev-metric-label";
-  head.textContent = label;
-  const cap = document.createElement("div");
-  cap.className = tone ? `ev-metric-cap ${tone}` : "ev-metric-cap";
-  cap.textContent = caption;
-  const kids: (HTMLElement | SVGElement)[] = [head];
-  if (mark) {
-    const wrap = document.createElement("div");
-    wrap.className = "ev-metric-mark";
-    wrap.appendChild(mark);
-    kids.push(wrap);
+/** One figure in a well: a large number over the words for it. A well with no
+ *  figure carries only its words. */
+function figure(box: HTMLElement, value: string | null, caption: string, hot: boolean): HTMLElement {
+  const kids: HTMLElement[] = [];
+  if (value !== null) {
+    const fig = document.createElement("div");
+    fig.className = hot ? "ev-figure hot" : "ev-figure";
+    fig.textContent = value;
+    kids.push(fig);
   }
+  const cap = document.createElement("div");
+  cap.className = "ev-caption";
+  cap.textContent = caption;
   kids.push(cap);
   box.replaceChildren(...kids);
   box.hidden = false;
+  return box;
 }
 
-/**
- * How new the name is, drawn against a year with the product's own
- * threshold marked.
- *
- * The scale is a year rather than a fitted distribution, because a
- * distribution of global domain ages is not something this extension has
- * measured and a chart shaped from a number we made up would be exactly the
- * defect this page exists to prevent. A year is a unit the reader already
- * owns, and sixteen days against it is a nub: the picture makes the case
- * without anyone having to trust a curve.
- */
+const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
+
+/** How long since the name was registered, in the hot ink when it is younger
+ *  than the product's own threshold for a new name. Shown only when read. */
 function drawAge(ageDays: number | null): void {
-  const box = $("ev-age");
   if (ageDays === null || !Number.isFinite(ageDays)) return;
-  const fresh = ageDays < NEW_DOMAIN_DAYS;
-  const bar = ratioBar(Math.min(ageDays, 365), 365, {
-    width: 150,
-    height: 7,
-    tone: fresh ? "hot" : "neutral",
-    marker: NEW_DOMAIN_DAYS / 365,
-  });
-  // The threshold the tick marks is explained in the visible caption rather
-  // than in an accessible name, so everyone gets it and not only a screen
-  // reader. The bar carries no name of its own: the words are right here.
-  metric(
-    box,
-    "Age of the name",
-    bar,
-    ageDays >= 365
-      ? "over a year old, against the year this bar spans"
-      : `${ageDays} day${ageDays === 1 ? "" : "s"} old, against a year. The tick is ${NEW_DOMAIN_DAYS} days` +
-        (fresh ? "; phishing lives on this side of it." : "."),
-    fresh ? "hot" : undefined,
+  figure(
+    $("ev-age"),
+    `${ageDays} ${plural(ageDays, "day", "days")}`,
+    "since the name was registered",
+    ageDays < NEW_DOMAIN_DAYS,
   );
 }
 
-/**
- * The flagged neighbourhood, drawn as one mark per flagged host.
- *
- * This is the fact that most often turns a reader's "it is probably a false
- * positive" into "that is not a coincidence", and it is the one a blocklist
- * structurally cannot produce: it needs the address, the prefix that routes
- * it, and the verdicts on everything else in that prefix.
- */
+/** The other hosts in the same prefix that are already flagged: the fact that
+ *  most often turns "probably a false positive" into "not a coincidence". It
+ *  is a count of hosts, not of addresses. */
 function drawNeighbours(count: number | null, prefix: string | null): void {
-  const box = $("ev-neighbours");
   if (count === null || !Number.isFinite(count) || count <= 0) return;
-  const marks = countMarks(count, { perRow: 12, size: 6, tone: "hot" });
-  metric(
-    box,
-    "Its neighbourhood",
-    marks,
-    `${count} other flagged host${count === 1 ? "" : "s"}${prefix ? ` in ${prefix}` : " on this prefix"}`,
-    "hot",
+  figure(
+    $("ev-neighbours"),
+    String(count),
+    `other flagged ${plural(count, "host", "hosts")}${prefix ? ` in ${prefix}` : " on this prefix"}`,
+    true,
   );
 }
 
 /**
- * Why it is listed, drawn as one mark per reason the graph gave.
+ * Why it is listed: the number of reasons the graph cited, with the reasons
+ * under it.
  *
- * These are REASONS, not sources. An earlier draft of this counted them and
- * called them "independent citations", which was an overclaim in the one
- * place the product must not make one: two of these strings can be two
- * sentences about the same feed, and calling that two independent
- * confirmations is exactly the kind of inflation a reader is right to stop
- * believing us over. The count is the count of reasons given, and the
- * reasons are listed so a reader can see for themselves what they are.
+ * These are REASONS, not sources. Two of these strings can be two sentences
+ * about the same feed, so counting them as feeds or as independent
+ * confirmations would inflate the case in the one place the product must not.
+ * The count is the count of reasons given, and the reasons are listed so a
+ * reader can see for themselves what they are.
  */
 function drawReasons(why: string[]): void {
-  const box = $("ev-feeds");
   const reasons = why.map((w) => w.trim()).filter((w) => w.length > 0);
   if (reasons.length === 0) return;
-  const marks = countMarks(reasons.length, { perRow: 12, size: 6, tone: "hot" });
-  metric(
-    box,
-    "Why it is listed",
-    marks,
-    `${reasons.length} reason${reasons.length === 1 ? "" : "s"} cited by the graph`,
-    "hot",
+  const box = figure(
+    $("ev-feeds"),
+    `${reasons.length} ${plural(reasons.length, "reason", "reasons")}`,
+    "cited by the graph",
+    true,
   );
   const list = document.createElement("ul");
   list.className = "ev-feedlist";
@@ -260,25 +309,41 @@ function drawReasons(why: string[]): void {
   box.appendChild(list);
 }
 
-/** The seven rungs as one glance: how far the walk got and where it broke. */
-function drawSpine(chain: SiteChain): void {
-  const rungs: SpineRung[] = chain.rungs.map((r) => ({
-    label: r.label,
-    state: r.state,
-    tone: r.tone === "hot" ? "hot" : r.tone === "warn" ? "warn" : "accent",
-    pivotal: r.tone !== "neutral",
-  }));
-  // Decorative: the completeness readout beside it and the rungs below say
-  // the same thing in words, and a graphic that repeats its own caption to
-  // a screen reader is noise.
-  const svg = chainSpine(rungs, { width: 460 });
-  if (svg) $("ev-spine").replaceChildren(svg);
+// ------------------------------------------------------------ the spine
 
+/**
+ * The joins as one glance: a bar for each, in the order of the chain, coloured
+ * by what the join found. A join that could not be read is hollow and dashed,
+ * which is not how a join that holds nothing looks, so an outage is never
+ * drawn as a quiet result. The counter and the rows say the same in words, so
+ * the bars are hidden from assistive technology.
+ */
+function drawSpine(chain: SiteChain): void {
+  const cells = chain.rungs.map((r) => {
+    const cell = document.createElement("div");
+    cell.className = "ev-cell";
+    const bar = document.createElement("div");
+    bar.className = "ev-bar";
+    bar.dataset["state"] = r.state;
+    bar.dataset["tone"] = r.tone;
+    const label = document.createElement("span");
+    label.className = "ev-bar-label";
+    label.textContent = r.label;
+    cell.append(bar, label);
+    return cell;
+  });
+  const grid = $("ev-spine");
+  grid.style.setProperty("--ev-n", String(Math.max(1, cells.length)));
+  grid.replaceChildren(...cells);
+
+  // An answered join that holds nothing was still read; only a join that did
+  // not come back is not.
+  const total = chain.rungs.length;
   const done = $("ev-completeness");
   done.textContent =
     chain.unavailable > 0
-      ? `${chain.live} of ${chain.rungs.length} joins answered, ${chain.unavailable} unreadable`
-      : `${chain.live} of ${chain.rungs.length} joins answered`;
+      ? `${total - chain.unavailable} of ${total} joins read, ${chain.unavailable} unreadable`
+      : `${total} of ${total} joins read`;
   if (chain.unavailable > 0) done.classList.add("lost");
 }
 
@@ -310,8 +375,19 @@ async function loadEvidence(): Promise<void> {
     // shown to somebody mid-navigation who has already been interrupted;
     // the free detail the walk carried is on screen and the panel is where
     // a reader goes to dig.
-    renderChain($("ev-chain"), chainRes.chain, { heading: "", completeness: false, expandable: false });
+    renderChain($("ev-chain"), chainRes.chain, {
+      heading: "",
+      completeness: false,
+      expandable: false,
+      emptyText: "the graph holds nothing here",
+    });
     drawNeighbours(chainRes.chain.threatNeighbors, chainRes.chain.prefix);
+    if (chainRes.chain.threatNeighbors === null) {
+      // The chain answered but held no neighbourhood figure. Say which of
+      // the two it was rather than leaving an empty column. It depends on
+      // the chain alone, so it shows whether or not the protection read did.
+      figure($("ev-neighbours"), null, "the graph holds no neighbourhood figure for this prefix", false);
+    }
   } else {
     const lost = document.createElement("div");
     lost.className = "ev-lost";
@@ -324,14 +400,11 @@ async function loadEvidence(): Promise<void> {
 
   if (protRes.ok) {
     const p = protRes.protection;
+    threatLabel = p.label;
+    renderDetail();
+    showBand(p);
     drawAge(p.ageDays);
     drawReasons(p.why);
-    if (chainRes.ok && chainRes.chain.threatNeighbors === null) {
-      // The chain answered but held no neighbourhood figure. Say which of
-      // the two it was rather than leaving an empty column.
-      const box2 = $("ev-neighbours");
-      metric(box2, "Its neighbourhood", null, "the graph holds no neighbourhood figure for this prefix");
-    }
     if (p.partial) {
       const note = $("ev-note");
       note.hidden = false;
@@ -343,16 +416,20 @@ async function loadEvidence(): Promise<void> {
     note.textContent =
       "The citations behind this block could not be loaded. The block itself still stands.";
   }
+
+  // With no figure to show, the rows take the card's whole width.
+  const anyWell = [...document.querySelectorAll<HTMLElement>(".ev-metric")].some((m) => !m.hidden);
+  document.querySelector(".ev-grid")?.classList.toggle("solo", !anyWell);
 }
 
 async function start(): Promise<void> {
   if (host === "") return showNeutral("no-host");
   // Shown inside a frame, the page is only a notice: it asks nothing and sends nothing.
   if (framed) return showNeutral("framed");
-  const res = await send<BgResponse>({ kind: "getBlock", host }).catch(() => undefined);
+  const res = await send<BgResponse>({ kind: "getBlock", host, ...(ruleValue ? { rule: ruleValue } : {}) }).catch(() => undefined);
   if (!res || res.ok !== true || !("block" in res)) return showNeutral("unconfirmed");
   if (!res.block.blocked) return showNeutral("no-block");
-  showStopped(res.block.brand, res.block.brandDomain);
+  showStopped(res.block.brand, res.block.brandDomain, res.block.beforeLoad === true);
   await loadEvidence();
 }
 

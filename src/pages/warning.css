@@ -3,208 +3,283 @@
 
    The full-page interstitial for an evidenced threat.
 
-   For a block Guard made (the "stopped" state; the other states are at the
-   end of this file and are neutral on purpose):
+   For a block Guard made (the "stopped" state; the other states are neutral
+   on purpose and are at the end of this file): one column on a near-black
+   ground with a soft red glow at the top, the stop sign, the evidence card
+   and the way out. It follows the reader's colour scheme: the ground, the
+   glow and the card's edge are tokens in theme.css, and the same layout is
+   drawn on a light ground with a fainter glow.
 
-   It is a red room, and it stays a red room in daylight. The ground, the
-   card and the rules are all MIXED from the theme's own crit hue into the
-   theme's own surfaces, so the page follows the reader's colour scheme
-   without ever softening into something that could be mistaken for a
-   normal page. Nothing here is a literal colour: the palette flips with
-   theme.css like every other surface, and the alarm survives the flip
-   because it is derived from the verdict token rather than painted on.
+   Nothing here is a literal colour: the palette flips with theme.css like
+   every other surface. The two solid red plates (the band line and the stop
+   sign's bar) draw white in both schemes through --w-on-crit. */
 
-   The one deliberate fixed colour is the text on the primary button,
-   which sits on a solid crit plate in both themes. */
+/* An element's own display must never win over its hidden attribute. */
+[hidden] { display: none !important; }
 
 body {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  background: color-mix(in srgb, var(--w-v-high) 20%, var(--w-bg));
+  padding: 0 16px;
+  background: var(--w-bg);
   color: var(--w-text);
   font: 13px/1.6 var(--w-font-sans);
-
-  /* The shared quiet ink measures 4.49:1 on this page's tinted ground - a
-     hundredth under the floor, and only ever visible by measuring what
-     rendered rather than reading the token table. Deepen it once for the
-     whole page, derived from the page's OWN ink so it still flips with
-     the theme and this file still defines no colour of its own. */
-  --w-muted: color-mix(in srgb, var(--w-text) 80%, transparent);
 }
 
-main { max-width: 760px; padding: 36px 24px 28px; text-align: center; }
+/* The red room is painted only for a confirmed stop. Every other state, and
+   the moment before the background answers, uses the theme's own ground. */
+body:has(main[data-state="stopped"]) {
+  background: radial-gradient(ellipse at 50% 0%, var(--w-stop-glow), transparent 55%), var(--w-stop-ground);
+}
 
-.w-lockup { justify-content: center; margin-bottom: 22px; }
-
-.stop { font-size: 56px; color: var(--w-v-high); line-height: 1; }
-
-h1 { font-size: 22px; margin: 18px 0 12px; font-weight: 600; letter-spacing: -0.01em; }
-
-/* The message is the point of this page, so it takes full ink. */
-p { color: var(--w-text); }
-
-.receipts {
-  margin: 14px auto 0;
-  max-width: 460px;
+main {
+  width: 100%;
+  max-width: 880px;
+  padding: 48px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   text-align: left;
-  background: color-mix(in srgb, var(--w-v-high) 7%, var(--w-card));
-  border: 1px solid color-mix(in srgb, var(--w-v-high) 42%, var(--w-line));
-  border-radius: 6px;
-  padding: 12px 16px;
-  font-size: 12px;
-  color: var(--w-text);
 }
-.receipts div { margin: 3px 0; }
-.receipts .k {
-  display: inline-block;
-  min-width: 3.2em;
-  color: var(--w-muted);
-  font-family: var(--w-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
+
+/* ------------------------------------------------------------ the header */
+
+.w-lockup { gap: 10px; }
+.w-knot { width: 26px; height: 26px; }
+.w-wordmark { font: 900 18px/1 var(--w-font-sans); letter-spacing: 0; }
+.w-product {
+  font: 700 11px/1.2 var(--w-font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--w-accent);
+  background: var(--w-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--w-accent-line) 32%, transparent);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+/* -------------------------------------------------------- the interruption */
+
+.hero { display: flex; align-items: center; gap: 28px; min-height: 96px; }
+.hero-text { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+
+.stop { flex: none; width: 96px; line-height: 0; }
+.stop svg { display: block; }
+.stop-fill { fill: var(--w-v-crit); }
+.stop-edge { fill: none; stroke: var(--w-v-high-fill); stroke-width: 3; }
+.stop-bar { fill: var(--w-on-crit); }
+
+/* The band line: the graph's own label and band on a solid red plate. */
+.band {
+  font: 700 11px/1.4 var(--w-mono);
   letter-spacing: 0.08em;
+  color: var(--w-on-crit);
+  background: var(--w-v-crit);
+  border-radius: 999px;
+  padding: 4px 10px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
-.actions { display: flex; gap: 12px; justify-content: center; margin: 26px 0 10px; flex-wrap: wrap; }
+h1 { margin: 0; font: 900 36px/1.2 var(--w-font-sans); }
 
-.btn {
-  display: inline-block;
-  background: var(--w-card);
-  color: var(--w-text);
-  border: 1px solid color-mix(in srgb, var(--w-v-high) 42%, var(--w-line-strong));
-  border-radius: 6px;
-  padding: 10px 18px;
-  font: 600 13px/1.4 var(--w-font-sans);
-  cursor: pointer;
-  text-decoration: none;
-}
-.btn:hover { border-color: var(--w-v-high); }
-/* Back to safety is the recommended action and the only solid plate on
-   the page: white on the crit fill, which clears 6.4:1 in both themes. */
-.btn.primary { background: var(--w-v-crit); color: #fff; border-color: var(--w-v-crit); }
-.btn.primary:hover { filter: brightness(1.08); border-color: var(--w-v-crit); }
-
-.linkish {
-  background: none;
-  border: none;
-  color: color-mix(in srgb, var(--w-text) 80%, transparent);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  text-decoration: underline;
-  margin-top: 8px;
-}
-.linkish:hover { color: var(--w-text); }
-/* Disabled, it is a sentence and not a way through: no underline, no pointer. */
-.linkish:disabled {
-  color: color-mix(in srgb, var(--w-text) 80%, transparent);
-  text-decoration: none;
-  cursor: default;
-}
-
-.privacy { font-size: 11px; color: var(--w-muted); margin-top: 26px; }
-
+#detail { margin: 0; font-size: 17px; line-height: 1.55; color: var(--w-text-2); }
+#detail .host { font-family: var(--w-mono); color: var(--w-text); overflow-wrap: anywhere; }
 
 /* ---------------------------------------------------------- the evidence
 
-   The case, drawn. This page's argument used to be four rows of text; it
-   is now the join path plus the two quantities that decide most of these
-   moments, and the layout exists to keep all of it above the actions so a
-   reader meets the evidence before the way out.
-
-   Nothing in here softens the red room: the panel is mixed from the same
-   crit hue as the ground, one step lighter, so it reads as part of the
-   alarm rather than as a normal card that wandered onto the page. */
+   The case, shown: the joins as seven bars, the rows the graph answered, and
+   up to three figures. The card is a quiet surface; the only colour in it is
+   what the evidence itself carries. */
 
 .evidence {
-  margin: 24px auto 4px;
-  text-align: left;
-  background: color-mix(in srgb, var(--w-v-high) 7%, var(--w-card));
-  border: 1px solid color-mix(in srgb, var(--w-v-high) 42%, var(--w-line));
-  border-radius: 8px;
-  padding: 14px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--w-card);
+  border: 1px solid var(--w-stop-line);
+  border-radius: 16px;
+  padding: 24px;
 }
 
-.ev-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
+.ev-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .ev-title {
-  font-family: var(--w-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
+  font: 700 12px/1.4 var(--w-font-sans);
   letter-spacing: 0.12em;
-  color: var(--w-muted);
+  text-transform: uppercase;
+  color: var(--w-accent);
 }
-.ev-completeness {
-  font-family: var(--w-mono);
-  font-size: 10.5px;
-  color: var(--w-muted);
-}
+.ev-completeness { font: 400 12px/1.4 var(--w-mono); font-variant-numeric: tabular-nums; color: var(--w-muted); }
 /* An unreadable join is amber, never silent, and never the same ink as a
-   read one. An outage that renders as an ordinary result is the defect
-   this whole page is a witness against. */
+   read one. An outage that renders as an ordinary result is the defect this
+   whole page is a witness against. */
 .ev-completeness.lost { color: var(--w-v-low); }
 
-.ev-spine { margin: 0 0 12px; }
-.ev-spine svg { display: block; width: 100%; height: auto; }
+/* The spine: one equal bar per join, with its name under it. */
+.ev-spine {
+  display: grid;
+  grid-template-columns: repeat(var(--ev-n, 7), minmax(0, 1fr));
+  gap: 6px;
+}
+.ev-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* Four marks. A join read with a finding keeps its tone; one read with no
+   finding is the accent; one the graph answered with nothing is muted grey;
+   one that could not be read is hollow, dashed and amber, the state most
+   easily mistaken for "fine". */
+.ev-bar { height: 6px; border-radius: 4px; background: var(--w-accent-line); }
+.ev-bar[data-tone="hot"] { background: var(--w-v-high-fill); }
+.ev-bar[data-tone="warn"] { background: var(--w-v-low-fill); }
+.ev-bar[data-state="empty"] { background: var(--w-muted); }
+.ev-bar[data-state="unavailable"] {
+  background: transparent;
+  border: 1px dashed var(--w-v-low);
+}
+.ev-bar-label {
+  font: 400 10px/1.3 var(--w-mono);
+  text-transform: uppercase;
+  color: var(--w-muted);
+  overflow-wrap: anywhere;
+}
 
 .ev-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(190px, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
-/* One column when the tab is narrow. The chain keeps its full width there,
-   because a rung that wraps its value is worse than a metric that waits. */
-@media (max-width: 660px) {
+
+/* With no figure to show, the rows take the card's whole width. */
+.ev-grid.solo { grid-template-columns: minmax(0, 1fr); }
+
+/* The rows. They are drawn by the shared chain view; here they are a key and
+   a value on one line with a hairline between rows. */
+.ev-chain { min-width: 0; font-size: 14px; }
+.ev-chain .ch-rail { display: none; }
+.ev-chain .ch-rung {
+  display: block;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--w-stop-hairline);
+}
+.ev-chain .ch-rung:first-child { padding-top: 0; }
+.ev-chain .ch-rung:last-child { border-bottom: 0; padding-bottom: 0; }
+.ev-chain .ch-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 0;
+}
+.ev-chain .ch-label {
+  flex: 0 0 110px;
+  font: 700 11px/1.5 var(--w-mono);
+  letter-spacing: 0;
+  color: var(--w-accent-stroke);
+}
+.ev-chain .ch-value {
+  flex: 0 1 auto;
+  font-size: 14px;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.ev-chain .ch-empty .ch-value { font-family: var(--w-font-sans); font-style: normal; color: var(--w-muted); }
+.ev-chain .ch-fact { flex: 1 1 auto; min-width: 0; font-size: 13px; white-space: normal; text-align: left; }
+
+/* The graph's own join path, under the rows. */
+.ev-chain .ch-evidence { margin-top: 12px; font-size: 12px; }
+.ev-chain .ch-ev-lead { font-size: 11px; color: var(--w-muted); }
+.ev-chain .ch-ev-hop { font-size: 11px; }
+.ev-chain .ch-ev-arrow { color: var(--w-muted); }
+
+/* The figures: each a well with one large number over the words for it. */
+.ev-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ev-metric {
+  min-width: 0;
+  background: var(--w-bg);
+  border: 1px solid var(--w-stop-hairline);
+  border-radius: 10px;
+  padding: 14px;
+}
+.ev-figure {
+  font: 700 28px/1.2 var(--w-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--w-text);
+  overflow-wrap: anywhere;
+}
+.ev-figure.hot { color: var(--w-v-high); }
+.ev-caption { font-size: 12.5px; line-height: 1.4; color: var(--w-muted); }
+.ev-feedlist {
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--w-stop-hairline);
+  font: 400 12px/1.4 var(--w-mono);
+  color: var(--w-text-2);
+}
+.ev-feedlist li { margin: 4px 0; overflow-wrap: anywhere; }
+
+.ev-lost, .ev-note { font-size: 13px; line-height: 1.5; color: var(--w-v-low); }
+
+/* ------------------------------------------------------------ the way out */
+
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 0 26px;
+  background: transparent;
+  color: var(--w-text);
+  border: 1px solid var(--w-line-strong);
+  border-radius: 6px;
+  font: 700 16px/1.2 var(--w-font-sans);
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover { border-color: var(--w-text); }
+/* Back to safety is the default action and the only solid plate: white on
+   the accent line, which clears 4.5:1 in both schemes. */
+.btn.primary { background: var(--w-accent-line); color: var(--w-on-accent); border-color: var(--w-accent-line); }
+.btn.primary:hover { filter: brightness(1.08); border-color: var(--w-accent-line); }
+
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--w-muted);
+  font: 400 13px/1.5 var(--w-font-sans);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linkish:hover { color: var(--w-text); }
+/* Disabled, it is a sentence and not a way through: no underline, no pointer. */
+.linkish:disabled { text-decoration: none; cursor: default; }
+.linkish:disabled:hover { color: var(--w-muted); }
+
+.privacy { margin: 0; font-size: 12px; color: var(--w-muted); text-align: right; }
+
+/* ------------------------------------------------------------ narrow windows */
+
+@media (max-width: 720px) {
   .ev-grid { grid-template-columns: minmax(0, 1fr); }
 }
-
-.ev-chain { min-width: 0; }
-/* The rungs sit on the alarm ground, so their rail and hover need the
-   page's own surfaces rather than the panel defaults. */
-.ev-chain .ch-rung { padding: 4px 0; }
-.ev-chain .ch-value { color: var(--w-text); }
-
-.ev-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-
-.ev-metric { min-width: 0; }
-.ev-metric-label {
-  font-family: var(--w-mono);
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.11em;
-  color: var(--w-muted);
-  margin-bottom: 6px;
+@media (max-width: 560px) {
+  main { padding: 32px 0; }
+  .hero { flex-direction: column; align-items: flex-start; gap: 16px; }
+  main[data-state="stopped"] h1 { font-size: 26px; }
+  .evidence { padding: 16px; }
+  .ev-chain .ch-label { flex-basis: 92px; }
+  /* Seven names do not fit under seven bars this narrow; the rows below say them. */
+  .ev-bar-label { display: none; }
+  .foot { flex-direction: column; align-items: flex-start; }
+  .privacy { text-align: left; }
 }
-.ev-metric-mark { line-height: 0; margin-bottom: 6px; }
-.ev-metric-mark svg { display: block; max-width: 100%; height: auto; }
-.ev-metric-cap { font-size: 11.5px; color: var(--w-text); line-height: 1.45; }
-.ev-metric-cap.hot { color: var(--w-v-high); font-weight: 600; }
-
-.ev-feedlist {
-  margin: 6px 0 0;
-  padding: 0 0 0 2px;
-  list-style: none;
-  font-family: var(--w-mono);
-  font-size: 10.5px;
-  color: var(--w-muted);
-}
-.ev-feedlist li { margin: 2px 0; }
-
-.ev-lost, .ev-note {
-  font-size: 11.5px;
-  color: var(--w-v-low);
-  line-height: 1.5;
-}
-.ev-note { margin-top: 12px; }
-
 
 /* ---------------------------------------------------------- the states
 
@@ -213,16 +288,21 @@ p { color: var(--w-text); }
    every state but "stopped" the page uses the theme's neutral ink and
    surfaces, never the alarm tone. */
 
-h1 { min-height: 3.2em; }
-
 main[data-state="pending"] .stop,
 main[data-state="pending"] h1,
 main[data-state="pending"] #detail,
+main[data-state="pending"] .actions,
 main[data-state="pending"] #btn-continue,
 main[data-state="pending"] #privacy { visibility: hidden; }
 
-body:has(main:not([data-state="stopped"])) { background: var(--w-bg); }
-main:not([data-state="stopped"]) .stop { color: var(--w-muted); }
+main:not([data-state="stopped"]) .stop {
+  width: 96px;
+  font-size: 64px;
+  line-height: 1;
+  text-align: center;
+  color: var(--w-muted);
+}
+main:not([data-state="stopped"]) h1 { font: 700 24px/1.3 var(--w-font-sans); }
 /* "Could not be confirmed" is its own state, in the tone the page already
    uses for a read that did not come back. */
 main[data-state="unconfirmed"] .stop { color: var(--w-v-low); }

@@ -519,7 +519,7 @@ const CHAIN = {
   ],
 };
 const REPLIES = {
-  getBlock: { ok: true, block: { blocked: true, brand: null, brandDomain: null } },
+  getBlock: { ok: true, block: { blocked: true, brand: null, brandDomain: null, beforeLoad: false } },
   getChain: { ok: true, chain: CHAIN },
   getProtection: { ok: true, protection: {
     host: WHOST, band: "CRITICAL", blocking: true, label: "credential-phishing suspect",
@@ -540,12 +540,17 @@ window.chrome = {
 `;
 
 interface EvidenceGeometry {
-  spineNodes: number;
+  bars: number;
+  barFills: string[];
   spineLabels: string[];
   rungs: number;
-  agePct: number;
-  neighbourMarks: number;
-  reasonMarks: number;
+  counter: string;
+  age: string;
+  neighbours: string;
+  reasons: string;
+  stopSize: [number, number];
+  bandInk: string;
+  bandShown: boolean;
   bodyScrollWidth: number;
   bodyClientWidth: number;
 }
@@ -559,21 +564,27 @@ async function measureWarning(browser: Browser, scheme: "dark" | "light"): Promi
   await page.addInitScript(WARNING_SHIM);
   await page.goto(`file://${join(DIST, "warning.html")}?host=warn-render-guard-e2e.com`);
   await page.locator("#ev-chain .ch-rung").first().waitFor({ timeout: 15_000 });
-  await page.waitForTimeout(500);
+  await page.locator("#ev-feeds .ev-figure").waitFor({ timeout: 15_000 });
 
   const g = await page.evaluate((): EvidenceGeometry => {
-    const pct = document.querySelector("#ev-age svg")?.getAttribute("data-pct");
+    const text = (sel: string): string => (document.querySelector(sel)?.textContent ?? "").trim();
+    const stop = document.querySelector("#glyph svg")?.getBoundingClientRect();
     return {
-      // Circles are read or empty rungs; a cross is an unreadable one, and
-      // it is drawn as two lines rather than a circle on purpose.
-      spineNodes:
-        document.querySelectorAll("#ev-spine svg circle").length +
-        document.querySelectorAll("#ev-spine svg g").length,
-      spineLabels: [...document.querySelectorAll("#ev-spine svg text")].map((t) => t.textContent ?? ""),
+      bars: document.querySelectorAll("#ev-spine .ev-bar").length,
+      barFills: [...document.querySelectorAll("#ev-spine .ev-bar")].map((b) => getComputedStyle(b).backgroundColor),
+      spineLabels: [...document.querySelectorAll("#ev-spine .ev-bar-label")].map((t) => t.textContent ?? ""),
       rungs: document.querySelectorAll("#ev-chain .ch-rung").length,
-      agePct: pct === null || pct === undefined ? -1 : Number(pct),
-      neighbourMarks: document.querySelectorAll("#ev-neighbours svg rect").length,
-      reasonMarks: document.querySelectorAll("#ev-feeds svg rect").length,
+      counter: text("#ev-completeness"),
+      age: text("#ev-age .ev-figure"),
+      neighbours: text("#ev-neighbours .ev-figure"),
+      reasons: text("#ev-feeds .ev-figure"),
+      stopSize: [stop?.width ?? 0, stop?.height ?? 0],
+      bandInk: getComputedStyle(document.querySelector("#band") as Element).backgroundColor,
+      bandShown: (() => {
+        const band = document.querySelector("#band") as HTMLElement;
+        const box = band.getBoundingClientRect();
+        return !band.hidden && getComputedStyle(band).display !== "none" && box.width > 0 && box.height > 0;
+      })(),
       bodyScrollWidth: document.body.scrollWidth,
       bodyClientWidth: document.body.clientWidth,
     };
@@ -582,12 +593,11 @@ async function measureWarning(browser: Browser, scheme: "dark" | "light"): Promi
   return g;
 }
 
-test("the interstitial's drawn evidence renders the same in Gecko and Blink", async () => {
-  // The most consequential surface in the product went from zero marks to
-  // eleven in this pass, and every one of them is inline SVG whose colours
-  // come from CSS custom properties in presentation attributes. That is
-  // exactly the kind of thing that works in one engine and silently paints
-  // black in the other, and no other gate looks at this page in Gecko.
+test("the interstitial's evidence renders the same in Gecko and Blink", async () => {
+  // The most consequential surface in the product draws its spine, its stop
+  // sign and its figures with colours that come from CSS custom properties.
+  // That is exactly the kind of thing that works in one engine and silently
+  // paints black in the other, and no other gate looks at this page in Gecko.
   test.setTimeout(120_000);
   const ff = await firefox.launch();
   const cr = await chromium.launch();
@@ -595,29 +605,37 @@ test("the interstitial's drawn evidence renders the same in Gecko and Blink", as
     const gecko = await measureWarning(ff, "dark");
     const blink = await measureWarning(cr, "dark");
 
-    // CONTROL: the Blink render really produced the marks. Without this,
+    // CONTROL: the Blink render really produced the evidence. Without this,
     // two engines drawing nothing would agree perfectly.
     expect(blink.rungs, "Blink drew no chain on the interstitial").toBe(7);
-    expect(blink.neighbourMarks, "Blink drew no neighbourhood marks").toBe(9);
-    expect(blink.reasonMarks, "Blink drew no reason marks").toBe(2);
-    expect(blink.agePct, "Blink drew no age bar").toBeGreaterThan(0);
+    expect(blink.bars, "Blink drew no spine").toBe(7);
+    expect(blink.counter).toBe("7 of 7 joins read");
+    expect(blink.neighbours, "Blink drew no neighbour figure").toBe("9");
+    expect(blink.reasons, "Blink drew no reason figure").toBe("2 reasons");
+    expect(blink.age).toBe("16 days");
 
-    // And Gecko agrees, mark for mark.
+    // And Gecko agrees, figure for figure and bar for bar.
     expect(gecko.rungs).toBe(blink.rungs);
-    expect(gecko.spineNodes).toBe(blink.spineNodes);
+    expect(gecko.bars).toBe(blink.bars);
     expect(gecko.spineLabels).toEqual(blink.spineLabels);
     expect(gecko.spineLabels).toEqual([
       "NAME", "RUNS ON", "ADDRESS", "PREFIX", "NETWORK", "OPERATOR", "PRESENT AT",
     ]);
-    expect(gecko.neighbourMarks, "Gecko drew a different number of neighbour marks").toBe(9);
-    expect(gecko.reasonMarks).toBe(2);
+    expect(gecko.counter).toBe(blink.counter);
+    expect(gecko.age).toBe(blink.age);
+    expect(gecko.neighbours, "Gecko drew a different neighbour figure").toBe(blink.neighbours);
+    expect(gecko.reasons).toBe(blink.reasons);
+    // The bars take their colour from the tone of each join, in both engines.
+    expect(gecko.barFills).toEqual(blink.barFills);
+    expect(new Set(blink.barFills).size, "the bars are not all one colour").toBeGreaterThan(1);
+    // The stop sign is a 96 px drawing in both, and the band plate is the same red.
+    expect(blink.stopSize).toEqual([96, 96]);
+    expect(gecko.stopSize).toEqual(blink.stopSize);
+    expect(gecko.bandInk).toBe(blink.bandInk);
+    expect(blink.bandShown, "Blink did not show the band line").toBe(true);
+    expect(gecko.bandShown, "Gecko did not show the band line").toBe(true);
 
-    // The age bar is geometry, not text: 16 days against 365 is under 5% of
-    // the width, and both engines must place it there.
-    expect(gecko.agePct).toBeCloseTo(blink.agePct, 2);
-    expect(gecko.agePct, "16 of 365 days").toBeLessThan(5);
-    expect(gecko.agePct).toBeGreaterThan(4);
-
+    // Nothing runs off the side.
     for (const [engine, g] of [["Gecko", gecko], ["Blink", blink]] as const) {
       expect(
         g.bodyScrollWidth,

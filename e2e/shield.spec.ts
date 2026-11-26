@@ -87,7 +87,7 @@ test("novel-bad: the verdict moves the committed tab to the warning page", async
   await expect(page.locator("#detail")).toContainText("blocked before any credentials");
   await expect(page.locator("#btn-back")).toBeVisible();
   await expect(page.locator("#btn-continue")).toBeVisible();
-  await expect(page.locator("#privacy")).toContainText(`only "${EVIL.novel}" was checked`);
+  await expect(page.locator("#privacy")).toContainText(`only \u201C${EVIL.novel}\u201D was checked`);
   await page.close();
 });
 

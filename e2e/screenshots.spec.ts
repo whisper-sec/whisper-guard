@@ -425,6 +425,11 @@ test("full-page warning", async () => {
     `chrome-extension://${ext.id}/warning.html?host=${LOOKALIKE}&brand=PayPal&brandDomain=paypal.com`,
   );
   await expect(page.locator("h1")).toContainText("Whisper stopped a dangerous page");
+  // The capture waits for the whole picture: the band line, the evidence card's
+  // counter and at least one figure.
+  await expect(page.locator("#band")).toBeVisible();
+  await expect(page.locator("#ev-completeness")).toContainText("joins read");
+  await expect(page.locator("#evidence .ev-figure").first()).toBeVisible();
   await pageShots(page, "warning", { width: 1100, height: 720 });
   await storeShot(page, "warning-store");
   await page.close();
