@@ -271,3 +271,74 @@ export const CLOSE_CENTRE_FN = `function () {
   const b = this.getElementById("w-caution-close").getBoundingClientRect();
   return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
 }`;
+
+/** One control or text element of the look-alike bar. */
+export interface BarEl {
+  text: string;
+  rect: Rect;
+  color: string;
+  backgroundColor: string;
+  fontSize: string;
+  fontWeight: string;
+  fontFamily: string;
+  borderRadius: string;
+  borderColor: string;
+  outlineWidth: string;
+  outlineStyle: string;
+  outlineColor: string;
+  tag: string;
+}
+
+/** What the look-alike bar tests read from inside the closed root. */
+export interface BarSnapshot {
+  role: string | null;
+  bar: BarEl & { borderBottomWidth: string; borderBottomColor: string; position: string; scrollWidth: number; clientWidth: number };
+  mark: { alt: string | null; w: number; h: number } | null;
+  tag: BarEl | null;
+  sentence: (BarEl & { strongText: string | null; strongTag: string | null; childTags: string[] }) | null;
+  go: (BarEl & { href: string | null; textDecorationLine: string }) | null;
+  dismiss: (BarEl & { type: string | null; minHeight: string }) | null;
+  focusedId: string | null;
+  vw: number;
+}
+
+/** The bar, its mark, tag, sentence and two controls, in one round trip. Null when no bar is drawn. */
+export const BAR_FN = `function () {
+  const bar = this.getElementById("w-bar");
+  if (!bar) return null;
+  const rect = (el) => { const b = el.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height }; };
+  const base = (el) => {
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { text: (el.textContent || "").trim(), rect: rect(el), color: cs.color, backgroundColor: cs.backgroundColor,
+      fontSize: cs.fontSize, fontWeight: cs.fontWeight, fontFamily: cs.fontFamily, borderRadius: cs.borderTopLeftRadius, borderColor: cs.borderTopColor,
+      outlineWidth: cs.outlineWidth, outlineStyle: cs.outlineStyle, outlineColor: cs.outlineColor, tag: el.tagName.toLowerCase() };
+  };
+  const q = (id) => this.getElementById(id);
+  const bcs = getComputedStyle(bar);
+  const sentence = q("w-bar-text");
+  const strong = sentence ? sentence.querySelector("strong") : null;
+  const go = q("w-bar-go");
+  const dismiss = q("w-bar-dismiss");
+  const mark = q("w-bar-mark");
+  return {
+    role: bar.getAttribute("role"),
+    bar: Object.assign(base(bar), { borderBottomWidth: bcs.borderBottomWidth, borderBottomColor: bcs.borderBottomColor,
+      position: bcs.position, scrollWidth: bar.scrollWidth, clientWidth: bar.clientWidth }),
+    mark: mark ? { alt: mark.getAttribute("alt"), w: mark.getBoundingClientRect().width, h: mark.getBoundingClientRect().height } : null,
+    tag: base(q("w-bar-tag")),
+    sentence: sentence ? Object.assign(base(sentence), { strongText: strong ? strong.textContent : null,
+      strongTag: strong ? strong.tagName.toLowerCase() : null,
+      childTags: Array.from(sentence.children).map((c) => c.tagName.toLowerCase()) }) : null,
+    go: go ? Object.assign(base(go), { href: go.getAttribute("href"), textDecorationLine: getComputedStyle(go).textDecorationLine }) : null,
+    dismiss: dismiss ? Object.assign(base(dismiss), { type: dismiss.getAttribute("type"), minHeight: getComputedStyle(dismiss).minHeight }) : null,
+    focusedId: this.activeElement ? this.activeElement.id || null : null,
+    vw: document.documentElement.clientWidth,
+  };
+}`;
+
+/** The centre of the bar's Dismiss button, for a real (trusted) click. */
+export const DISMISS_CENTRE_FN = `function () {
+  const b = this.getElementById("w-bar-dismiss").getBoundingClientRect();
+  return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+}`;

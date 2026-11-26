@@ -355,9 +355,9 @@ body {
 
 /* -------------------------------------------------------- the lockup
 
-   The knot plus ink wordmark, which survives BOTH themes. The shipped
-   wordmark PNG is white-only and vanishes on a light ground, so the
-   product name is text here and only the mark is an image. */
+   The knot plus ink wordmark, which survives BOTH themes. The brand
+   wordmark PNG (not shipped) is white-only and would vanish on a light
+   ground, so the product name is text here and only the mark is an image. */
 
 .w-lockup { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .w-knot { width: 20px; height: 20px; flex: none; display: block; user-select: none; }

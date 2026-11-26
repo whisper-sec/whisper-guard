@@ -23,10 +23,9 @@
 //              HIGH/CRITICAL target gets an inline interstitial, everything
 //              else resumes untouched (fail open, cheap on the common path)
 
-import { LOGO_DATAURI } from "../shared/brand";
 import { PREEMPT_DECIDE_TIMEOUT_MS } from "../shared/config";
 import { armConsent } from "./consent";
-import { CAUTION_TONE, FONT_MONO, FONT_SANS, ONPAGE, closeIcon, el, focusRing, markImg } from "./onpage-style";
+import { AMBER_BAR, CAUTION_TONE, FONT_MONO, FONT_SANS, ONPAGE, closeIcon, el, focusRing, markImg } from "./onpage-style";
 import { extractHostname } from "../shared/hostname";
 import {
   linkTarget,
@@ -143,52 +142,95 @@ if (!w[FLAG]) {
 
   function renderBanner(cfg: GuardConfig): void {
     const root = mount();
-    const bar = document.createElement("div");
+    const bar = el(
+      "div",
+      "w-bar",
+      [
+        "position:fixed", "top:0", "left:0", "right:0", "box-sizing:border-box",
+        "display:flex", "flex-wrap:wrap", "align-items:center", "gap:14px",
+        "padding:12px 20px", `background:${AMBER_BAR.ground}`,
+        `border-bottom:2px solid ${AMBER_BAR.amber}`, `box-shadow:${AMBER_BAR.shadow}`,
+        `color:${AMBER_BAR.text}`, `font-family:${FONT_SANS}`, "font-size:14px", "line-height:1.45",
+      ].join(";"),
+    );
     bar.setAttribute("role", "alert");
-    bar.style.cssText = [
-      "position:fixed", "top:0", "left:0", "right:0",
-      "background:#78350F", "color:#FEF3C7",
-      "font:14px/1.5 system-ui,sans-serif", "padding:10px 16px",
-      "display:flex", "gap:12px", "align-items:center",
-      "box-shadow:0 2px 8px rgba(0,0,0,.4)",
-    ].join(";");
 
-    // The wordmark rides as a data URI: nothing becomes web-accessible.
-    const logo = document.createElement("img");
-    logo.src = LOGO_DATAURI;
-    logo.alt = "Whisper";
-    logo.style.cssText = "height:16px;width:auto;flex:none;display:block";
-    bar.appendChild(logo);
+    const mark = markImg(22);
+    mark.id = "w-bar-mark";
+    mark.alt = "Whisper Guard";
+    bar.appendChild(mark);
 
-    const text = document.createElement("span");
-    text.style.cssText = "flex:1;min-width:0";
+    bar.appendChild(
+      el(
+        "span",
+        "w-bar-tag",
+        [
+          `font-family:${FONT_MONO}`, "font-size:11px", "font-weight:700", "letter-spacing:0.06em",
+          `color:${AMBER_BAR.onAmber}`, `background:${AMBER_BAR.amber}`, "border-radius:999px",
+          "padding:3px 9px", "white-space:nowrap", "flex:none",
+        ].join(";"),
+        cfg.brandDomain ? "LOOK-ALIKE" : "SUSPICIOUS",
+      ),
+    );
+
+    const text = el(
+      "span",
+      "w-bar-text",
+      "flex:1 1 260px;min-width:0;font-size:14.5px;line-height:1.45;overflow-wrap:anywhere",
+    );
     const graphNote =
       cfg.band && (cfg.band === "MEDIUM" || cfg.band === "HIGH" || cfg.band === "CRITICAL")
         ? ` The Whisper graph rates it ${cfg.band}${cfg.graphLabel ? ` (${cfg.graphLabel})` : ""}.`
         : "";
-    text.textContent = cfg.brandDomain
-      ? `Whisper Guard: this site looks like ${cfg.brandDomain} but is not it.${graphNote} Be careful with passwords and payment details.`
-      : `Whisper Guard: this site is flagged as suspicious.${graphNote} Be careful with passwords and payment details.`;
+    const tail = `${graphNote} Be careful with passwords and payment details.`;
+    if (cfg.brandDomain) {
+      text.appendChild(document.createTextNode("This site looks like "));
+      text.appendChild(el("strong", null, "font-weight:700", cfg.brandDomain));
+      text.appendChild(document.createTextNode(` but is not it.${tail}`));
+    } else {
+      text.appendChild(document.createTextNode(`This site is flagged as suspicious.${tail}`));
+    }
     bar.appendChild(text);
 
+    const actions = el("div", "w-bar-actions", "display:flex;flex-wrap:wrap;align-items:center;gap:10px;flex:0 1 auto;min-width:0;max-width:100%");
+
     if (cfg.brandDomain) {
-      const go = document.createElement("a");
+      const go = el(
+        "a",
+        "w-bar-go",
+        [
+          `background:${AMBER_BAR.amber}`, `color:${AMBER_BAR.onAmber}`, "text-decoration:none",
+          "font-weight:700", "font-size:14px", "border-radius:6px", "padding:10px 16px",
+          "max-width:100%", "box-sizing:border-box", "overflow-wrap:anywhere", "display:inline-block",
+        ].join(";"),
+        `Go to the real ${cfg.brandDomain}`,
+      );
       go.href = `https://${cfg.brandDomain}/`;
-      go.textContent = `Go to the real ${cfg.brandDomain}`;
-      go.style.cssText =
-        "background:#F59E0B;color:#1C1917;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:600;white-space:nowrap";
-      bar.appendChild(go);
+      focusRing(go);
+      actions.appendChild(go);
     }
 
-    const dismiss = document.createElement("button");
-    dismiss.textContent = "Dismiss";
-    dismiss.style.cssText =
-      "background:transparent;color:#FDE68A;border:1px solid #A16207;border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit";
-    dismiss.addEventListener("click", () => {
+    const dismiss = el(
+      "button",
+      "w-bar-dismiss",
+      [
+        "background:transparent", `color:${AMBER_BAR.dismissText}`,
+        `border:1px solid ${AMBER_BAR.dismissEdge}`, "border-radius:6px", "font-weight:700",
+        "font-size:14px", `font-family:${FONT_SANS}`, "padding:0 16px", "min-height:40px",
+        "cursor:pointer",
+      ].join(";"),
+      "Dismiss",
+    );
+    dismiss.type = "button";
+    focusRing(dismiss);
+    dismiss.addEventListener("click", (ev) => {
+      // Only the reader can press Dismiss; a page's script cannot.
+      if (!ev.isTrusted) return;
       sessionStorage.setItem("whisper-guard-dismissed", cfg.host);
-      bar.remove();
+      root.host.remove();
     });
-    bar.appendChild(dismiss);
+    actions.appendChild(dismiss);
+    bar.appendChild(actions);
     root.appendChild(bar);
   }
 

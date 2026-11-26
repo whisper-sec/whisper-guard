@@ -16,6 +16,7 @@
 
 import { test, expect } from "@playwright/test";
 import { E2ENetwork, MOCK_API_KEY as MOCK_KEY } from "./helpers/servers";
+import { BAR_FN, ClosedShadow } from "./helpers/closed-shadow";
 import {
   extensionPage,
   launchExtension,
@@ -137,11 +138,21 @@ test("amber: a look-alike never blocks; banner and password-field caution appear
     .poll(async () => page.locator("div[style*='2147483647']").count(), { timeout: 10_000 })
     .toBeGreaterThan(0);
 
-  // The a11y tree still exposes the alert text through the closed root
-  // (read via CDP; Playwright locators cannot pierce closed shadow DOM).
+  // The bar's whole text is readable through the closed root (read via CDP;
+  // Playwright locators cannot pierce closed shadow DOM). The brand sits in
+  // its own element, so the sentence is read as one string, not as one
+  // accessibility node.
+  const bar = await ClosedShadow.open(ext.context, page);
+  await expect
+    .poll(async () => (await bar.call<{ sentence: { text: string } }>(BAR_FN))?.sentence.text ?? "", { timeout: 10_000 })
+    .toContain("looks like paypal.com");
+  await bar.close();
   const cdp = await ext.context.newCDPSession(page);
-  const tree = await cdp.send("Accessibility.getFullAXTree");
-  expect(JSON.stringify(tree)).toContain("looks like paypal.com");
+  // The accessibility tree carries the alert and the sentence in its pieces:
+  // the brand is its own node between the two text runs.
+  const barTree = JSON.stringify(await cdp.send("Accessibility.getFullAXTree"));
+  expect(barTree).toContain('"alert"');
+  for (const piece of ["This site looks like", "paypal.com", "but is not it."]) expect(barTree).toContain(piece);
 
   // Password-field caution on focus.
   const mountsBefore = await page.locator("div[style*='2147483647']").count();
