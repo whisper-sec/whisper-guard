@@ -48,6 +48,8 @@ export type BgRequest =
   | { kind: "signInStart" }
   | { kind: "signInStatus" }
   | { kind: "signInCancel" }
+  // Bring the console tab Guard opened forward, or open it again. Waiting only.
+  | { kind: "signInShowTab" }
   | { kind: "signOut" }
   | { kind: "saveKey"; key: string }
   | { kind: "explain"; host: string }

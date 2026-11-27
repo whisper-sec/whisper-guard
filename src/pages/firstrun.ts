@@ -311,7 +311,7 @@ async function signIn(): Promise<void> {
         signingIn = false;
         render();
         return;
-      } else if (d.phase === "expired" || d.phase === "error") {
+      } else if (d.phase === "expired" || d.phase === "denied" || d.phase === "error") {
         status.textContent = d.message ?? "Sign-in did not complete. Try again.";
         return;
       } else {

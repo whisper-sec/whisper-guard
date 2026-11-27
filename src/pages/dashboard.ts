@@ -1832,7 +1832,7 @@ async function startSignIn(statusId: string): Promise<void> {
       status.textContent = "Signed in.";
       switchView(view);
       return;
-    } else if (res.device.phase === "expired" || res.device.phase === "error") {
+    } else if (res.device.phase === "expired" || res.device.phase === "denied" || res.device.phase === "error") {
       status.textContent = res.device.message ?? "Sign-in did not complete. Try again.";
       return;
     } else {

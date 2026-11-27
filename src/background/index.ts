@@ -42,6 +42,7 @@ import {
   onAuthChanged,
   resumeDeviceFlow,
   saveKey,
+  showApprovalTab,
   signOut,
   startDeviceFlow,
 } from "./device-flow";
@@ -906,6 +907,8 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       return { ok: true, device: await startDeviceFlow() };
     case "signInStatus":
       return { ok: true, device: deviceFlowState() };
+    case "signInShowTab":
+      return { ok: true, device: await showApprovalTab() };
     case "signInCancel":
       cancelDeviceFlow();
       return { ok: true };
