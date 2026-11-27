@@ -122,14 +122,10 @@ test("every page paints the kit palette in dark and the light board's palette in
       });
       const label = `${page} ${scheme}`;
       expect(got.tokens, `${label}: resolved tokens`).toEqual(want);
-      // The warning page tints its own ground from the alarm hue and sets its own
-      // quiet ink on that ground (its stylesheet says why), so on that one page the
-      // ground and the muted ink are the page's, not the shared tokens'.
-      const tinted = page.startsWith("warning.html");
-      if (!tinted) {
-        expect(got.bodyBg, `${label}: page ground`).toBe(rgb(want.bg));
-        expect(got.mutedInk, `${label}: muted ink`).toBe(rgb(want.muted));
-      }
+      // The warning page paints its red ground only for a confirmed stop; this
+      // address is no stop, so it draws the shared ground like every other page.
+      expect(got.bodyBg, `${label}: page ground`).toBe(rgb(want.bg));
+      expect(got.mutedInk, `${label}: muted ink`).toBe(rgb(want.muted));
       expect(got.bodyInk, `${label}: body ink`).toBe(rgb(want.text));
       expect(got.cardBg, `${label}: card`).toBe(rgb(want.card));
       expect(got.linkInk, `${label}: link ink`).toBe(rgb(want.accent));

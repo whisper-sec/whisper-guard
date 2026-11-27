@@ -201,6 +201,16 @@
   /* The filled malicious plate. A fill carries white text, so it is a
      darker red than the outline hue above, which is drawn AS text. */
   --w-v-crit: #b8202a;
+  /* Ink on a solid --w-v-crit plate, in both schemes. */
+  --w-on-crit: #ffffff;
+
+  /* The full-page stop. The ground under its red glow, the glow itself, the
+     evidence card's edge (the page's violet at 22% over the card, as a solid
+     colour) and the hairline between the card's rows and around its wells. */
+  --w-stop-ground: #010103;
+  --w-stop-glow: rgba(239, 68, 68, 0.16);
+  --w-stop-line: #281e40;
+  --w-stop-hairline: #191925;
 
   /* Category palette (one hue per category, disjoint from the verdict
      scale by construction; grey = exactly one meaning: not yet classified). */
@@ -289,6 +299,14 @@
   /* Ink on a solid --w-accent-line fill (a filled violet button). */
   --w-on-accent: #ffffff;
   --w-v-crit: #b02525;
+  --w-on-crit: #ffffff;
+
+  /* The full-page stop, in daylight: a faint red glow over the light ground,
+     light enough that every ink on it keeps 4.5:1. */
+  --w-stop-ground: #f4f4f8;
+  --w-stop-glow: rgba(239, 68, 68, 0.10);
+  --w-stop-line: #e5dbf3;
+  --w-stop-hairline: #ececf3;
 
   --w-cat-search: #2d63ae;
   --w-cat-ads: #96308f;

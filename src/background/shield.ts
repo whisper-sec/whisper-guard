@@ -23,7 +23,7 @@
 
 import { ext } from "../shared/api";
 import type { DetectorHit } from "../shared/types";
-import { sessionAllowed, markBlocked, unmarkBlocked } from "./session";
+import { sessionAllowed, markBlocked, newRuleNonce, unmarkBlocked } from "./session";
 import { getSettings } from "./settings";
 
 const RULE_OFFSET = 77000;
@@ -43,8 +43,21 @@ function ruleIdFor(host: string): number {
   return RULE_OFFSET + (h % 100000);
 }
 
-function warningUrl(host: string, brand?: DetectorHit | null): string {
+/**
+ * The warning page's address. `rule` is the secret value only the block rule's
+ * redirect carries. That redirect fires before any request leaves, so a page
+ * that arrives with the right value for its host may say nothing on it loaded.
+ * The move after a verdict never carries one: that page had loaded.
+ *
+ * The page does not decide this from its own address, which anyone can write.
+ * It sends the value back with its question about the host, and the background
+ * answers `beforeLoad` only when the host is blocked and the value is exactly
+ * the one stored for it (see session.ts). A made-up or missing value, or one
+ * for a host Guard does not block, leaves the page with the weaker sentence.
+ */
+function warningUrl(host: string, brand?: DetectorHit | null, rule?: string): string {
   const p = new URLSearchParams({ host });
+  if (rule) p.set("rule", rule);
   if (brand) {
     p.set("brand", brand.brand);
     p.set("brandDomain", brand.brandDomain);
@@ -65,6 +78,7 @@ export async function addBlockRule(host: string, hit: DetectorHit | null): Promi
   // and offer a clear: the DNR rule id is a non-reversible hash, so this is the
   // only way back to the hostname.
   await markBlocked(host);
+  const rule = await newRuleNonce(host);
   try {
     await ext.declarativeNetRequest.updateSessionRules({
       removeRuleIds: [ruleIdFor(host)],
@@ -74,7 +88,7 @@ export async function addBlockRule(host: string, hit: DetectorHit | null): Promi
           priority: 1,
           action: {
             type: "redirect" as chrome.declarativeNetRequest.RuleActionType,
-            redirect: { url: warningUrl(host, hit) },
+            redirect: { url: warningUrl(host, hit, rule) },
           },
           condition: {
             urlFilter: `||${host}^`,

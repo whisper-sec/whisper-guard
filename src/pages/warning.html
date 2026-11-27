@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
+  <!-- The address can carry the block rule's value: leaving the page never
+       sends it, or the address, to the next site. -->
+  <meta name="referrer" content="no-referrer">
   <title>Whisper Guard warning</title>
   <link rel="icon" type="image/png" href="icons/base-32.png">
   <link rel="stylesheet" href="theme.css">
@@ -19,27 +22,29 @@
 
     <!-- The interruption. Unchanged in force: this is the one moment the
          product exists for, and nothing below it may soften the stop. The
-         glyph, heading and sentences are filled in by the script once the
-         background has said whether it stopped this host; until then they
-         are empty and hidden, so the page states nothing it has not
-         confirmed. -->
-    <div class="stop" id="glyph"></div>
-    <h1 id="heading"></h1>
+         glyph, band line, heading and sentences are filled in by the script
+         once the background has said whether it stopped this host; until
+         then they are empty and hidden, so the page states nothing it has
+         not confirmed. -->
+    <div class="hero">
+      <div class="stop" id="glyph"></div>
+      <div class="hero-text">
+        <span class="band" id="band" hidden></span>
+        <h1 id="heading"></h1>
+      </div>
+    </div>
     <p id="detail"></p>
 
-    <!-- THE EVIDENCE. This page used to make its whole case in a four-row
-         label-and-value table, at the exact moment a reader is deciding
-         whether to believe it and click through anyway. A blocklist entry
-         is one hop and reads as an opinion; the join is seven, and the
-         reader can see it. Everything in here is drawn from the same walk
-         the panel does, and every part of it says plainly when it could
-         not be read. -->
+    <!-- THE EVIDENCE. A blocklist entry is one hop and reads as an opinion;
+         the join is seven, and the reader can see it. Everything in here is
+         drawn from the same walk the panel does, and every part of it says
+         plainly when it could not be read. -->
     <section id="evidence" class="evidence" hidden>
       <div class="ev-head">
         <span class="ev-title">The evidence</span>
         <span id="ev-completeness" class="ev-completeness"></span>
       </div>
-      <div id="ev-spine" class="ev-spine"></div>
+      <div id="ev-spine" class="ev-spine" aria-hidden="true"></div>
       <div class="ev-grid">
         <div id="ev-chain" class="ev-chain"></div>
         <div class="ev-side">
@@ -52,11 +57,13 @@
     </section>
 
     <div class="actions">
-      <button id="btn-back" class="btn primary">&larr; Go back</button>
+      <button id="btn-back" class="btn primary">&larr; Back to safety</button>
       <a id="btn-real" class="btn" href="#" hidden></a>
     </div>
-    <button id="btn-continue" class="linkish" disabled></button>
-    <p class="privacy" id="privacy"></p>
+    <div class="foot">
+      <button id="btn-continue" class="linkish" disabled></button>
+      <p class="privacy" id="privacy"></p>
+    </div>
   </main>
   <script src="warning.js"></script>
 </body>

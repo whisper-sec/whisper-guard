@@ -116,5 +116,60 @@ export function unmarkBlocked(host: string): Promise<void> {
     } catch {
       // best-effort
     }
+  }).then(() => clearRuleNonce(h));
+}
+
+/*
+ * The block rule's secret, one per host. The block rule redirects a tab to the
+ * warning page before any request leaves, so the page may say nothing on it
+ * loaded, but only if it really arrived that way. The redirect carries this
+ * value in its address; the page hands it back and the background answers
+ * whether it matches. The page never decides this from its own address: an
+ * address anyone can write says nothing about how the page was reached.
+ * Kept beside the block ledger, cleared when the block is.
+ */
+
+async function ruleNonces(): Promise<Record<string, string>> {
+  try {
+    const stored = (await chrome.storage.session.get("ruleNonces"))["ruleNonces"];
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? (stored as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** A new random value (128 bits, hex) for `host`, replacing any earlier one. */
+export function newRuleNonce(host: string): Promise<string> {
+  const h = host.toLowerCase();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const nonce = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return inOrder(async () => {
+    try {
+      await chrome.storage.session.set({ ruleNonces: { ...(await ruleNonces()), [h]: nonce } });
+    } catch {
+      // best-effort: without it the page says the weaker sentence.
+    }
+  }).then(() => nonce);
+}
+
+/** True only when `host` has a stored value and `value` is exactly it. */
+export async function ruleNonceMatches(host: string, value: unknown): Promise<boolean> {
+  if (typeof value !== "string" || value === "") return false;
+  return (await ruleNonces())[host.toLowerCase()] === value;
+}
+
+/** Forget the value for `host`: its block rule is gone. */
+export function clearRuleNonce(host: string): Promise<void> {
+  const h = host.toLowerCase();
+  return inOrder(async () => {
+    try {
+      const all = await ruleNonces();
+      if (h in all) {
+        delete all[h];
+        await chrome.storage.session.set({ ruleNonces: all });
+      }
+    } catch {
+      // best-effort
+    }
   });
 }

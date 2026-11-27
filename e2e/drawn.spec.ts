@@ -120,25 +120,20 @@ test("the warning page draws the join, and every mark comes from a measurement",
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/warning.html?host=${EVIL}`);
 
-  // The spine: seven rungs, drawn.
-  const spine = page.locator("#ev-spine svg");
-  await expect(spine).toBeVisible({ timeout: 15_000 });
+  // The spine: seven joins, one bar each.
+  await expect(page.locator("#ev-spine .ev-bar")).toHaveCount(7, { timeout: 15_000 });
   await expect(page.locator("#ev-chain .ch-rung")).toHaveCount(7);
-  await expect(page.locator("#ev-completeness")).toContainText("joins answered");
+  await expect(page.locator("#ev-completeness")).toContainText("joins read");
 
-  // The neighbourhood: ONE MARK PER FLAGGED HOST, and the count of marks is
-  // the measurement. A picture of nine squares that was drawn from a
-  // hardcoded nine would pass a screenshot review and fail here.
-  await expect(page.locator("#ev-neighbours")).toBeVisible();
-  await expect(page.locator("#ev-neighbours svg rect")).toHaveCount(9);
+  // The neighbourhood: the figure is the count the graph gave for the prefix,
+  // seeded as nine above. A figure typed into the page would pass a screenshot
+  // review and fail here.
+  await expect(page.locator("#ev-neighbours .ev-figure")).toHaveText("9");
   await expect(page.locator("#ev-neighbours")).toContainText("192.0.2.0/24");
 
-  // The age bar's fill is the age against a year, to three decimals, read
-  // off the element rather than off the caption beside it: the caption and
-  // the geometry can disagree, and only one of them is the picture.
-  const pct = await page.locator("#ev-age svg").getAttribute("data-pct");
-  expect(Number(pct)).toBeGreaterThan(0);
-  expect(Number(pct), "16 days of a 365 day scale").toBeLessThan(10);
+  // The age figure is the registration age the graph's history gave, which the
+  // fixture dates 16 days before the run.
+  await expect(page.locator("#ev-age .ev-figure")).toHaveText("16 days");
 
   // The privacy-critical one: the page must not claim more citations than
   // the graph gave reasons for.
@@ -151,52 +146,39 @@ test("the warning page draws the join, and every mark comes from a measurement",
   await page.close();
 });
 
-test("the new-domain tick stays visible where it crosses the age bar, in both colour schemes", async () => {
-  // The tick is one line drawn on top of the bar. For a name older than the
-  // threshold the bar's fill runs under it, so the tick is only there for a
-  // reader if its colour stands out from that fill: a see-through or
-  // near-fill colour draws a threshold nobody can see, under a caption that
-  // tells the reader to look for it.
+test("the age figure is drawn in the hot ink for a name younger than the new-name threshold and in plain ink for an older one, in both colour schemes", async () => {
+  // A young name is the strongest single signal on this page, so it is the one
+  // figure that changes colour. The threshold is the product's own, and a name
+  // past it must not borrow the alarm.
+  await markHostBlocked(ext, EVIL);
   await markHostBlocked(ext, OLD);
-  const page = await ext.context.newPage();
-  await page.goto(`chrome-extension://${ext.id}/warning.html?host=${OLD}`);
-  const bar = page.locator("#ev-age svg");
-  await expect(bar).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator("#ev-age")).toContainText("The tick is 32 days");
-  // CONTROL: track, fill and tick are all drawn, and the fill reaches past the
-  // tick (200 of 365 days against a tick at 32), or nothing is under it.
-  await expect(bar.locator("rect")).toHaveCount(3);
-  expect(Number(await bar.getAttribute("data-pct")), "200 days of a 365 day scale").toBeGreaterThan(20);
-
-  for (const scheme of ["dark", "light"] as const) {
+  const inks = async (host: string, scheme: "dark" | "light"): Promise<{ figure: string; hot: string; text: string }> => {
+    const page = await ext.context.newPage();
     await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-    const ratio = await bar.evaluate((svg) => {
-      const px = (c: string): number[] => {
-        const raw = (c.match(/-?[\d.]+/g) ?? []).map(Number);
-        // A computed colour comes back as rgb()/rgba() on 0-255 or as color(srgb ...) on 0-1.
-        const scale = c.startsWith("color(") ? 255 : 1;
-        return [raw[0]! * scale, raw[1]! * scale, raw[2]! * scale, raw[3] ?? 1];
+    await page.goto(`chrome-extension://${ext.id}/warning.html?host=${host}`);
+    const fig = page.locator("#ev-age .ev-figure");
+    await expect(fig).toBeVisible({ timeout: 15_000 });
+    const got = await fig.evaluate((el) => {
+      const of = (v: string): string => {
+        const p = document.createElement("span");
+        p.style.color = `var(${v})`;
+        document.body.append(p);
+        const c = getComputedStyle(p).color;
+        p.remove();
+        return c;
       };
-      const lum = (c: number[]): number => {
-        const f = (v: number): number => {
-          const x = v / 255;
-          return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
-        };
-        return 0.2126 * f(c[0]!) + 0.7152 * f(c[1]!) + 0.0722 * f(c[2]!);
-      };
-      // Drawing order: the track, the fill, then the tick on top.
-      const [, fillRect, tickRect] = Array.from(svg.querySelectorAll("rect"));
-      const fill = px(getComputedStyle(fillRect!).fill);
-      const tick = px(getComputedStyle(tickRect!).fill);
-      // What the tick actually paints: its own colour laid over the fill.
-      const a = tick[3]!;
-      const painted = [0, 1, 2].map((i) => tick[i]! * a + fill[i]! * (1 - a));
-      const [hi, lo] = [lum(painted), lum(fill)].sort((x, y) => y - x);
-      return (hi! + 0.05) / (lo! + 0.05);
+      return { figure: getComputedStyle(el).color, hot: of("--w-v-high"), text: of("--w-text") };
     });
-    expect(ratio, `${scheme}: the tick against the fill under it (a mark needs 3:1)`).toBeGreaterThanOrEqual(3);
+    await page.close();
+    return got;
+  };
+  for (const scheme of ["dark", "light"] as const) {
+    const young = await inks(EVIL, scheme);
+    expect(young.figure, `${scheme}: 16 days is under the threshold`).toBe(young.hot);
+    const old = await inks(OLD, scheme);
+    expect(old.figure, `${scheme}: 200 days is past the threshold`).toBe(old.text);
+    expect(old.figure).not.toBe(old.hot);
   }
-  await page.close();
 });
 
 test("CONTROL: an unreadable walk is drawn as unreadable, never as an empty one", async () => {
@@ -241,9 +223,9 @@ test("CONTROL: an unreadable walk is drawn as unreadable, never as an empty one"
     expect(text, "an unread rung must not carry an address").not.toContain("192.0.2");
     expect(text, "an unread rung must not name an operator").not.toContain("Bad Hosting");
 
-    // No neighbourhood mark either: nine squares drawn from a figure nobody
-    // fetched is the exact failure this panel exists to avoid.
-    await expect(page.locator("#ev-neighbours svg")).toHaveCount(0);
+    // No neighbourhood figure either: a count nobody fetched is the exact
+    // failure this panel exists to avoid.
+    await expect(page.locator("#ev-neighbours .ev-figure")).toHaveCount(0);
 
     // And the stop itself is untouched: a failed read must never soften the
     // interruption.

@@ -51,7 +51,7 @@ import { installContextMenu, onMenuClicked } from "./context-menu";
 import { CORPUS_ALARM, scheduleCorpusUpdates, updateCorpusNow } from "./corpus-updater";
 import { explainHost, identifyHost, reportHost } from "./cognition";
 import { getSettings, setSettings } from "./settings";
-import { allowForSession, recordRisk, sessionAllowed, sessionBlockedHosts, sessionRisks } from "./session";
+import { allowForSession, recordRisk, ruleNonceMatches, sessionAllowed, sessionBlockedHosts, sessionRisks } from "./session";
 import { addBlockRule, armConsent, armConsentFrame, armPreempt, injectGuard, redirectToWarning, removeBlockRule, shieldGranted } from "./shield";
 import { preemptCheck } from "./preempt";
 import { chainFor, resetChainCache, rungDetailFor } from "./chain-cache";
@@ -1275,7 +1275,11 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
         const settings = await getSettings();
         hit = await detect(host, settings.nearMiss, settings.allowlist);
       }
-      return { ok: true, block: { blocked, brand: hit?.brand ?? null, brandDomain: hit?.brandDomain ?? null } };
+      const beforeLoad = blocked && (await ruleNonceMatches(host, msg.rule));
+      return {
+        ok: true,
+        block: { blocked, brand: hit?.brand ?? null, brandDomain: hit?.brandDomain ?? null, beforeLoad },
+      };
     }
     case "allowHost": {
       if (fromWarningPage(sender)) {
