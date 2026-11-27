@@ -24,6 +24,7 @@ import type {
   RungDetail,
   Protection,
   SessionRisk,
+  SigninAsk,
   SiteChain,
   Settings,
   TabState,
@@ -88,6 +89,14 @@ export type BgRequest =
   // the user's honest one-click-through.
   | { kind: "preemptCheck"; host: string }
   | { kind: "preemptAllow"; host: string }
+  // The reader pressed Go back on the hold card. The hostname Guard held and
+  // nothing else; it stays in this browser's session storage, so the popup can
+  // lead with the sign-in ask once (takeSigninAsk) and never sends it anywhere.
+  | { kind: "preemptBack"; host: string }
+  // A Guard page asks, once per install, whether to lead with the sign-in ask
+  // for this tab. One atomic step: it answers only when the reader is signed
+  // out, the ask was never shown, and the tab's held click was gone back from.
+  | { kind: "takeSigninAsk"; tabId: number }
   // Resume of a held middle-/modifier-click: a synthetic click cannot
   // carry the user's modifiers, so the background opens the destination
   // with the NATIVE disposition (middle/Ctrl = background tab, +Shift =
@@ -202,6 +211,7 @@ export type BgResponse =
   | { ok: true; scan: LinkScanResult | PageScanResult }
   | { ok: true; verification: IdentityVerification | null }
   | { ok: true; preempt: PreemptDecision }
+  | { ok: true; ask: SigninAsk | null }
   | { ok: true; chain: SiteChain }
   | { ok: true; detail: RungDetail }
   // null is a first-class answer: the endpoint could not be read, and the

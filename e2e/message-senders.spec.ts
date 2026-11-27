@@ -2,8 +2,8 @@
 // Copyright (c) 2026 viaGraph B.V. (Whisper Security)
 //
 // The background's message router handles a kind only from the senders that
-// send it. The on-page layer sends four kinds (consentDeclined, preemptOpen,
-// preemptCheck, preemptAllow); any other kind from a web page's tab gets an
+// send it. The on-page layer sends five kinds (consentDeclined, preemptOpen,
+// preemptCheck, preemptAllow, preemptBack); any other kind from a web page's tab gets an
 // error answer and changes nothing, while Guard's own pages send every kind as
 // before. The `dashboard` port is accepted from the dashboard page only. The
 // warning page acts only as the top-level page of its tab: inside a frame its
@@ -131,7 +131,7 @@ test("should answer an error and change nothing for a kind the on-page layer doe
     expect(await permanentAllowList()).not.toContain(permHost);
     expect(await sessionAllowList()).toEqual(sessionBefore);
 
-    // The four kinds of the on-page layer still answer from the same tab.
+    // The kinds of the on-page layer still answer from the same tab.
     const check = await fromTab(tabId, { kind: "preemptCheck", host: "senders-target-guard-e2e.com" });
     expect(check?.ok).toBe(true);
     const declined = await fromTab(tabId, { kind: "consentDeclined" });
@@ -291,5 +291,39 @@ test("should still allow the host from the warning page shown as a tab's own pag
     await expect.poll(sessionAllowList).toContain(host);
   } finally {
     await top.close();
+  }
+});
+
+test("should accept a Go back from the on-page layer, and refuse the Guard page's ask from it", async () => {
+  const source = "ask-source-senders-guard-e2e.com";
+  const target = "ask-target-senders-guard-e2e.com";
+  net.setVerdict(source, CLEAN);
+  net.setVerdict(target, MALICIOUS);
+  const { page, tabId } = await visit(ext, `https://${source}/`);
+  const flag = (): Promise<unknown> =>
+    ext.sw.evaluate(async () => (await chrome.storage.local.get("signinAskShown"))["signinAskShown"] ?? null);
+  try {
+    await waitForIcon(ext, tabId, ["benign"]);
+    await ext.sw.evaluate(() => chrome.storage.local.remove("signinAskShown"));
+    const held = await fromTab(tabId, { kind: "preemptCheck", host: target });
+    expect((held?.["preempt"] as { action?: string } | undefined)?.action).toBe("interrupt");
+    const back = await fromTab(tabId, { kind: "preemptBack", host: target });
+    expect(back?.ok, "preemptBack from a web tab").toBe(true);
+
+    // Refused from the tab, and nothing was used up by asking.
+    const refused = await fromTab(tabId, { kind: "takeSigninAsk", tabId });
+    expect(refused?.ok, "takeSigninAsk from a web tab").toBe(false);
+    expect(typeof refused?.error).toBe("string");
+    expect(refused?.["ask"]).toBeUndefined();
+    expect(await flag()).toBeNull();
+
+    // Positive control: the same ask, from a Guard page, answers the held host and is then used up.
+    const taken = await fromGuardPage({ kind: "takeSigninAsk", tabId });
+    expect(taken?.ok).toBe(true);
+    expect((taken?.["ask"] as { host?: string } | null)?.host).toBe(target);
+    expect(await flag()).toBe(true);
+  } finally {
+    await ext.sw.evaluate(() => chrome.storage.local.remove("signinAskShown"));
+    await page.close();
   }
 });

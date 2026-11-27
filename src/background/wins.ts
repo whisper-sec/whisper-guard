@@ -29,7 +29,7 @@ function today(): string {
 }
 
 function zeroCounts(): Record<WinCategory, number> {
-  return { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 };
+  return { preemptBlock: 0, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 };
 }
 
 async function read(): Promise<WinsToday> {

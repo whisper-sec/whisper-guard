@@ -845,6 +845,18 @@ if (!w[FLAG]) {
 
       /** Set by the first Proceed press: from then on nothing else acts. */
       let decided = false;
+      /**
+       * The reader went back (Go back, or Escape): tell the background, which
+       * keeps the held host in this browser's session storage for the popup's
+       * sign-in ask. Fire and forget: the card closes whatever it answers.
+       */
+      const wentBack = (): void => {
+        try {
+          chrome.runtime.sendMessage({ kind: "preemptBack", host: evd.host }, () => void chrome.runtime.lastError);
+        } catch {
+          // The extension went away: nothing to tell.
+        }
+      };
       const close = (): void => {
         interstitialOpen = false;
         document.removeEventListener("keydown", onKey, true);
@@ -861,7 +873,10 @@ if (!w[FLAG]) {
         if (kev.key === "Escape") {
           kev.preventDefault();
           kev.stopImmediatePropagation();
-          if (!decided) close();
+          if (!decided) {
+            wentBack();
+            close();
+          }
           return;
         }
         const at = [proceed, back].findIndex((b) => b === root.activeElement);
@@ -892,6 +907,7 @@ if (!w[FLAG]) {
 
       back.addEventListener("click", (cev) => {
         if (!cev.isTrusted || decided) return;
+        wentBack();
         close();
       });
       proceed.addEventListener("click", (cev) => {

@@ -74,7 +74,8 @@ const REPLIES = {
   getChain: { ok: true, chain: CHAIN },
   getScale: { ok: true, scale: { nodes: window.__nodes ?? 7482240523, edges: 39546784832, objects: 47029025355, identities: 649, queries: 5699066, windowHours: 24, p50Us: 30, p99Us: 76083, pulse: Array.from({length: 48}, (_, i) => 18000 + Math.round(6000 * Math.sin(i / 7))), updated: Date.now(), degraded: false } },
   getQuota: { ok: true, quota: { plan: "ANONYMOUS", anonymous: true, hourlyLimit: 100, hourlyRemaining: 94, dailyLimit: 500, dailyRemaining: 466, maxDepth: 2 } },
-  getWins: { ok: true, wins: { date: "2026-09-02", total: 3, counts: { preemptBlock: 1, identityVerified: 1, cookieDecline: 1 } } },
+  takeSigninAsk: { ok: true, ask: null },
+  getWins: { ok: true, wins: { date: "2026-09-02", total: 3, counts: { preemptBlock: 1, identityVerified: 1, cookieDecline: 1, lookalikeCaught: 0 } } },
   getBrowserReport: { ok: true, report: { hosts: [], totals: { destinations: 4, companies: 4, countries: 2, networks: 2, lookups: 8, flagged: 1 }, generatedAt: Date.now() } },
   getProtection: { ok: true, protection: {
     host: ${JSON.stringify(HOST)}, band: "NONE", blocking: false, label: "clean", coverage: "known-clean",
@@ -657,13 +658,13 @@ test("the interstitial's evidence renders the same in Gecko and Blink", async ()
  * 32 hex digits for the account, then a stand-in zone as long as the agents
  * zone (agents.guard-e2e.test), 73 characters in all.
  * The popup draws it on one line, the start trimmed and the zone in view.
- * The categories argument is how many of today's three tallies are above zero.
+ * The categories argument is how many of today's four tallies are above zero.
  */
-function routedShim(categories: 1 | 3): string {
+function routedShim(categories: 1 | 4): string {
   const counts =
     categories === 1
-      ? { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 }
-      : { preemptBlock: 2, identityVerified: 1, cookieDecline: 3 };
+      ? { preemptBlock: 1, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 }
+      : { preemptBlock: 2, identityVerified: 1, cookieDecline: 3, lookalikeCaught: 2 };
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return `${SHIM}
 const ADDRESS = "2001:db8:aa:bb:cc:dd:ee:ff";
@@ -691,7 +692,7 @@ Object.assign(REPLIES, {
 `;
 }
 
-for (const categories of [1, 3] as const) {
+for (const categories of [1, 4] as const) {
   test(`This browser, signed in and routed with ${categories} categor${categories === 1 ? "y" : "ies"} today, is measured at 400 x 600 in Gecko and Blink`, async () => {
     test.setTimeout(120_000);
     const ff = await firefox.launch();

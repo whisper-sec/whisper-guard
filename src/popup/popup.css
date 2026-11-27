@@ -935,6 +935,55 @@ details[open] summary { color: var(--w-text); }
 .pp-notchecked .pp-btn { width: 100%; }
 .pp-notchecked-note { margin: 0; font: 400 12px/1.5 var(--w-font-sans); color: var(--w-muted); }
 
+/* ------------------------------------------------- the sign-in ask (board 4e)
+
+   Three cards in the order of the board: what Guard held, today's figures on
+   this device, and the offer. It leads the scroll on the one open that shows it. */
+
+.pp-ask { display: flex; flex-direction: column; gap: 10px; flex: none; }
+.pp-ask[hidden] { display: none; }
+.pp-ask-held {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border-color: color-mix(in srgb, var(--w-v-high-fill) 40%, transparent);
+  background: color-mix(in srgb, var(--w-v-high-fill) 8%, var(--w-card));
+}
+.pp-ask-mark { flex: none; color: var(--w-v-crit); }
+.pp-ask-bar { fill: var(--w-on-crit); }
+.pp-ask-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pp-ask-head { margin: 0; font: 900 15px/1.3 var(--w-font-sans); color: var(--w-text); }
+.pp-ask-line { margin: 0; font: 400 12.5px/1.45 var(--w-font-sans); color: var(--w-text-2); overflow-wrap: anywhere; }
+.pp-ask-host { font-family: var(--w-mono); color: var(--w-text); }
+.pp-ask-today {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-color: var(--w-line);
+  font: 400 12.5px/1.4 var(--w-font-sans);
+  color: var(--w-text);
+}
+.pp-ask-today .w-label { font: 700 10.5px/1.2 var(--w-font-sans); letter-spacing: 0.14em; }
+.pp-ask-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pp-ask-n { font-family: var(--w-mono); font-variant-numeric: tabular-nums; }
+.pp-ask-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background-color: var(--w-grad-a);
+  background-image: linear-gradient(160deg, var(--w-grad-a) 0%, var(--w-grad-b) 70%);
+  border-color: color-mix(in srgb, var(--w-accent-stroke) 40%, transparent);
+}
+.pp-ask-offer-head { margin: 0; font: 900 16px/1.3 var(--w-font-sans); color: var(--w-text); }
+.pp-btn.quiet {
+  min-height: 32px;
+  border: 0;
+  font-weight: 400;
+  color: var(--w-text-2);
+}
+
 /* ------------------------------------------------- the look-alike card */
 
 .pp-lookalike {

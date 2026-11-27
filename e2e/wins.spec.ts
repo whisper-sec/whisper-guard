@@ -35,6 +35,7 @@ let shieldDist: string;
 const EVIL = "evil-wins-target-e2e.com";
 const AMBER = "amber-wins-page-e2e.com";
 const CLEAN = "clean-wins-target-e2e.com";
+const LOOKALIKE = "paypa1-wins-count-e2e.com";
 const START = {
   block: "start1-wins-guard-e2e.com",
   silent: "start2-wins-guard-e2e.com",
@@ -349,7 +350,7 @@ test("the tally resets by calendar date: yesterday's record reads as zero", asyn
   await plant(-1);
   const yesterday = await readThroughTheRealPath();
   expect(yesterday.total, "yesterday's counts must not be served as today's").toBe(0);
-  expect(yesterday.counts).toEqual({ preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
+  expect(yesterday.counts).toEqual({ preemptBlock: 0, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 });
   expect(yesterday.date, "the tally re-keys to today").toBe(sameDay.date);
 
   // And the one place a user ever sees it agrees. The hero is pinned to the
@@ -368,4 +369,33 @@ test("the tally resets by calendar date: yesterday's record reads as zero", asyn
     await chrome.storage.local.set({ wins: rec });
   }, original);
   expect((await storedWins()).rec).toEqual(original);
+});
+
+test("a look-alike the on-device detector flags counts once per host, shows as '1 look-alike caught', and the record keeps no host", async () => {
+  await setKey(ext, null);
+  const before = (await storedWins()).rec.counts?.["lookalikeCaught"] ?? 0;
+  const one = await visit(ext, `https://${LOOKALIKE}/`);
+  await waitForIcon(ext, one.tabId, ["suspicious"]);
+  await expect
+    .poll(async () => (await storedWins()).rec.counts?.["lookalikeCaught"] ?? 0, { timeout: 5000 })
+    .toBe(before + 1);
+
+  // The same host again, in a second tab, is the same catch.
+  const again = await visit(ext, `https://${LOOKALIKE}/`);
+  await waitForIcon(ext, again.tabId, ["suspicious"]);
+  // A page that is not a look-alike counts nothing: reaching its check is the later event.
+  const clean = await visit(ext, `https://${START.silent}/`);
+  await waitForIcon(ext, clean.tabId, ["benign"]);
+  expect((await storedWins()).rec.counts?.["lookalikeCaught"] ?? 0, "one host counts once").toBe(before + 1);
+
+  const popup = await openPopup(ext, one.tabId, { section: "browser" });
+  expect(before, "no earlier test in this file flags a look-alike").toBe(0);
+  await expect(popup.locator("#today-breakdown")).toContainText("1 look-alike caught");
+  const { raw } = await storedWins();
+  expect(raw).not.toContain("paypa1");
+  expect(raw).not.toContain("e2e.com");
+  await popup.close();
+  await clean.page.close();
+  await again.page.close();
+  await one.page.close();
 });

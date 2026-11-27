@@ -44,6 +44,7 @@ import {
   type DeviceFlowState,
   type Protection,
   type Settings,
+  type SigninAsk,
   type SiteChain,
   type TabState,
   type WhyFactor,
@@ -935,6 +936,7 @@ const WIN_LABEL: Record<WinCategory, { one: string; many: string }> = {
   },
   identityVerified: { one: "endpoint identity verified", many: "endpoint identities verified" },
   cookieDecline: { one: "cookie prompt declined", many: "cookie prompts declined" },
+  lookalikeCaught: { one: "look-alike caught", many: "look-alikes caught" },
 };
 
 /**
@@ -956,7 +958,7 @@ async function loadToday(): Promise<void> {
   $("today-row").hidden = false;
   const parts: string[] = [];
   for (const c of WIN_CATEGORIES) {
-    const n = w.counts[c];
+    const n = w.counts[c] ?? 0;
     if (n <= 0) continue;
     parts.push(`${n} ${n === 1 ? WIN_LABEL[c].one : WIN_LABEL[c].many}`);
   }
@@ -1190,6 +1192,71 @@ async function startSignIn(button: HTMLButtonElement): Promise<void> {
     if (label !== null) button.textContent = label;
   }
   if (signInView() === "waiting") void followSignIn();
+}
+
+// ------------------------------------------------- the sign-in ask (board 4e)
+
+/**
+ * After Guard held a click the reader went back from, the first popup open for
+ * a signed-out reader leads with one card. The background decides, in one step
+ * that also uses the ask up, so this asks and draws exactly what it is given.
+ * A sign-in that is already waiting is not interrupted: the question is not
+ * asked then, and so is not used up.
+ */
+async function loadSigninAsk(device: DeviceFlowState | null): Promise<void> {
+  // data-ask says the question has been answered ("shown" or "none"), for a
+  // reader of the page that must know the ask is not about to appear.
+  const region = $("popup-scroll");
+  if (tabId < 0 || device?.phase === "waiting") {
+    region.dataset["ask"] = "none";
+    return;
+  }
+  const res = await send<{ ok: true; ask: SigninAsk | null }>({ kind: "takeSigninAsk", tabId }).catch(() => null);
+  if (!res || !res.ok || !res.ask) {
+    region.dataset["ask"] = "none";
+    return;
+  }
+  drawSigninAsk(res.ask);
+  region.dataset["ask"] = "shown";
+}
+
+function drawSigninAsk(a: SigninAsk): void {
+  const n = a.count;
+  $("ask-head").textContent = `Guard held ${n} ${n === 1 ? "click" : "clicks"} on this page`;
+  const host = document.createElement("span");
+  host.className = "pp-ask-host";
+  host.textContent = a.host;
+  const what = a.label ? `${a.band}, ${a.label}` : a.band;
+  const back = n === 1 ? "You went back." : a.eachTime ? "You went back each time." : "You went back from it.";
+  $("ask-line").replaceChildren(n === 1 ? "A link to " : "The last was a link to ", host, ` (${what}). ${back} Nothing loaded.`);
+  for (const fig of document.querySelectorAll<HTMLElement>("#signin-ask [data-win]")) {
+    fig.textContent = String(a.today.counts[fig.dataset["win"] as WinCategory] ?? 0);
+  }
+  // The popup asks once: the sign-in card near the end stays hidden while this shows.
+  $("signin-pitch").hidden = true;
+  $("signin-ask").hidden = false;
+
+  const close = (): void => {
+    $("signin-ask").hidden = true;
+    $("signin-pitch").hidden = false;
+  };
+  $("btn-ask-later").addEventListener("click", () => {
+    close();
+    $("panel-site").focus({ preventScroll: true });
+  });
+  $("btn-ask-signin").addEventListener("click", () => {
+    close();
+    // The same start as the sign-in card's own button: its waiting state shows, in view.
+    void startSignIn($<HTMLButtonElement>("btn-signin")).then(() => {
+      // The pressed button is gone: focus goes to the card's own next control.
+      if (signInView() === "waiting") {
+        keepSignInInView("waiting");
+        $("btn-signin-tab").focus({ preventScroll: true });
+      } else {
+        $($("signin-end").hidden ? "btn-signin" : "btn-signin-again").focus({ preventScroll: true });
+      }
+    });
+  });
 }
 
 /**
@@ -1459,10 +1526,10 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
   if (signedIn) {
     // Whether the confirmation shows depends on whether an address exists, so
     // the scroll waits for the control's first read.
-    void loadIdentity(device?.phase === "approved").then(() => keepSignInInView(device));
+    void loadIdentity(device?.phase === "approved").then(() => keepSignInInView(device?.phase));
   } else {
     wireSignin(device);
-    keepSignInInView(device);
+    keepSignInInView(device?.phase);
     void loadTier();
   }
   $("btn-nextstep-dashboard").addEventListener("click", (ev) => {
@@ -1482,6 +1549,9 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
 
   // The on-device look-alike catch needs no check and sends nothing.
   if (first) drawLookalike(first);
+
+  // After the sign-in card is wired: the ask, when it shows, hides that card.
+  void loadSigninAsk(device);
 }
 
 let lookalikeDrawn = false;
@@ -1951,14 +2021,14 @@ function initThemeButton(): void {
  * opens and change its height, so the scroll follows them until the reader
  * takes the scroll themselves (wheel, touch, key or press).
  */
-function keepSignInInView(device: DeviceFlowState | null): void {
-  if (device?.phase !== "waiting" && device?.phase !== "approved") return;
+function keepSignInInView(phase: DeviceFlowState["phase"] | undefined): void {
+  if (phase !== "waiting" && phase !== "approved") return;
   const region = $("popup-scroll");
   // After an approval only the confirmation is a reason to scroll: with an
   // address already reserved there is no next-step card, and the popup opens
   // at This site as usual.
   const target = (): HTMLElement | undefined =>
-    device.phase === "approved"
+    phase === "approved"
       ? [$("signin-done")].find((e) => !e.hidden)
       : [$("identity-card"), $("signin-pitch")].find((e) => !e.hidden);
   const watch = new ResizeObserver(() => scrollToCard());

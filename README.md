@@ -95,25 +95,29 @@ history.
   of them: "Reject all and subscribe" is a paywall, and pressing it on your
   behalf would be a purchase.
 - **The keyless tier, measured rather than pitched.** Signed out, the panel
-  shows your real remaining budget on the public graph tier and the join
-  depth it allows, read from the graph itself. "Sign in" is then a fact
-  about a ceiling you can see, not an advertisement. The size of the graph
-  behind every verdict is read live too, in the panel masthead and across
-  the top of the dashboard. The panel shows the graph size in three
-  digits, with the exact figures and the resolvers' totals in its
-  tooltip. The pulse line over the trailing 24 hours is on the dashboard.
-  The first-run page shows the graph's size beside a live verdict. No figure
-  about our coverage is ever written into the build: a number typed into a
-  page is stale the day after it ships.
+  shows your real remaining budget on the public graph tier and the join depth
+  it allows, read from the graph itself. "Sign in" is then a fact about a
+  ceiling you can see, not an advertisement. Once per install, the first time
+  you open the panel after Guard held a click and you went back, it leads with
+  one card: what was held and its band, today's tally, and an offer to sign
+  in, with "Not now" beside it. The held site's name is kept in this browser's
+  session storage for that card and is never sent. The size of the graph
+  behind every verdict is read live too, in the panel masthead and across the
+  top of the dashboard. The panel shows the graph size in three digits, with
+  the exact figures and the resolvers' totals in its tooltip. The pulse line
+  over the trailing 24 hours is on the dashboard. The first-run page shows the
+  graph's size beside a live verdict. No figure about our coverage is ever
+  written into the build: a number typed into a page is stale the day after it
+  ships.
 - **A calm tally of what it handled.** One line in the panel counts today's
-  quiet wins by category (clicks held, identities verified, cookie prompts
-  declined) and nothing else: the record is a category, a count and today's
-  date, so it resets on its own and can never learn a site you visited. There
-  is no toast and no notification anywhere, because the extension holds no
-  notifications permission at all. The toolbar icon is not a counter and never
-  nags: it shows only the state of the site in the tab, drawn in the tile (a
-  check, an exclamation mark, a stop sign, a question mark, or three dots while
-  a check runs). It carries no text badge.
+  quiet wins by category (clicks held, look-alikes caught, identities
+  verified, cookie prompts declined) and nothing else: the record is a
+  category, a count and today's date, so it resets on its own and can never
+  learn a site you visited. There is no toast and no notification anywhere,
+  because the extension holds no notifications permission at all. The toolbar
+  icon is not a counter and never nags: it shows only the state of the site in
+  the tab, drawn in the tile (a check, an exclamation mark, a stop sign, a
+  question mark, or three dots while a check runs). It carries no text badge.
 
 **Signed in (free, one tap, no API key to handle):**
 
