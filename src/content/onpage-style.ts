@@ -93,6 +93,29 @@ export const CAUTION_TONE = {
   dangerFill: "#24121e",
 } as const;
 
+/**
+ * The look-alike bar: a dark amber-edged strip at the top of the page. The
+ * edge of the Dismiss button is a translucent amber composited to a solid
+ * colour over the bar ground, because the bar draws over arbitrary pages.
+ */
+export const AMBER_BAR = {
+  ground: "#1a1206",
+  amber: "#f59e0b",
+  /** the sentence and the strong brand name in it */
+  text: "#fef3c7",
+  /** dark ink on the amber tag and on the amber link */
+  onAmber: "#1c1917",
+  /** the Dismiss label */
+  dismissText: "#fde68a",
+  /**
+   * rgba(245,158,11,0.55) over #1a1206: each channel is
+   * ground + 0.55 * (amber - ground), i.e. 26 + 0.55 * 219 = 146 (0x92),
+   * 18 + 0.55 * 140 = 95 (0x5f), 6 + 0.55 * 5 = 9 (0x09).
+   */
+  dismissEdge: "#925f09",
+  shadow: "0 6px 24px rgba(0,0,0,0.35)",
+} as const;
+
 /** The SVG namespace, for the close icon (built with createElementNS, never markup). */
 const SVG_NS = "http://www.w3.org/2000/svg";
 

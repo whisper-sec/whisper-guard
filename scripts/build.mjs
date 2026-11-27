@@ -63,10 +63,10 @@ for (const [entry, out] of [
 
 // 2) Static pages + styles + the brand asset. knot.png is the mark every
 // extension page draws, because it survives both colour schemes. The white
-// wordmark is NOT shipped: the one surface that still uses it is the
-// injected on-page banner, which cannot load a bundled file without making
-// it web-accessible and so carries its own data URI (src/shared/brand.ts).
-// assets/logo.png stays in the repo as the source those are generated from,
+// wordmark is NOT shipped and no surface draws it any more: the on-page
+// warnings carry the knot as a data URI (src/shared/brand.ts) because they
+// cannot load a bundled file without making it web-accessible.
+// assets/logo.png stays in the repo only as the source for `npm run icons`,
 // and ships nowhere.
 for (const [from, to] of [
   ["src/popup/popup.html", "popup.html"],
