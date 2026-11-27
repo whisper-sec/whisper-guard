@@ -205,6 +205,14 @@ test.describe(SIGNED_OUT_NOT_GRANTED, () => {
 
   // ------------------------------------------------------------- step 1
 
+  test("step 1: its sentence says the mark shows the verdict and, if it is not on the toolbar yet, to pin it from the puzzle-piece button", async () => {
+    const page = await openFirst(ext, { pin: "false" });
+    await expect(pin(page).locator(".step-text")).toHaveText(
+      "The mark shows each site’s verdict at a glance. If it is not on your toolbar yet, open the puzzle-piece button and pin it.",
+    );
+    await page.close();
+  });
+
   test("step 1: with the browser answering that the icon is on the toolbar, it is done, reads 'Pinned. Done.' and the counter reads 1 of 3", async () => {
     const page = await openFirst(ext, { pin: "true" });
     await expect(pin(page)).toHaveAttribute("data-state", "done");

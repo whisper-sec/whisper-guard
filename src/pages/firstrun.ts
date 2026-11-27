@@ -145,8 +145,10 @@ const nextPinRead = newestRead();
 /**
  * Whether Guard's icon is on the toolbar, asked of the browser. Chromium 91+
  * and Firefox 116+ answer it, and this extension requires newer than both.
- * Firefox starts an action without default_area in its Extensions panel, so
- * its own answer decides here too: nothing about the browser is assumed.
+ * Firefox places the button on the toolbar at install (the manifest's
+ * default_area), while Chromium keeps it in the Extensions menu until the
+ * reader pins it. Either way the browser's own answer decides here: nothing
+ * about the browser is assumed.
  */
 async function readPin(): Promise<void> {
   const isLatest = nextPinRead();
