@@ -36,9 +36,21 @@ interface PendingFlow {
   verificationUri: string;
   intervalMs: number;
   deadline: number;
+  /** The tab this flow opened on the approval page; null when it could not be opened. */
+  tabId: number | null;
 }
 
-let state: DeviceFlowState = { phase: "idle", userCode: null, verificationUri: null, message: null };
+/** What the reader is told when a code runs out, in the popup and on the poll alike. */
+const EXPIRED_TEXT = "This code expired before it was approved.";
+/** What the reader is told when the approval page answered Deny. */
+const DENIED_TEXT = "The sign-in was refused in the console.";
+
+/** A state with nothing waiting: every field but the phase and the words is empty. */
+function rest(phase: DeviceFlowState["phase"], message: string | null = null): DeviceFlowState {
+  return { phase, userCode: null, verificationUri: null, expiresAt: null, message };
+}
+
+let state: DeviceFlowState = rest("idle");
 let pending: PendingFlow | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -58,6 +70,12 @@ function notifyAuthChanged(): void {
 }
 
 export function deviceFlowState(): DeviceFlowState {
+  // The popup counts down to the deadline, so the answer must agree with it
+  // at that moment instead of waiting for the next poll to notice.
+  if (pending && state.phase === "waiting" && Date.now() >= pending.deadline) {
+    state = rest("expired", EXPIRED_TEXT);
+    void clearPending();
+  }
   return state;
 }
 
@@ -95,6 +113,7 @@ export async function resumeDeviceFlow(): Promise<void> {
         phase: "waiting",
         userCode: stored.userCode,
         verificationUri: stored.verificationUri,
+        expiresAt: stored.deadline,
         message: null,
       };
       schedulePoll(0);
@@ -108,17 +127,19 @@ export async function startDeviceFlow(): Promise<DeviceFlowState> {
   cancelDeviceFlow();
   let auth: Record<string, unknown>;
   try {
-    auth = await postJson("/api/device/authorize", {});
+    // The body names the client and nothing else: no browser, no system.
+    auth = await postJson("/api/device/authorize", { client: "whisper-guard" });
   } catch (e) {
-    state = { phase: "error", userCode: null, verificationUri: null, message: String(e instanceof Error ? e.message : e) };
+    state = rest("error", String(e instanceof Error ? e.message : e));
     return state;
   }
 
   const deviceCode = str(auth["device_code"]);
   const userCode = str(auth["user_code"]);
-  const uri = str(auth["verification_uri_complete"]) || str(auth["verification_uri"]);
+  // Only an https address is ever opened, whichever of the two the console names.
+  const uri = [str(auth["verification_uri_complete"]), str(auth["verification_uri"])].find(isHttps) ?? "";
   if (deviceCode === "" || uri === "") {
-    state = { phase: "error", userCode: null, verificationUri: null, message: "incomplete device-authorize reply from the console" };
+    state = rest("error", "incomplete device-authorize reply from the console");
     return state;
   }
   const intervalS = typeof auth["interval"] === "number" ? (auth["interval"] as number) : 0;
@@ -130,14 +151,115 @@ export async function startDeviceFlow(): Promise<DeviceFlowState> {
     verificationUri: uri,
     intervalMs: intervalS > 0 ? intervalS * 1000 : DEVICE_POLL_DEFAULT_MS,
     deadline: Date.now() + (expiresS > 0 ? expiresS * 1000 : DEVICE_LIFETIME_DEFAULT_MS),
+    tabId: null,
   };
-  await persist();
-  state = { phase: "waiting", userCode, verificationUri: uri, message: null };
+  const flow = pending;
+  state = { phase: "waiting", userCode, verificationUri: uri, expiresAt: flow.deadline, message: null };
 
-  // Open the approval page: usually one tap for a signed-in console user.
-  ext.tabs.create({ url: uri }).catch(() => undefined);
-  schedulePoll(pending.intervalMs);
+  // Open the approval page: usually one tap for a signed-in console user. The
+  // tab is remembered so it can be brought forward, and closed once the poll
+  // has an answer.
+  const opened = await openApprovalTab(uri);
+  if (pending !== flow) {
+    // The flow ended while the tab was opening (cancelled or replaced): leave nothing behind.
+    await closeApprovalTab({ tabId: opened, verificationUri: uri });
+    return deviceFlowState();
+  }
+  flow.tabId = opened;
+  await persist();
+  schedulePoll(flow.intervalMs);
   return state;
+}
+
+function isHttps(address: string): boolean {
+  try {
+    return new URL(address).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+async function openApprovalTab(uri: string): Promise<number | null> {
+  try {
+    const tab = await ext.tabs.create({ url: uri });
+    return typeof tab.id === "number" ? tab.id : null;
+  } catch {
+    return null;
+  }
+}
+
+function originOf(address: string | undefined): string | null {
+  try {
+    // An opaque origin ("null") is never the same as another.
+    const origin = address ? new URL(address).origin : null;
+    return origin === "null" ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/** The remembered tab, when it still exists and still shows the sign-in origin. */
+async function liveApprovalTab(flow: Pick<PendingFlow, "tabId" | "verificationUri">): Promise<chrome.tabs.Tab | null> {
+  if (flow.tabId === null) return null;
+  try {
+    const tab = await ext.tabs.get(flow.tabId);
+    const origin = originOf(flow.verificationUri);
+    // A tab that has only just been created reports its address as pending
+    // until it loads. No readable address is no match.
+    return origin !== null && originOf(tab.pendingUrl || tab.url) === origin ? tab : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Close the tab Guard opened, unless the reader has taken it somewhere else. */
+async function closeApprovalTab(flow: Pick<PendingFlow, "tabId" | "verificationUri">): Promise<void> {
+  const tab = await liveApprovalTab(flow);
+  if (tab?.id === undefined) return;
+  try {
+    await ext.tabs.remove(tab.id);
+  } catch {
+    // already gone
+  }
+}
+
+/**
+ * Bring the approval page forward while a sign-in waits: the tab Guard opened
+ * when it is still there, else the same address in a new tab. The address is
+ * always the one the console named.
+ */
+export async function showApprovalTab(): Promise<DeviceFlowState> {
+  const current = deviceFlowState();
+  const flow = pending;
+  if (current.phase !== "waiting" || !flow) return current;
+  const tab = await liveApprovalTab(flow);
+  if (tab?.id !== undefined) {
+    try {
+      await ext.tabs.update(tab.id, { active: true });
+    } catch {
+      // fall through to a new tab
+      return openAgain(flow);
+    }
+    try {
+      if (tab.windowId !== undefined) await ext.windows.update(tab.windowId, { focused: true });
+    } catch {
+      // the tab is forward; a window that would not take the focus is not a reason for a second tab
+    }
+    return deviceFlowState();
+  }
+  return openAgain(flow);
+}
+
+async function openAgain(flow: PendingFlow): Promise<DeviceFlowState> {
+  const opened = await openApprovalTab(flow.verificationUri);
+  if (pending !== flow) {
+    // The flow ended while the tab was opening: close it rather than remember it.
+    await closeApprovalTab({ tabId: opened, verificationUri: flow.verificationUri });
+    return deviceFlowState();
+  }
+  flow.tabId = opened;
+  await persist();
+  return deviceFlowState();
 }
 
 function schedulePoll(delayMs: number): void {
@@ -149,39 +271,56 @@ function schedulePoll(delayMs: number): void {
 
 async function pollOnce(): Promise<void> {
   if (!pending) return;
-  if (Date.now() > pending.deadline) {
-    state = { phase: "expired", userCode: null, verificationUri: null, message: "the sign-in was not approved in time; try again" };
+  if (Date.now() >= pending.deadline) {
+    state = rest("expired", EXPIRED_TEXT);
     await clearPending();
     return;
   }
+  const flow = pending;
   let tok: Record<string, unknown>;
   try {
-    tok = await postJson("/api/device/token", { device_code: pending.deviceCode });
+    tok = await postJson("/api/device/token", { device_code: flow.deviceCode });
   } catch {
     // A transient blip never aborts an otherwise-fine sign-in: keep polling.
-    schedulePoll(pending.intervalMs);
+    if (pending === flow) schedulePoll(flow.intervalMs);
     return;
   }
+  // A late answer for a flow that has since ended (expired, cancelled, signed
+  // out or replaced) changes nothing: no key, no phase, no clearing of the new flow.
+  if (pending !== flow) return;
   const status = str(tok["status"]);
   if (status === "approved") {
     const key = str(tok["api_key"]);
     if (key === "") {
-      state = { phase: "error", userCode: null, verificationUri: null, message: "approved, but the console returned no key; try again" };
+      state = rest("error", "approved, but the console returned no key; try again");
+      await clearPending();
     } else {
       await chrome.storage.local.set({ apiKey: key });
-      state = { phase: "approved", userCode: null, verificationUri: null, message: null };
+      // The flow may have been replaced while the key was being written.
+      if (pending !== flow) return;
+      await clearPending();
+      // The approval page has done its work; it is gone before the answer
+      // reads approved, so a reader who sees "approved" sees no stale tab.
+      await closeApprovalTab(flow);
+      state = rest("approved");
       notifyAuthChanged();
     }
+    return;
+  }
+  if (status === "denied") {
+    // Refused in the console: stop at once, with no further token request.
     await clearPending();
+    await closeApprovalTab(flow);
+    state = rest("denied", DENIED_TEXT);
     return;
   }
   if (status === "expired") {
-    state = { phase: "expired", userCode: null, verificationUri: null, message: "the sign-in code expired; try again" };
+    state = rest("expired", EXPIRED_TEXT);
     await clearPending();
     return;
   }
   // pending, or an unknown status (liberal-accept): keep polling.
-  schedulePoll(pending.intervalMs);
+  schedulePoll(flow.intervalMs);
 }
 
 async function clearPending(): Promise<void> {
@@ -198,7 +337,7 @@ async function clearPending(): Promise<void> {
 }
 
 export function cancelDeviceFlow(): void {
-  state = { phase: "idle", userCode: null, verificationUri: null, message: null };
+  state = rest("idle");
   void clearPending();
 }
 
@@ -213,6 +352,6 @@ export async function saveKey(key: string): Promise<void> {
   const k = key.trim();
   if (k === "") throw new Error("empty key");
   await chrome.storage.local.set({ apiKey: k });
-  state = { phase: "approved", userCode: null, verificationUri: null, message: null };
+  state = rest("approved");
   notifyAuthChanged();
 }

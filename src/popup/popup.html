@@ -250,17 +250,32 @@
     <!-- THIS BROWSER. One control does the whole thing: reserve the
          identity AND route through it, asking for the permission it needs
          at the moment it needs it. No second step, no hand-off. -->
+    <!-- Right after an approval, until this browser has an address: the
+         sign-in is confirmed, then the next-step card holds the one control
+         (board 5a, the popup after the approval). Shown by popup.ts only. -->
+    <div id="signin-done" class="pp-signin-done" hidden>
+      <h3 class="pp-signin-title">Signed in.</h3>
+      <p class="pp-signin-text">Your fleet now shows on the dashboard. One more step makes this browser a verifiable endpoint.</p>
+    </div>
     <section id="identity-card" class="pp-card pp-identity" hidden>
+      <div id="nextstep-head" class="pp-next-head" hidden>
+        <span class="pp-next-title">Protect this browser</span>
+        <span class="pp-next-tag"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" aria-hidden="true"><path d="M12 4v15M5 12l7 7 7-7"/></svg>NEXT STEP</span>
+      </div>
+      <p id="nextstep-line" class="pp-signin-text" hidden>Reserve its own Whisper IPv6 address and route its traffic through it. Off any time.</p>
       <!-- Filled by shared/protect-control.ts, the one implementation of
            this control; the dashboard mounts exactly the same thing. -->
       <div id="identity-control"></div>
     </section>
+    <a id="btn-nextstep-dashboard" class="pp-link" href="dashboard.html" hidden>Open dashboard <span aria-hidden="true">&rarr;</span></a>
 
     <!-- The signed-out tier: the reader's real, measured position on the
          keyless tier, read from the graph, and exactly what an account
          changes about it. Same card as the identity card, without a state
-         chip: there is no identity state to name. -->
-    <section id="signin-pitch" class="pp-card pp-identity" hidden>
+         chip: there is no identity state to name. While a sign-in runs the
+         pitch gives way to the code and the countdown (board 5a, the popup
+         while the console tab is open); data-state names which. -->
+    <section id="signin-pitch" class="pp-card pp-identity" data-state="idle" hidden>
       <div class="pc-head">
         <span class="w-label">This browser</span>
       </div>
@@ -274,7 +289,21 @@
         <div id="tier-note" class="w-note"></div>
       </div>
       <button id="btn-signin" class="pp-btn primary">Sign in with Whisper</button>
-      <div id="device-status" class="w-note" hidden></div>
+      <div id="signin-wait" class="pp-signin-wait" hidden>
+        <h3 class="pp-signin-title">Approve this browser in the console</h3>
+        <p class="pp-signin-text">A console tab has opened. Check that it shows this code, then press Approve.</p>
+        <div id="signin-code" class="pp-signin-code"></div>
+        <p id="signin-countdown" class="pp-signin-count"></p>
+        <button id="btn-signin-tab" class="pp-btn">Open the console tab again</button>
+        <p class="pp-signin-text small">You never see or paste a key.</p>
+      </div>
+      <div id="signin-end" class="pp-signin-wait" hidden>
+        <p id="signin-end-text" class="pp-signin-text strong"></p>
+        <button id="btn-signin-again" class="pp-btn primary"></button>
+      </div>
+      <!-- The one polite region: it says what a sign-in state is when it
+           changes, never the seconds. -->
+      <div id="signin-announce" class="pc-sr" aria-live="polite"></div>
     </section>
 
     <!-- THE LAST 24 HOURS, signed in or not. Three figures, each shown

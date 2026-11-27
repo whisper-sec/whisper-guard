@@ -677,7 +677,73 @@ button.pp-link { background: none; border: 0; padding: 0; text-align: left; curs
 .pp-identity .tier-label { color: var(--w-on-grad-2); }
 .pp-identity .tier-track { background: color-mix(in srgb, var(--w-text) 12%, transparent); }
 .pp-identity #tier-note { margin-top: 6px; }
-#device-status { font-size: 11px; line-height: 1.45; }
+
+/* While a sign-in runs, the pitch, the meter and the button give way to the
+   code and the countdown (board 5a). data-state on the card says which. */
+#signin-pitch:not([data-state="idle"]) > .pc-head,
+#signin-pitch:not([data-state="idle"]) > .pp-signin-text,
+#signin-pitch:not([data-state="idle"]) > #tier-meter,
+#signin-pitch:not([data-state="idle"]) > #btn-signin { display: none; }
+.pp-signin-wait { display: flex; flex-direction: column; gap: 8px; }
+.pp-signin-wait[hidden] { display: none; }
+.pp-signin-title { margin: 0; font: 900 15px/1.25 var(--w-font-sans); color: var(--w-text); }
+.pp-signin-text.strong { font-weight: 700; color: var(--w-text); }
+.pp-signin-text.small { font-size: 11.5px; color: var(--w-on-grad-2); }
+/* The code, as the console shows it: large mono, one line, in a plate of its own. */
+.pp-signin-code {
+  font: 700 26px/1.2 var(--w-mono);
+  letter-spacing: 0.12em;
+  text-align: center;
+  color: var(--w-text);
+  background: var(--w-surface);
+  border: 1px solid color-mix(in srgb, var(--w-accent-line) 40%, transparent);
+  border-radius: 10px;
+  padding: 12px 10px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.pp-signin-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: 400 12.5px/1.3 var(--w-font-sans);
+  color: var(--w-on-grad-2);
+  font-variant-numeric: tabular-nums;
+}
+.pp-signin-count::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--w-v-low-fill);
+}
+#signin-pitch .pp-btn { width: 100%; }
+
+/* After the approval (board 5a): the confirmation, then the next-step card
+   around the one control, then the way to the dashboard. */
+.pp-signin-done { display: flex; flex-direction: column; gap: 6px; padding: 2px 2px 0; }
+.pp-signin-done[hidden], .pp-next-head[hidden] { display: none; }
+#identity-card[data-nextstep] { display: flex; flex-direction: column; gap: 8px; }
+.pp-next-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pp-next-title { font: 900 14px/1.2 var(--w-font-sans); color: var(--w-text); }
+.pp-next-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font: 700 10.5px/1.2 var(--w-font-sans);
+  letter-spacing: 0.08em;
+  color: var(--w-on-warn);
+  background: var(--w-v-low-fill);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+/* The card's own title and tag stand in for the control's head, and the
+   control's "no identity yet" line has nothing to add to the card's sentence. */
+#identity-card[data-nextstep] #identity-control .pc-head { display: none; }
+#identity-card[data-nextstep] #identity-control[data-state="none"] .pc-route { display: none; }
 
 /* ------------------------------------------- 5. this browser: the last 24 hours */
 

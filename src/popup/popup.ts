@@ -41,6 +41,7 @@ import {
   type GraphBand,
   type LinkScanResult,
   type GraphScale,
+  type DeviceFlowState,
   type Protection,
   type Settings,
   type SiteChain,
@@ -550,10 +551,19 @@ function applyProtection(p: Protection | null, band: GraphBand | null, coverage:
 
 let protectControl: ProtectControl | null = null;
 
-async function loadIdentity(): Promise<void> {
+async function loadIdentity(justSignedIn: boolean): Promise<void> {
   $("identity-card").hidden = false;
-  protectControl ??= mountProtectControl({ root: $("identity-control") });
+  // Right after an approval the card leads with the next step until the
+  // browser has an address (board 5a); an address ends it.
+  if (justSignedIn) setNextStep(true);
+  protectControl ??= mountProtectControl({
+    root: $("identity-control"),
+    onStatus: (s) => {
+      if (s.address) setNextStep(false);
+    },
+  });
   await protectControl.refresh();
+  if (justSignedIn && protectControl.status().address) setNextStep(false);
 }
 
 
@@ -1056,36 +1066,168 @@ function wireConsoleButton(): void {
 
 // ---------------------------------------------------------- sign-in tier
 
-async function pollDeviceFlow(): Promise<void> {
-  const el = $("device-status");
-  el.hidden = false;
-  for (;;) {
-    const res = await send<{ ok: true; device: { phase: string; userCode: string | null; message: string | null } }>({ kind: "signInStatus" });
-    if (!res.ok) return;
-    const d = res.device;
-    if (d.phase === "waiting") {
-      el.textContent = `Approve the sign-in in the console tab (code ${d.userCode ?? "..."}). Waiting...`;
-    } else if (d.phase === "approved") {
-      el.textContent = "Signed in. Lighting up...";
-      setTimeout(() => window.location.reload(), 600);
-      return;
-    } else if (d.phase === "expired" || d.phase === "error") {
-      el.textContent = d.message ?? "Sign-in did not complete. Try again.";
-      return;
-    } else {
+/** The sign-in answer as this part reads it (the shape of the worker's DeviceFlowState). */
+type SignInAnswer = DeviceFlowState;
+
+type SignInSend = { ok: true; device: SignInAnswer };
+
+/** Which card the sign-in part shows: the pitch, the code with its countdown, or an ending with a way to start again. */
+function setSignInView(view: "idle" | "waiting" | "expired" | "denied" | "error"): void {
+  $("signin-pitch").dataset["state"] = view;
+  $("signin-wait").hidden = view !== "waiting";
+  $("signin-end").hidden = view === "idle" || view === "waiting";
+}
+
+/** m:ss, never negative. */
+function clock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+/** Bumped by every start and every stop, so an older loop knows it has been replaced. */
+let signInRun = 0;
+/** What the polite region last said, so a repeat is not said again. */
+let announced = "";
+
+function announce(text: string): void {
+  if (text === announced) return;
+  announced = text;
+  $("signin-announce").textContent = text;
+}
+
+function stopCountdown(): void {
+  if (countdownTimer !== null) clearInterval(countdownTimer);
+  countdownTimer = null;
+}
+
+/** The ending for a sign-in that did not finish: its words and the one button that starts again. */
+function showEnding(view: "expired" | "denied" | "error", message: string, button: string): void {
+  stopCountdown();
+  setSignInView(view);
+  $("signin-end-text").textContent = message;
+  $("btn-signin-again").textContent = button;
+  announce(message);
+}
+
+/** Draw the waiting state and count down to the moment the code runs out. */
+function showWaiting(d: SignInAnswer): void {
+  setSignInView("waiting");
+  $("signin-code").textContent = d.userCode ?? "";
+  announce(`Approve this browser in the console. Your code is ${d.userCode ?? "shown in the console tab"}.`);
+  const expiresAt = d.expiresAt ?? Date.now();
+  const left = $("signin-countdown");
+  const tick = (): void => {
+    const ms = expiresAt - Date.now();
+    if (ms <= 0) {
+      signInRun++;
+      showEnding("expired", "This code expired before it was approved.", "Get a new code");
       return;
     }
+    left.textContent = `Waiting for approval \u00b7 ${clock(ms)} left`;
+  };
+  stopCountdown();
+  tick();
+  if (signInView() === "waiting") countdownTimer = setInterval(tick, 1000);
+}
+
+function signInView(): string | undefined {
+  return $("signin-pitch").dataset["state"];
+}
+
+/** Draw one answer. True while it is still waiting, so the caller keeps asking. */
+function showSignIn(d: SignInAnswer): boolean {
+  if (d.phase === "waiting") {
+    if (signInView() !== "waiting" || $("signin-code").textContent !== (d.userCode ?? "")) showWaiting(d);
+    return true;
+  }
+  if (d.phase === "expired") showEnding("expired", d.message ?? "This code expired before it was approved.", "Get a new code");
+  else if (d.phase === "denied") showEnding("denied", d.message ?? "The sign-in was refused in the console.", "Start again");
+  else if (d.phase === "error") showEnding("error", d.message ?? "Sign-in did not complete.", "Try again");
+  return false;
+}
+
+/** Ask the worker about the sign-in every 1.5 s until it ends, and draw each answer. */
+async function followSignIn(): Promise<void> {
+  const run = ++signInRun;
+  while (run === signInRun) {
+    const res = await send<SignInSend>({ kind: "signInStatus" }).catch(() => null);
+    if (run !== signInRun) return;
+    if (!res || !res.ok) return;
+    const d = res.device;
+    if (d.phase === "approved") {
+      stopCountdown();
+      window.location.reload();
+      return;
+    }
+    if (d.phase === "idle") {
+      // Another page cancelled or restarted the sign-in: back to the pitch.
+      stopCountdown();
+      setSignInView("idle");
+      return;
+    }
+    if (!showSignIn(d)) return;
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
 
-function wireSignin(): void {
+async function startSignIn(button: HTMLButtonElement): Promise<void> {
+  // Only the first button changes its words: the other one is replaced by the
+  // ending that follows, which sets its own.
+  const label = button.id === "btn-signin" ? button.textContent : null;
+  button.disabled = true;
+  if (label !== null) button.textContent = "Opening the console...";
+  try {
+    const res = await send<SignInSend>({ kind: "signInStart" });
+    if (res.ok) {
+      const d = res.device;
+      if (d.phase === "waiting" || d.phase === "error" || d.phase === "denied" || d.phase === "expired") showSignIn(d);
+    }
+  } catch {
+    showEnding("error", "Sign-in did not complete.", "Try again");
+  } finally {
+    button.disabled = false;
+    if (label !== null) button.textContent = label;
+  }
+  if (signInView() === "waiting") void followSignIn();
+}
+
+/**
+ * The signed-out card. `open` is what the worker said when the popup opened:
+ * a sign-in that is still waiting comes back with its own code and a countdown
+ * that carries on from the same expiry, not a new one.
+ */
+function wireSignin(open: SignInAnswer | null): void {
   $("signin-pitch").hidden = false;
-  $("btn-signin").addEventListener("click", async () => {
-    $("btn-signin").textContent = "Opening the console...";
-    await send({ kind: "signInStart" });
-    void pollDeviceFlow();
+  $("btn-signin").addEventListener("click", (ev) => void startSignIn(ev.currentTarget as HTMLButtonElement));
+  $("btn-signin-again").addEventListener("click", (ev) => void startSignIn(ev.currentTarget as HTMLButtonElement));
+  $("btn-signin-tab").addEventListener("click", () => {
+    void send<SignInSend>({ kind: "signInShowTab" })
+      .then((res) => {
+        if (res.ok && res.device.phase !== "waiting") showSignIn(res.device);
+      })
+      .catch(() => undefined);
   });
+  if (open?.phase === "waiting") {
+    showSignIn(open);
+    void followSignIn();
+  }
+}
+
+/**
+ * Right after an approval, while this browser has no address: the confirmation
+ * and the next-step card around the one control (board 5a). The control is the
+ * real one, so its press is the reader's own gesture and asks for the
+ * permission itself. Once an address exists the card is the plain one again.
+ */
+function setNextStep(on: boolean): void {
+  $("signin-done").hidden = !on;
+  $("nextstep-head").hidden = !on;
+  $("nextstep-line").hidden = !on;
+  $("btn-nextstep-dashboard").hidden = !on;
+  const card = $("identity-card");
+  if (on) card.dataset["nextstep"] = "";
+  else delete card.dataset["nextstep"];
 }
 
 // ------------------------------------------------------- the live scale
@@ -1301,7 +1443,7 @@ function watchCookieLine(): void {
 
 /** Everything that does not depend on this site's check: drawn once at open,
  *  in every case, so every part is filled while a check waits or a press is due. */
-function renderShell(signedIn: boolean, activeHost: string, first: TabState | null): void {
+function renderShell(signedIn: boolean, activeHost: string, first: TabState | null, device: DeviceFlowState | null): void {
   void loadScale();
   void loadToday();
   void loadBrowser24h();
@@ -1314,11 +1456,19 @@ function renderShell(signedIn: boolean, activeHost: string, first: TabState | nu
   // This browser's protection is on every page, signed in or not: keyed
   // readers get the one control, keyless readers get the one thing that
   // unlocks it. Two tiers, both honest, one action either way.
-  if (signedIn) void loadIdentity();
-  else {
-    wireSignin();
+  if (signedIn) {
+    // Whether the confirmation shows depends on whether an address exists, so
+    // the scroll waits for the control's first read.
+    void loadIdentity(device?.phase === "approved").then(() => keepSignInInView(device));
+  } else {
+    wireSignin(device);
+    keepSignInInView(device);
     void loadTier();
   }
+  $("btn-nextstep-dashboard").addEventListener("click", (ev) => {
+    ev.preventDefault();
+    void send({ kind: "openDashboard" }).then(() => window.close());
+  });
 
   // a session block must be discoverably clearable - list the hosts
   // blocked this session and, when THIS tab is one (the opaque
@@ -1795,6 +1945,45 @@ function initThemeButton(): void {
   });
 }
 
+/**
+ * While a sign-in waits, or has just been approved, the popup opens with its
+ * card at the top of the scroll. The parts above it fill in after the popup
+ * opens and change its height, so the scroll follows them until the reader
+ * takes the scroll themselves (wheel, touch, key or press).
+ */
+function keepSignInInView(device: DeviceFlowState | null): void {
+  if (device?.phase !== "waiting" && device?.phase !== "approved") return;
+  const region = $("popup-scroll");
+  // After an approval only the confirmation is a reason to scroll: with an
+  // address already reserved there is no next-step card, and the popup opens
+  // at This site as usual.
+  const target = (): HTMLElement | undefined =>
+    device.phase === "approved"
+      ? [$("signin-done")].find((e) => !e.hidden)
+      : [$("identity-card"), $("signin-pitch")].find((e) => !e.hidden);
+  const watch = new ResizeObserver(() => scrollToCard());
+  const release = (): void => {
+    taken = true;
+    watch.disconnect();
+    for (const [target, gesture] of listeners) target.removeEventListener(gesture, release);
+  };
+  let taken = false;
+  const scrollToCard = (): void => {
+    if (taken) return;
+    const card = target();
+    if (card) region.scrollTop += card.getBoundingClientRect().top - region.getBoundingClientRect().top;
+  };
+  const listeners: [EventTarget, string][] = [
+    [region, "wheel"],
+    [region, "touchstart"],
+    [region, "pointerdown"],
+    [document, "keydown"],
+  ];
+  for (const [t, gesture] of listeners) t.addEventListener(gesture, release, { passive: true });
+  for (const id of ["panel-site", "panel-page", "panel-browser"]) watch.observe($(id));
+  scrollToCard();
+}
+
 async function init(): Promise<void> {
   // First, before any await: the popup opens at the top, and the fade
   // follows the scroll while a check is in flight and when the page's state
@@ -1821,24 +2010,26 @@ async function init(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     tabId = tab?.id ?? -1;
   }
-  const [stateRes, settingsRes] = await Promise.all([
+  const [stateRes, settingsRes, deviceRes] = await Promise.all([
     send({ kind: "getTabState", tabId }).catch(() => null),
     send<{ ok: true; settings: Settings; signedIn: boolean; corpusVersion: number; corpusUpdated: string }>({
       kind: "getSettings",
     }).catch(() => null),
+    send<SignInSend>({ kind: "signInStatus" }).catch(() => null),
   ]);
   if (settingsRes?.ok) settings = settingsRes.settings;
+  const device = deviceRes?.ok ? deviceRes.device : null;
   const first = tabStateOf(stateRes);
   if (!first) {
     // The worker could not answer. The shell still draws, and the card offers
     // the check, which needs no hostname from here.
-    renderShell(settingsRes?.ok ? settingsRes.signedIn : false, "", null);
+    renderShell(settingsRes?.ok ? settingsRes.signedIn : false, "", null, device);
     drawNotChecked();
     return;
   }
   state = first;
   const cloudCheck = settings?.cloudCheck ?? true;
-  renderShell(first.signedIn, first.hostname ?? "", first);
+  renderShell(first.signedIn, first.hostname ?? "", first, device);
   if (cloudCheck && first.lost && first.eligible && first.hostname) {
     drawNotChecked();
     return;

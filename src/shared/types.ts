@@ -156,9 +156,11 @@ export interface Corpus {
 }
 
 export interface DeviceFlowState {
-  phase: "idle" | "waiting" | "approved" | "expired" | "error";
+  phase: "idle" | "waiting" | "approved" | "expired" | "denied" | "error";
   userCode: string | null;
   verificationUri: string | null;
+  /** Epoch ms at which the waiting code runs out; null when nothing is waiting. */
+  expiresAt: number | null;
   message: string | null;
 }
 

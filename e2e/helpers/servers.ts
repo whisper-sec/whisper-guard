@@ -86,11 +86,50 @@ export const MOCK_API_KEY = "e2e-mock-key-not-a-credential";
  */
 const MOCK_TENANT = `t${"e2e0".repeat(8)}`;
 
+/** One answer the stand-in gave to a poll of the token endpoint. */
+export interface DeviceTokenAnswer {
+  /** The device_code the poll carried. */
+  deviceCode: string;
+  /** The status the stand-in answered with. */
+  status: string;
+}
+
 interface DeviceFlowMockState {
   pollsUntilApproved: number;
   polls: number;
   apiKey: string;
   approveVisited: boolean;
+  /** Every body the authorize endpoint received, as sent. */
+  authorizeBodies: string[];
+  /** Every poll of the token endpoint and what it was answered, in order. */
+  tokenAnswers: DeviceTokenAnswer[];
+  /** expires_in the authorize answer carries, in seconds. */
+  expiresIn: number;
+  /** The user_code of each authorize call in turn; the last one repeats. */
+  userCodes: string[];
+  /** Answer the next token poll with a refusal (HTTP 200), once. */
+  denyNext: boolean;
+  /** Never approve, however many polls and visits there are. */
+  holdApproval: boolean;
+  /** Name this address in both verification fields of the authorize answer, instead of the console's own. */
+  verificationUri: string | null;
+}
+
+/** What a sign-in against the stand-in starts from: today's answers, with every knob at rest. */
+function freshDeviceFlow(apiKey: string): DeviceFlowMockState {
+  return {
+    pollsUntilApproved: 2,
+    polls: 0,
+    apiKey,
+    approveVisited: false,
+    authorizeBodies: [],
+    tokenAnswers: [],
+    expiresIn: 600,
+    userCodes: ["E2E-CODE"],
+    denyNext: false,
+    holdApproval: false,
+    verificationUri: null,
+  };
 }
 
 function makeSelfSignedCert(): { key: string; cert: string } {
@@ -348,12 +387,21 @@ export class E2ENetwork {
   readonly revokedElsewhere = new Set<string>();
   revokedElsewhereShape: "not-found-error" | "not-found-row" = "not-found-error";
   readonly submits: Record<string, unknown>[] = [];
-  readonly device: DeviceFlowMockState = {
-    pollsUntilApproved: 2,
-    polls: 0,
-    apiKey: MOCK_API_KEY,
-    approveVisited: false,
-  };
+  readonly device: DeviceFlowMockState = freshDeviceFlow(MOCK_API_KEY);
+
+  /** Put every sign-in knob and record back to rest, so a spec starts from today's answers. */
+  resetDeviceFlow(): void {
+    // A held answer or page is let go, so a test that failed part-way cannot hang the next one.
+    this.releaseTokenHold?.({ status: "pending" });
+    this.releaseActivateHold?.();
+    this.tokenHold = null;
+    this.onTokenHeld = null;
+    this.releaseTokenHold = null;
+    this.activateHold = null;
+    this.onActivateHeld = null;
+    this.releaseActivateHold = null;
+    Object.assign(this.device, freshDeviceFlow(this.device.apiKey));
+  }
 
   private proxy!: http.Server;
   private tlsServer!: https.Server;
@@ -1220,29 +1268,93 @@ export class E2ENetwork {
 
   // --------------------------------------------------- mock console (8628)
 
-  private serveConsole(path: string, _body: string, res: http.ServerResponse): void {
+  private tokenHold: Promise<Record<string, string>> | null = null;
+  private onTokenHeld: (() => void) | null = null;
+  /**
+   * Hold the answer to the NEXT poll of the token endpoint until `release` is
+   * called with the answer to give. `held` resolves once that poll has arrived
+   * and is waiting. The answer is not counted as a poll until it is given.
+   */
+  holdNextToken(): { release: (answer: Record<string, string>) => void; held: Promise<void> } {
+    let release!: (answer: Record<string, string>) => void;
+    let arrived!: () => void;
+    const held = new Promise<void>((r) => (arrived = r));
+    this.tokenHold = new Promise<Record<string, string>>((r) => (release = r));
+    this.onTokenHeld = arrived;
+    this.releaseTokenHold = release;
+    return { release, held };
+  }
+  private releaseTokenHold: ((answer: Record<string, string>) => void) | null = null;
+  private activateHold: Promise<void> | null = null;
+  private releaseActivateHold: (() => void) | null = null;
+  private onActivateHeld: (() => void) | null = null;
+  /**
+   * Hold the answer to the NEXT visit of the approval page until `release` is
+   * called, so the tab that opened it is still loading. `held` resolves once
+   * the request has arrived and is waiting.
+   */
+  holdNextActivate(): { release: () => void; held: Promise<void> } {
+    let release!: () => void;
+    let arrived!: () => void;
+    const held = new Promise<void>((r) => (arrived = r));
+    this.activateHold = new Promise<void>((r) => (release = r));
+    this.onActivateHeld = arrived;
+    this.releaseActivateHold = release;
+    return { release, held };
+  }
+
+  private async serveConsole(path: string, body: string, res: http.ServerResponse): Promise<void> {
     if (path === "/api/device/authorize") {
+      const d = this.device;
+      d.authorizeBodies.push(body);
+      const n = d.authorizeBodies.length;
+      const code = d.userCodes[Math.min(n, d.userCodes.length) - 1] ?? "E2E-CODE";
       res.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
-          device_code: "e2e-device-code-1",
-          user_code: "E2E-CODE",
-          verification_uri: "https://console.whisper.security/activate",
-          verification_uri_complete: "https://console.whisper.security/activate?user_code=E2E-CODE",
+          device_code: `e2e-device-code-${n}`,
+          user_code: code,
+          verification_uri: d.verificationUri ?? "https://console.whisper.security/activate",
+          verification_uri_complete: d.verificationUri ?? `https://console.whisper.security/activate?user_code=${code}`,
           interval: 1,
-          expires_in: 600,
+          expires_in: d.expiresIn,
         }),
       );
       return;
     }
     if (path === "/api/device/token") {
-      this.device.polls++;
-      const approved = this.device.approveVisited && this.device.polls >= this.device.pollsUntilApproved;
-      res.writeHead(200, { "content-type": "application/json" }).end(
-        JSON.stringify(approved ? { status: "approved", api_key: this.device.apiKey } : { status: "pending" }),
-      );
+      const d = this.device;
+      d.polls++;
+      let deviceCode = "";
+      try {
+        deviceCode = String((JSON.parse(body) as { device_code?: unknown }).device_code ?? "");
+      } catch {
+        // a body that is not JSON is recorded with no code
+      }
+      let answer: Record<string, string>;
+      if (this.tokenHold) {
+        const hold = this.tokenHold;
+        this.tokenHold = null;
+        this.onTokenHeld?.();
+        answer = await hold;
+      } else if (d.denyNext) {
+        d.denyNext = false;
+        answer = { status: "denied", error: "access_denied" };
+      } else if (!d.holdApproval && d.approveVisited && d.polls >= d.pollsUntilApproved) {
+        answer = { status: "approved", api_key: d.apiKey };
+      } else {
+        answer = { status: "pending" };
+      }
+      d.tokenAnswers.push({ deviceCode, status: answer["status"]! });
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(answer));
       return;
     }
     if (path.startsWith("/activate")) {
+      if (this.activateHold) {
+        const hold = this.activateHold;
+        this.activateHold = null;
+        this.onActivateHeld?.();
+        await hold;
+      }
       this.device.approveVisited = true;
       res
         .writeHead(200, { "content-type": "text/html; charset=utf-8" })
