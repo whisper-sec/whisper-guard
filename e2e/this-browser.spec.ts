@@ -655,7 +655,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
     await page.close();
   });
 
-  test("routed, the card keeps its layout at 400 x 600 in both schemes, with one category and with three", async () => {
+  test("routed, the card keeps its layout at 400 x 600 in both schemes, with one category and with all four", async () => {
     test.setTimeout(150_000);
     await setKey(ext, MOCK_KEY);
     const { page, tabId } = await visit(ext, `https://${CLEAN}/`);
@@ -666,8 +666,8 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
       await first.close();
     }
     for (const [name, counts] of [
-      ["one-category", { preemptBlock: 1, identityVerified: 0, cookieDecline: 0 }],
-      ["three-categories", { preemptBlock: 2, identityVerified: 1, cookieDecline: 3 }],
+      ["one-category", { preemptBlock: 1, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 }],
+      ["four-categories", { preemptBlock: 2, identityVerified: 1, cookieDecline: 3, lookalikeCaught: 2 }],
     ] as const) {
       await plantWins(ext, counts);
       const popup = await openPopup(ext, tabId, { section: "browser" });
@@ -686,7 +686,7 @@ test.describe("This browser, routed (the routing permission is granted)", () => 
       }
       await popup.close();
     }
-    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
+    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 });
     await page.close();
   });
 });
@@ -742,7 +742,7 @@ test.describe("This browser, a day with a flagged destination and nothing handle
 
   test("the day line never says nothing needed attention beside a flagged destination", async () => {
     await setKey(ext, null);
-    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
+    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 });
     const SENTENCE = "Nothing needed your attention today; checks ran on every site.";
     const clean = await visit(ext, `https://${CLEAN}/`);
     await waitForIcon(ext, clean.tabId, ["benign", "unknown", "signedout"]);
@@ -815,6 +815,6 @@ test.describe("This browser, held by another extension", () => {
 
     await popup.close();
     await page.close();
-    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0 });
+    await plantWins(ext, { preemptBlock: 0, identityVerified: 0, cookieDecline: 0, lookalikeCaught: 0 });
   });
 });

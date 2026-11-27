@@ -55,6 +55,7 @@ import { getSettings, setSettings } from "./settings";
 import { allowForSession, recordRisk, ruleNonceMatches, sessionAllowed, sessionBlockedHosts, sessionRisks } from "./session";
 import { addBlockRule, armConsent, armConsentFrame, armPreempt, injectGuard, redirectToWarning, removeBlockRule, shieldGranted } from "./shield";
 import { preemptCheck } from "./preempt";
+import { forgetHeld, noteHeld, noteWentBack, takeSigninAsk } from "./signin-ask";
 import { chainFor, resetChainCache, rungDetailFor } from "./chain-cache";
 import { graphScale } from "./scale";
 import { graphQuota, resetQuotaCache } from "./quota";
@@ -219,6 +220,8 @@ async function evaluate(tabId: number, url: string, gen: number): Promise<void> 
 
   // 1) The on-device detector, before anything that touches the network.
   state.detector = await detect(hostname, settings.nearMiss, settings.allowlist);
+  // Not for a tab in a private window: no record of that page is kept.
+  if (state.detector && keep) countLookalike(hostname);
 
   // 2) The live graph band, cache first: keyless or keyed, unless the user
   // switched the live check off.
@@ -412,6 +415,17 @@ async function paintCheckingEarly(tabId: number, url: string, gen: number): Prom
   await paintIcon(tabId, "checking");
 }
 
+// A look-alike the on-device detector flagged counts once per host. The hosts
+// live only in this in-memory set, never persisted, so the wins record stays
+// category and count and never learns a hostname.
+const countedLookalikes = new Set<string>();
+
+function countLookalike(host: string): void {
+  if (countedLookalikes.has(host)) return;
+  countedLookalikes.add(host);
+  void recordWin("lookalikeCaught");
+}
+
 // ------------------------------------------------------------- wiring
 
 ext.webNavigation.onCommitted.addListener((details) => {
@@ -448,6 +462,8 @@ ext.webNavigation.onCommitted.addListener((details) => {
   void clearTabState(details.tabId);
   // A new page starts without a declined prompt.
   void clearCookieDeclined(details.tabId);
+  // A held click describes the page it was held on, and this is a new one.
+  void forgetHeld(details.tabId);
 });
 
 ext.tabs.onActivated.addListener(({ tabId }) => {
@@ -479,6 +495,7 @@ ext.tabs.onRemoved.addListener((tabId) => {
   consentArmedUrl.delete(tabId);
   consentCountedUrl.delete(tabId);
   forgetTab(tabId);
+  void forgetHeld(tabId);
   const t = debounce.get(tabId);
   if (t) {
     clearTimeout(t);
@@ -840,13 +857,14 @@ const ON_PAGE_KINDS: ReadonlySet<BgRequest["kind"]> = new Set<BgRequest["kind"]>
   "preemptOpen",
   "preemptCheck",
   "preemptAllow",
+  "preemptBack",
 ]);
 
 /**
  * The router handles a kind only from the senders that send it. A Guard page
  * (its address is under the extension's own origin) may send any kind, except
  * that `allowHost` is taken only from the top-level page of a tab. Any other
- * sender may send the on-page layer's four kinds.
+ * sender may send the on-page layer's five kinds.
  */
 function senderMaySend(kind: unknown, sender?: chrome.runtime.MessageSender): boolean {
   if (typeof kind !== "string") return false;
@@ -1118,8 +1136,25 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       if (verification?.isWhisperAgent === true) await recordWinOnce("identityVerified");
       return { ok: true, verification };
     }
-    case "preemptCheck":
-      return { ok: true, preempt: await preemptCheck(msg.host, sender?.tab?.incognito === false) };
+    case "preemptCheck": {
+      // A tab in a private window keeps no record of what it was held from.
+      const tabId = sender?.tab?.incognito === false ? sender.tab.id : undefined;
+      // The page this click was held on: a check that outlives it must not write onto the next one.
+      const gen = tabId === undefined ? undefined : navGen.get(tabId);
+      const preempt = await preemptCheck(msg.host, sender?.tab?.incognito === false);
+      if (preempt.action === "interrupt" && tabId !== undefined && navGen.get(tabId) === gen) {
+        // Queued now, in order: the answer does not wait on storage, and a later Go back runs after it.
+        void noteHeld(tabId, { host: preempt.host, band: preempt.band, label: preempt.label });
+      }
+      return { ok: true, preempt };
+    }
+    case "preemptBack":
+      // Go back on the hold card: the held click is remembered as gone back
+      // from, for the popup's sign-in ask. The card has closed whatever this answers.
+      if (sender?.tab?.incognito === false && sender.tab.id !== undefined) await noteWentBack(sender.tab.id, msg.host);
+      return { ok: true };
+    case "takeSigninAsk":
+      return { ok: true, ask: await takeSigninAsk(msg.tabId) };
     case "preemptArm": {
       // Popup-open arming: opening the popup is a real extension
       // invocation, so activeTab makes THIS tab scriptable even without
@@ -1222,6 +1257,8 @@ async function handle(msg: BgRequest, sender?: chrome.runtime.MessageSender): Pr
       // stays untouched until that decision is wired.
       await allowForSession(msg.host);
       await removeBlockRule(msg.host);
+      // Proceeding is not a save: the page's held click is no longer one to ask about.
+      if (sender?.tab?.id !== undefined) await forgetHeld(sender.tab.id);
       return { ok: true };
     case "preemptOpen": {
       // Resume of a held middle-/modifier-click: a synthetic click

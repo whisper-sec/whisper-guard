@@ -698,9 +698,10 @@ test("cookie-consent auto-decline on a real-shaped banner", async () => {
 });
 
 test("popup: the calm 'handled quietly today' line, with the counts that interrupt earned", async () => {
-  // Counts come from the two captures above - the held click (preemptBlock)
-  // and the declined banner (cookieDecline). Real wins from real protection,
-  // not a seeded record.
+  // Counts come from the captures above: the held click (preemptBlock), the
+  // declined banner (cookieDecline) and the two look-alike hosts visited
+  // (lookalikeCaught, once per host). Real wins from real protection, not a
+  // seeded record.
   await setKey(ext, null);
   const { page, tabId } = await visit(ext, "https://intranet-tools-vendor.com/");
   await waitForIcon(ext, tabId, ["benign"]);
@@ -710,11 +711,11 @@ test("popup: the calm 'handled quietly today' line, with the counts that interru
   // Pinned to the exact number, not merely "not 0". A negated matcher is
   // satisfied by a missing element, so not.toHaveText("0") would survive the
   // hero being deleted outright, and this caption quotes that number.
-  await expect(popup.locator("#today-hero")).toHaveText("2");
-  // Both categories are in the shot, so the caption the docs page carries
-  // ("a risky click held and a cookie prompt declined") is what is on screen.
+  await expect(popup.locator("#today-hero")).toHaveText("4");
+  // The three categories earned above are in the shot, so the caption shows what is on screen.
   await expect(popup.locator("#today-breakdown")).toContainText("risky click stopped");
   await expect(popup.locator("#today-breakdown")).toContainText("cookie prompt declined");
+  await expect(popup.locator("#today-breakdown")).toContainText("2 look-alikes caught");
   await popup.locator("#today-breakdown").scrollIntoViewIfNeeded();
   await popup.screenshot({ path: join(SHOTS, "popup-today.png") });
   await popup.close();

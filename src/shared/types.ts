@@ -118,7 +118,7 @@ export const DEFAULT_SETTINGS: Settings = {
  * BROWSING: a win is only ever a category name plus a count. No URL, no
  * domain, no hostname is ever attached to one.
  */
-export const WIN_CATEGORIES = ["preemptBlock", "identityVerified", "cookieDecline"] as const;
+export const WIN_CATEGORIES = ["preemptBlock", "identityVerified", "cookieDecline", "lookalikeCaught"] as const;
 export type WinCategory = (typeof WIN_CATEGORIES)[number];
 
 /** Today's tally: date-keyed so it resets daily on its own. */
@@ -127,6 +127,23 @@ export interface WinsToday {
   date: string;
   total: number;
   counts: Record<WinCategory, number>;
+}
+
+/**
+ * What the popup draws once, after Guard held a click the reader went back
+ * from: the held host, its band and label, how many clicks were held on the
+ * page, and today's tally. It is answered to a Guard page only, at most once
+ * per install, and never leaves this device.
+ */
+export interface SigninAsk {
+  host: string;
+  band: string;
+  label: string | null;
+  /** Clicks held on this page since the last Proceed. */
+  count: number;
+  /** The reader went back from every one of them (always true for one click). */
+  eachTime: boolean;
+  today: WinsToday;
 }
 
 export interface CorpusBrand {

@@ -304,12 +304,20 @@ const HOMES: Record<string, string | null> = {
   "btn-theme": null,
   "theme-live": null,
   "btn-settings": null,
+  "signin-ask": "signin-ask",
+  "ask-head": "signin-ask",
+  "ask-line": "signin-ask",
+  "ask-offer-head": "signin-ask",
+  "btn-ask-signin": "signin-ask",
+  "btn-ask-later": "signin-ask",
 };
 
-test("three parts follow one another, each with a heading, every block is in its part and no id occurs twice", async () => {
+test("an ask part leads and three parts follow one another, each with a heading, every block is in its part and no id occurs twice", async () => {
   const { popup, page } = await openSite();
 
-  // The parts are the region's direct children, in this order, with a heading each.
+  // The parts are the region's direct children, in this order, with a heading each. The sign-in
+  // ask leads them: a section labelled by its own heading, hidden on an ordinary open, so the
+  // heading has no words until the ask is drawn.
   const parts = await popup.locator("#popup-scroll").evaluate((r) =>
     [...r.children].map((c) => {
       const h = document.getElementById(c.getAttribute("aria-labelledby") ?? "");
@@ -325,13 +333,15 @@ test("three parts follow one another, each with a heading, every block is in its
     }),
   );
   expect(parts.map((p) => [p.id, p.tag, p.heading, p.words])).toEqual([
+    ["signin-ask", "section", "h2", ""],
     ["panel-site", "section", "h2", "This site"],
     ["panel-page", "section", "h2", "This page"],
     ["panel-browser", "section", "h2", "This browser"],
   ]);
-  expect(parts.map((p) => p.role)).toEqual([null, null, null]);
+  expect(parts.map((p) => p.role)).toEqual([null, null, null, null]);
+  expect(parts[0]!.hidden, "the ask is hidden on an ordinary open").toBe(true);
   // The site part is the one the popup moves focus to after a press: -1, never in the tab order.
-  expect(parts.map((p) => p.tabindex)).toEqual(["-1", null, null]);
+  expect(parts.map((p) => p.tabindex)).toEqual([null, "-1", null, null]);
 
   // Each heading is read by a screen reader and takes no room on screen.
   const headings = await popup.locator("#popup-scroll > section > h2").evaluateAll((hs) =>
